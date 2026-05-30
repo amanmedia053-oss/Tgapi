@@ -45,6 +45,19 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
+  // Custom states for diagnosing mobile environments (Capacitor/Native Bridge webview issues)
+  const [diagnostics, setDiagnostics] = useState<{
+    clientOrigin: string;
+    protocol: string;
+    isCapacitor: boolean;
+    capacitorPlatform: string;
+    backendFetchError: string | null;
+    directFetchError: string | null;
+    userAgent: string;
+    usingDirectFallback: boolean;
+  } | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  
   // States for navigation flows
   const [selectedPost, setSelectedPost] = useState<TelegramPost | null>(null);
   const [isFullFeedOpen, setIsFullFeedOpen] = useState(false);
@@ -79,19 +92,297 @@ export default function App() {
 
   const targetChannelName = 'da_mine_dewa';
 
+  // Client-side HTML parsing fallback for direct public Telegram channels
+  const parseClientTelegramHtml = (htmlText: string, channelName: string): FeedResponse => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlText, 'text/html');
+
+    // Extract Channel Metadata securely using OG protocol and fallbacks
+    const ogTitle = doc.querySelector('meta[property="og:title"]')?.getAttribute('content') || '';
+    const ogImage = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
+    const ogDescription = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
+
+    const title = ogTitle || doc.querySelector('.tgme_channel_info_header_title')?.textContent?.trim() || 'د مینې ډېوه';
+    const subscribers = doc.querySelector('.tgme_channel_info_counter')?.textContent?.trim() || 'عامه خپرونه';
+    const description = ogDescription || doc.querySelector('.tgme_channel_info_description')?.textContent?.trim() || 'دا د مینې ډېوه رسمي خپرونه ده.';
+    const avatarUrl = ogImage || doc.querySelector('.tgme_channel_info_header_img img')?.getAttribute('src') || 'https://telegram.org/img/t_logo.png';
+
+    const posts: TelegramPost[] = [];
+    const wrapElements = doc.querySelectorAll('.tgme_widget_message_wrap');
+
+    wrapElements.forEach((wrap) => {
+      const postEl = wrap.querySelector('.tgme_widget_message');
+      if (!postEl) return;
+
+      const dataPostAttr = postEl.getAttribute('data-post') || '';
+      const parts = dataPostAttr.split('/');
+      const postId = parts[parts.length - 1] || '';
+      if (!postId) return;
+
+      const postUrl = dataPostAttr ? `https://t.me/${dataPostAttr}` : `https://t.me/${channelName}`;
+
+      // Views
+      const views = postEl.querySelector('.tgme_widget_message_views')?.textContent?.trim() || '0';
+
+      // Date
+      const timeEl = postEl.querySelector('.tgme_widget_message_info time');
+      const datetime = timeEl?.getAttribute('datetime') || '';
+      const timeLabel = timeEl?.textContent?.trim() || 'وروستی';
+
+      // Text / HTML Content
+      const textEl = postEl.querySelector('.tgme_widget_message_text');
+      const plainText = textEl?.textContent?.trim() || '';
+      
+      let parsedHtmlText = '';
+      if (textEl) {
+        // Safe sanitization and rewriting relative Telegram links in WebView
+        const tempDiv = doc.createElement('div');
+        tempDiv.innerHTML = textEl.innerHTML;
+        tempDiv.querySelectorAll('a').forEach((anchor) => {
+          const href = anchor.getAttribute('href');
+          if (href && href.startsWith('/')) {
+            anchor.setAttribute('href', `https://t.me${href}`);
+            anchor.setAttribute('target', '_blank');
+          }
+        });
+        parsedHtmlText = tempDiv.innerHTML;
+      }
+
+      // Photos
+      let photoUrl = '';
+      const photoWrap = postEl.querySelector('.tgme_widget_message_photo_wrap');
+      if (photoWrap) {
+        const style = photoWrap.getAttribute('style') || '';
+        const match = style.match(/background-image:\s*url\s*\(\s*['"]?([^'"]+)['"]?\s*\)/i);
+        if (match && match[1]) {
+          photoUrl = match[1];
+        }
+      }
+
+      // Videos
+      const hasVideo = !!postEl.querySelector('.tgme_widget_message_video, .tgme_widget_message_video_player, video');
+      let videoUrl = '';
+      let videoThumbUrl = '';
+      const videoEl = postEl.querySelector('.tgme_widget_message_video, video');
+      if (videoEl) {
+        videoUrl = videoEl.getAttribute('src') || '';
+      }
+      const videoPlayer = postEl.querySelector('.tgme_widget_message_video_player');
+      if (videoPlayer) {
+        const style = videoPlayer.getAttribute('style') || '';
+        const match = style.match(/background-image:\s*url\s*\(\s*['"]?([^'"]+)['"]?\s*\)/i);
+        if (match && match[1]) {
+          videoThumbUrl = match[1];
+        }
+      }
+
+      // Audio / Voice notes
+      const hasAudio = !!postEl.querySelector('.tgme_widget_message_voice, .tgme_widget_message_audio, .tgme_widget_message_audio_player, audio');
+      let audioUrl = '';
+      let audioTitle = 'غږیز فایل / پیغام';
+      let audioDuration = '';
+      const audioNode = postEl.querySelector('audio');
+      if (audioNode) {
+        audioUrl = audioNode.getAttribute('src') || '';
+      }
+      const voiceNameNode = postEl.querySelector('.tgme_widget_message_voice_name, .tgme_widget_message_audio_title, .tgme_widget_message_document_title');
+      if (voiceNameNode) {
+        audioTitle = voiceNameNode.textContent?.trim() || 'غږیز فایل';
+      }
+      const voiceDurationNode = postEl.querySelector('.tgme_widget_message_voice_duration, .tgme_widget_message_audio_duration, .tgme_widget_message_document_extra');
+      if (voiceDurationNode) {
+        audioDuration = voiceDurationNode.textContent?.trim() || '';
+      }
+
+      // Files Documents
+      const hasFile = !!postEl.querySelector('.tgme_widget_message_document') && !hasAudio;
+      let fileName = 'سند / فایل';
+      let fileSize = '';
+      if (hasFile) {
+        fileName = postEl.querySelector('.tgme_widget_message_document_title')?.textContent?.trim() || 'سند / فایل';
+        fileSize = postEl.querySelector('.tgme_widget_message_document_extra')?.textContent?.trim() || '';
+      }
+
+      // Inline Reactions
+      const reactions: any[] = [];
+      const reactionsContainer = postEl.querySelector('.tgme_widget_message_inline_reactions');
+      if (reactionsContainer) {
+        reactionsContainer.querySelectorAll('.tgme_widget_message_inline_reaction').forEach((reactEl) => {
+          const emoji = reactEl.querySelector('.emoji, .tgme_widget_message_inline_reaction_emoji')?.textContent?.trim() || '';
+          const count = reactEl.querySelector('.tgme_widget_message_inline_reaction_count')?.textContent?.trim() || '0';
+          if (emoji) {
+            reactions.push({ emoji, count });
+          }
+        });
+      }
+
+      // Link Previews
+      let linkPreview: any = null;
+      const preview = postEl.querySelector('.tgme_widget_message_link_preview');
+      if (preview) {
+        const siteName = preview.querySelector('.link_preview_site_name')?.textContent?.trim() || '';
+        const previewTitle = preview.querySelector('.link_preview_title')?.textContent?.trim() || '';
+        const previewDesc = preview.querySelector('.link_preview_description')?.textContent?.trim() || '';
+        const previewUrl = preview.getAttribute('href') || '';
+        
+        let previewPhotoUrl = '';
+        const previewPhoto = preview.querySelector('.link_preview_image, .link_preview_right_image');
+        if (previewPhoto) {
+          const style = previewPhoto.getAttribute('style') || '';
+          const match = style.match(/background-image:\s*url\s*\(\s*['"]?([^'"]+)['"]?\s*\)/i);
+          if (match && match[1]) {
+            previewPhotoUrl = match[1];
+          }
+        }
+
+        linkPreview = {
+          siteName,
+          title: previewTitle,
+          description: previewDesc,
+          url: previewUrl,
+          photoUrl: previewPhotoUrl
+        };
+      }
+
+      const authorName = postEl.querySelector('.tgme_widget_message_from_author')?.textContent?.trim() || postEl.querySelector('.tgme_widget_message_author')?.textContent?.trim() || '';
+
+      if (plainText || photoUrl || hasVideo || hasAudio || hasFile) {
+        posts.push({
+          id: postId,
+          postUrl,
+          text: plainText,
+          htmlText: parsedHtmlText,
+          date: datetime,
+          timeLabel,
+          views,
+          photoUrl,
+          hasVideo,
+          videoUrl,
+          videoThumbUrl,
+          hasAudio,
+          audioUrl,
+          audioTitle,
+          audioDuration,
+          hasFile,
+          fileName,
+          fileSize,
+          reactions,
+          linkPreview,
+          authorName
+        });
+      }
+    });
+
+    return {
+      channelInfo: {
+        title,
+        subscribers,
+        description,
+        avatarUrl,
+        username: channelName
+      },
+      posts
+    };
+  };
+
   const fetchChannelData = async () => {
     setIsLoading(true);
     setErrorMsg(null);
+    setDiagnostics(null);
+
+    // 1. Detect environment flags
+    const checkIsCapacitor = !!(window as any).Capacitor;
+    const capacitorPlatform = checkIsCapacitor ? ((window as any).Capacitor.getPlatform() || 'unknown') : 'none';
+    const isMobileProtocol = window.location.protocol === 'file:' || window.location.protocol.startsWith('capacitor:');
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isMobileApp = checkIsCapacitor || isMobileProtocol || (isLocalhost && window.location.port !== '3000');
+
+    // Stably resolve target server URLs
+    // We point to our exact live cloud deployment where /api/telegram-feed scraping handles Cors + Cheerio beautifully
+    const backendHost = 'https://ais-pre-xqyurqglakdlwei24mzfpf-765204071973.us-east1.run.app';
+    const apiEndpoint = isMobileApp 
+      ? `${backendHost}/api/telegram-feed?channel=${encodeURIComponent(targetChannelName)}`
+      : `/api/telegram-feed?channel=${encodeURIComponent(targetChannelName)}`;
+
+    let backendError: string | null = null;
+    let directError: string | null = null;
+    let usingFallback = false;
+
+    // Method A: Query Backend Cloud Scraper API
     try {
-      const response = await fetch(`/api/telegram-feed?channel=${encodeURIComponent(targetChannelName)}`);
+      console.log(`[Dewa Feed] Attempting fetch via Backend API: ${apiEndpoint}`);
+      
+      const response = await fetch(apiEndpoint, {
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      
       if (!response.ok) {
-        throw new Error(`سروير د ${response.status} خطا راکړه.`);
+        throw new Error(`بیک اینډ سرور د ${response.status} خطا صادر کړه.`);
       }
+      
       const data: FeedResponse = await response.json();
+      if (!data || !data.posts || data.posts.length === 0) {
+        throw new Error('سرور هیڅ پوسټونه راوانګیرل نه کړل (خالي ځواب).');
+      }
+
       setFeedData(data);
-    } catch (error: any) {
-      console.error('Failed to pre-fetch channel:', error);
-      setErrorMsg(error.message || 'د چینل معلومات فیچ نه شول.');
+      console.log('[Dewa Feed] Data loaded successfully from remote API.');
+      return; // Success!
+    } catch (err: any) {
+      console.warn('[Dewa Feed] First request failed. Resorting to direct Telegram Scraper Fallback on-device...', err);
+      backendError = err.message || String(err);
+    }
+
+    // Method B: Direct Fetch from Telegram with client-side DOM parsing (Perfect for CapacitorHttp bypass)
+    try {
+      usingFallback = true;
+      const directUrl = `https://t.me/s/${targetChannelName}`;
+      console.log(`[Dewa Feed] Attempting direct scrape from: ${directUrl}`);
+
+      const response = await fetch(directUrl, {
+        headers: {
+          // Send realistic headers simulating standard mobile safari or modern chrome browser
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
+          'Accept-Language': 'ps,en-US;q=0.9,en;q=0.8',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`مستقیم ټلیګرام ویبپاڼې ته پیوستون رد شو (${response.status} خطا).`);
+      }
+
+      const htmlText = await response.text();
+      if (!htmlText || !htmlText.includes('tgme_widget_message_wrap')) {
+        throw new Error('ټلیګرام ویبپاڼې د ډېټا په لوډولو کې بېګانه خنډ جوړ کړ؛ مناسب معلومات کښته نشول.');
+      }
+
+      const parsedData = parseClientTelegramHtml(htmlText, targetChannelName);
+      if (!parsedData || parsedData.posts.length === 0) {
+        throw new Error('د ټلیګرام د مستقیم کود په پروسس کولو کې خطا رامنځته شوه (HTML parse returned no elements).');
+      }
+
+      setFeedData(parsedData);
+      console.log('[Dewa Feed] Direct HTML scrape succeeded & formatted successfully on-client!');
+    } catch (err: any) {
+      console.error('[Dewa Feed] Both methods in the connection pipeline have failed.', err);
+      directError = err.message || String(err);
+
+      // Save complete, precise diagnostic insights for debugging on the mobile display
+      setDiagnostics({
+        clientOrigin: window.location.origin,
+        protocol: window.location.protocol,
+        isCapacitor: checkIsCapacitor,
+        capacitorPlatform,
+        backendFetchError: backendError,
+        directFetchError: directError,
+        userAgent: navigator.userAgent,
+        usingDirectFallback: usingFallback
+      });
+
+      setErrorMsg('د خپرونو د راکښته کولو پروسه له ستونزو سره مخ شوه.');
     } finally {
       setIsLoading(false);
     }
@@ -428,16 +719,73 @@ export default function App() {
             <p className="text-sm text-slate-400 font-medium">پوسټونه بار کیږي...</p>
           </div>
         ) : errorMsg ? (
-          <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-6 text-center text-slate-300 space-y-3">
+          <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-6 text-center text-slate-300 space-y-4 text-right flex flex-col items-center">
             <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
-            <h3 className="text-sm font-bold text-white">اتصال ټینګ نه شو</h3>
-            <p className="text-xs text-slate-400">مهرباني وکړئ خپله انټرنیټي شبکه وګورئ.</p>
+            <div className="text-center w-full">
+              <h3 className="text-sm font-bold text-white">اتصال ټینګ نه شو</h3>
+              <p className="text-xs text-slate-400 mt-1">مهرباني وکړئ خپله انټرنیټي شبکه وګورئ او بیا هڅه وکړئ.</p>
+            </div>
+            
             <button
               onClick={fetchChannelData}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold cursor-pointer transition"
+              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold cursor-pointer transition shadow-lg shadow-rose-600/20"
             >
-              کښته کول
+              کښته کول او بیا نښلول
             </button>
+
+            {diagnostics && (
+              <div className="w-full border-t border-slate-800/80 pt-4 mt-2">
+                <button
+                  onClick={() => setShowDiagnostics(!showDiagnostics)}
+                  className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-white transition focus:outline-none cursor-pointer"
+                >
+                  <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-indigo-400 font-mono">
+                    {showDiagnostics ? 'پټول' : 'د نښلونې تحلیل وګورئ'}
+                  </span>
+                  <span className="font-semibold text-[11px] font-sans">تخنیکي معلومات او د تېروتنې تشخیصیې</span>
+                </button>
+
+                {showDiagnostics && (
+                  <div className="mt-3 bg-slate-950 p-4 rounded-xl text-right overflow-x-auto space-y-3.5 border border-slate-800/40 text-xs">
+                    <div>
+                      <span className="text-indigo-450 font-bold block mb-1">کاري چاپیریال (Environment):</span>
+                      <ul className="space-y-1 list-disc list-inside text-rose-50 pr-2 leading-relaxed">
+                        <li>پلیټ فارم: <span className="font-mono bg-slate-900 px-1 py-0.5 rounded text-emerald-400 font-bold">{diagnostics.isCapacitor ? `Capacitor (${diagnostics.capacitorPlatform})` : 'ویب براوزر (SPA)'}</span></li>
+                        <li>پروتوکول / ادرس: <span className="font-mono text-slate-400">{diagnostics.protocol} ({diagnostics.clientOrigin})</span></li>
+                        <li>د وسیلې کتونکی (User-Agent): <span className="font-mono text-[10px] text-slate-500 break-all">{diagnostics.userAgent}</span></li>
+                      </ul>
+                    </div>
+
+                    <div className="border-t border-slate-900 pt-2.5">
+                      <span className="text-indigo-400 font-bold block mb-1">د اتصالاتو د تېروتنې راپور (Fetch Errors):</span>
+                      <div className="space-y-2 font-mono text-[11px] bg-slate-900/40 p-2.5 rounded border border-slate-850/50">
+                        <p className="text-slate-400">
+                          <strong className="text-rose-400 pr-1">[1. بیک اینډ اتصال]:</strong> 
+                          <span className="text-rose-300 break-all block mt-0.5">{diagnostics.backendFetchError || 'تېروتنه نشته'}</span>
+                        </p>
+                        <p className="text-slate-400 border-t border-slate-900 pt-1.5 mt-1.5">
+                          <strong className="text-rose-400 pr-1">[2. مستقیم ټلیګرام فیچ]:</strong> 
+                          <span className="text-rose-300 break-all block mt-0.5">{diagnostics.directFetchError || 'تېروتنه نشته'}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-900 pt-2.5 text-right font-sans">
+                      <span className="text-emerald-400 font-bold block mb-1.5">د موبایل اپلیکیشن د جوړولو سپارښتنې (Capacitor Fix):</span>
+                      <ol className="space-y-1.5 text-slate-350 pr-2 leading-relaxed list-decimal">
+                        <li>ډاډ ترلاسه کړئ په <span className="font-mono text-yellow-500">AndroidManifest.xml</span> کې د انټرنیټ جواز شتون لري: <br />
+                          <code className="text-[10px] bg-slate-900 p-1.5 rounded font-mono text-indigo-400 text-left block ltr mt-1 break-all select-all">{"<uses-permission android:name=\"android.permission.INTERNET\" />"}</code>
+                        </li>
+                        <li>د <span className="font-mono text-yellow-500">capacitor.config.json</span> په برخه کې د <span className="font-mono">CapacitorHttp</span> فعالول: <br />
+                          <code className="text-[10px] bg-slate-900 p-1.5 rounded font-mono text-indigo-400 text-left block ltr mt-1 break-all select-all">{"\"CapacitorHttp\": { \"enabled\": true }"}</code>
+                        </li>
+                        <li>که مستقیم ټلیګرام فیچ کې لا ستونزه وي، نو ډاډ ترلاسه کړئ چې د Android شبکه کې غیر ایس ایس ایل / د خوندي غوښتنو خنډ پاک دی.</li>
+                      </ol>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : selectedPost ? (
           
