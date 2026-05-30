@@ -29,37 +29,46 @@ jobs:
 
       - name: Sync with Capacitor
         run: |
-          # د عمرې لارښود نوم او خپل Package ID مو ورکړ
-          npx cap init "د مينې ډيوه " "com.amanmedia.love" --web-dir dist
+          # د اپلیکیشن نوم او خپل Package ID
+          npx cap init "د مينې ډيوه" "com.amanmedia.love" --web-dir dist
           npx cap add android
+
+      # ۳. د شبکې او انټرنیټ د ستونزې حل (اصلاح شوې برخه)
+      - name: Configure Capacitor HTTP and Android Permissions
+        run: |
+          # الف: په اتومات ډول د CapacitorHttp فعالول ترڅو شبکه بنده نشي (CORS Fix)
+          if [ -f "capacitor.config.json" ]; then
+            jq '.plugins.CapacitorHttp.enabled = true' capacitor.config.json > tmp.json && mv tmp.json capacitor.config.json
+          elif [ -f "capacitor.config.ts" ]; then
+            echo "Warning: TypeScript config found, please ensure CapacitorHttp is enabled manually."
+          fi
+
+          # د باوري همغږۍ (Sync) لپاره کمانډ چلول
           npx cap sync android
 
-      # ۲. د آیکن برخه (اصلاح شوې)
+          cd android/app/src/main
+          
+          # ب: په خوندي ډول د انټرنیټ او سټوریج اجازې خلاصول (پرته له دې چې مانیفیسټ خراب شي)
+          grep -q "android.permission.INTERNET" AndroidManifest.xml || sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET" />' AndroidManifest.xml
+          grep -q "android.permission.READ_EXTERNAL_STORAGE" AndroidManifest.xml || sed -i '/<manifest/a \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />' AndroidManifest.xml
+          grep -q "android.permission.WRITE_EXTERNAL_STORAGE" AndroidManifest.xml || sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />' AndroidManifest.xml
+          
+          # ج: د دباوند او HTTP ټرافیک (Cleartext) فعالول
+          sed -i 's/<application/<application android:usesCleartextTraffic="true" android:requestLegacyExternalStorage="true"/g' AndroidManifest.xml
+          
+          # د تایید لپاره د فایل ښودل
+          cat AndroidManifest.xml
+
+      # ۲. د آیکن برخه
       - name: Generate Icon
         run: |
           if [ -f "logo.png" ]; then
             mkdir -p assets
-            # دلته مو logo.png په icon.png بدل کړ ترڅو capacitor-assets یې وپیژني
             cp logo.png assets/icon.png
             npx capacitor-assets generate --android
           else
             echo "Warning: logo.png not found, skipping icon generation."
           fi
-
-      # ۳. د انټرنیټ او سټوریج اجازې (Permissions)
-      # یادونه: ستاسو په اپلیکیشن کې آډیو له انټرنیټ څخه غږول کیږي، نو د انټرنیټ اجازه ډېره اړینه ده.
-      - name: Inject Permissions and Fix Name
-        run: |
-          cd android/app/src/main
-          
-          # په AndroidManifest.xml کې د انټرنیټ او سټوریج اجازې ورزیاتوو
-          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET" \/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>\n    <application/g' AndroidManifest.xml
-          
-          # د ډاونلوډ لپاره "ClearText" او "Legacy Storage" فعاله کوو
-          sed -i 's/<application/<application android:usesCleartextTraffic="true" android:requestLegacyExternalStorage="true"/g' AndroidManifest.xml
-          
-          # د ډاډ لپاره د فایل چاپول
-          cat AndroidManifest.xml
 
       # ۴. د Kotlin د تکراري فایلونو ستونزه (Fix)
       - name: Fix Kotlin Dependency Conflict
@@ -85,5 +94,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Umrah-Guide-APK
+          name: Minedewa-App-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
