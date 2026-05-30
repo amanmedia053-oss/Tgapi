@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IRANSans", "Vazirmatn", "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* Telegram message tag formatting styles */
+.telegram-styles a {
+  color: #818cf8 !important;
+  text-decoration: underline;
+  font-weight: 600;
+}
+.telegram-styles a:hover {
+  color: #a5b4fc !important;
+}
+.telegram-styles blockquote {
+  border-right: 3.5px solid #6366f1;
+  padding: 6px 12px 6px 4px;
+  margin: 6px 4px 6px 0px;
+  background-color: rgba(99, 102, 241, 0.08);
+  font-style: italic;
+  color: #cbd5e1 !important;
+  border-radius: 2px;
+}
+.telegram-styles code {
+  font-family: monospace;
+  background-color: rgba(15, 23, 42, 0.85);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #f43f5e;
+  font-size: 0.85em;
+}
+.telegram-styles pre {
+  background-color: rgba(15, 23, 42, 0.85);
+  padding: 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-family: monospace;
+  color: #f43f5e;
+  font-size: 0.85em;
+  direction: ltr;
+  text-align: left;
+}
