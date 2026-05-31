@@ -107,12 +107,18 @@ app.get('/api/telegram-feed', async (req, res) => {
 
         // Photos
         let photoUrl = '';
+        const photoUrls: string[] = [];
         const $photoEl = $post.find('.tgme_widget_message_photo_wrap');
         if ($photoEl.length > 0) {
-          const style = $photoEl.attr('style') || '';
-          const match = style.match(/background-image:\s*url\s*\(\s*['"]?([^'"]+)['"]?\s*\)/i);
-          if (match && match[1]) {
-            photoUrl = match[1];
+          $photoEl.each((_, el) => {
+            const style = cheerio.load(el)(el).attr('style') || '';
+            const match = style.match(/background-image:\s*url\s*\(\s*['"]?([^'"]+)['"]?\s*\)/i);
+            if (match && match[1]) {
+              photoUrls.push(match[1]);
+            }
+          });
+          if (photoUrls.length > 0) {
+            photoUrl = photoUrls[0];
           }
         }
 
@@ -216,6 +222,7 @@ app.get('/api/telegram-feed', async (req, res) => {
             timeLabel,
             views,
             photoUrl,
+            photoUrls,
             hasVideo,
             videoUrl,
             videoThumbUrl,
@@ -236,7 +243,12 @@ app.get('/api/telegram-feed', async (req, res) => {
     }
 
     // Fetch Page 1
-    const html1 = await scrapePage(`https://t.me/s/${cleanChannel}`);
+    const beforeVal = req.query.before as string || '';
+    const page1Url = beforeVal 
+      ? `https://t.me/s/${cleanChannel}?before=${beforeVal}`
+      : `https://t.me/s/${cleanChannel}`;
+    
+    const html1 = await scrapePage(page1Url);
     if (!html1) {
       throw new Error(`Telegram returned status error`);
     }
