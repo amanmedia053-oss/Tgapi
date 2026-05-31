@@ -288,6 +288,48 @@ export default function App() {
     };
   };
 
+  const dewaFetch = async (url: string, options: any = {}) => {
+    const cap = (window as any).Capacitor;
+    const hasCapacitorHttp = !!(cap && cap.Plugins && cap.Plugins.CapacitorHttp);
+    
+    if (hasCapacitorHttp) {
+      console.log('[Dewa Fetch] Invoking native CapacitorHttp for URL:', url);
+      try {
+        const nativeResp = await cap.Plugins.CapacitorHttp.get({
+          url: url,
+          headers: options.headers || {},
+          connectTimeout: 15000,
+          readTimeout: 15000
+        });
+        
+        // Emulate standard Fetch response interface
+        const ok = nativeResp.status >= 200 && nativeResp.status < 300;
+        return {
+          ok,
+          status: nativeResp.status,
+          json: async () => {
+            if (typeof nativeResp.data === 'string') {
+              return JSON.parse(nativeResp.data);
+            }
+            return nativeResp.data;
+          },
+          text: async () => {
+            if (typeof nativeResp.data === 'object') {
+              return JSON.stringify(nativeResp.data);
+            }
+            return nativeResp.data || '';
+          }
+        };
+      } catch (nativeErr: any) {
+        console.error('[Dewa Fetch] Native CapacitorHttp failed:', nativeErr);
+        // Fallback to regular fetch if native fails for some edge cases
+      }
+    }
+    
+    console.log('[Dewa Fetch] Using standard Web Fetch for URL:', url);
+    return await fetch(url, options);
+  };
+
   const fetchChannelData = async () => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -315,7 +357,7 @@ export default function App() {
     try {
       console.log(`[Dewa Feed] Attempting fetch via Backend API: ${apiEndpoint}`);
       
-      const response = await fetch(apiEndpoint, {
+      const response = await dewaFetch(apiEndpoint, {
         headers: {
           'Accept': 'application/json'
         }
@@ -344,7 +386,7 @@ export default function App() {
       const directUrl = `https://t.me/s/${targetChannelName}`;
       console.log(`[Dewa Feed] Attempting direct scrape from: ${directUrl}`);
 
-      const response = await fetch(directUrl, {
+      const response = await dewaFetch(directUrl, {
         headers: {
           // Send realistic headers simulating standard mobile safari or modern chrome browser
           'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
