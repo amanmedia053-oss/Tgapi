@@ -57,6 +57,9 @@ export default function App() {
     usingDirectFallback: boolean;
   } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [backendHostInput, setBackendHostInput] = useState(() => {
+    return localStorage.getItem('dewa_custom_backend_host') || 'https://ais-pre-xqyurqglakdlwei24mzfpf-765204071973.us-east1.run.app';
+  });
   
   // States for navigation flows
   const [selectedPost, setSelectedPost] = useState<TelegramPost | null>(null);
@@ -299,9 +302,9 @@ export default function App() {
 
     // Stably resolve target server URLs
     // We point to our exact live cloud deployment where /api/telegram-feed scraping handles Cors + Cheerio beautifully
-    const backendHost = 'https://ais-pre-xqyurqglakdlwei24mzfpf-765204071973.us-east1.run.app';
+    const cleanBackendHost = backendHostInput.trim().replace(/\/+$/, '');
     const apiEndpoint = isMobileApp 
-      ? `${backendHost}/api/telegram-feed?channel=${encodeURIComponent(targetChannelName)}`
+      ? `${cleanBackendHost}/api/telegram-feed?channel=${encodeURIComponent(targetChannelName)}`
       : `/api/telegram-feed?channel=${encodeURIComponent(targetChannelName)}`;
 
     let backendError: string | null = null;
@@ -754,6 +757,30 @@ export default function App() {
                         <li>پروتوکول / ادرس: <span className="font-mono text-slate-400">{diagnostics.protocol} ({diagnostics.clientOrigin})</span></li>
                         <li>د وسیلې کتونکی (User-Agent): <span className="font-mono text-[10px] text-slate-500 break-all">{diagnostics.userAgent}</span></li>
                       </ul>
+                    </div>
+
+                    <div className="border-t border-slate-900 pt-3">
+                      <span className="text-amber-400 font-bold block mb-1 font-sans text-xs">د سرور آدرس ایډیټ کړئ (Backend Host):</span>
+                      <div className="flex gap-1.5 ltr mt-1.5 justify-end">
+                        <button
+                          onClick={() => {
+                            localStorage.setItem('dewa_custom_backend_host', backendHostInput);
+                            alert('د سرور نوی آدرس په بریالیتوب سره ثبت شو؛ اوس د بیا بارولو تڼۍ کېکاږئ!');
+                          }}
+                          style={{ cursor: 'pointer' }}
+                          className="bg-indigo-600 hover:bg-indigo-500 px-3.5 py-2 rounded-lg text-white font-bold text-[10.5px] cursor-pointer shrink-0 transition"
+                        >
+                          ثبتول
+                        </button>
+                        <input
+                          type="text"
+                          value={backendHostInput}
+                          onChange={(e) => setBackendHostInput(e.target.value)}
+                          placeholder="https://your-backend-server.com"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg text-slate-100 px-2 py-1.5 text-[11px] ltr outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <p className="text-[9.5px] text-slate-450 mt-1 rtl text-right leading-relaxed font-sans">تاسو کولی شئ پورته خپل نوی د بیک انډ سرور (Cloud Run یا محلي IP ادرس) ولیکئ او بیا خوندي کړئ.</p>
                     </div>
 
                     <div className="border-t border-slate-900 pt-2.5">
@@ -1507,6 +1534,32 @@ export default function App() {
                             </button>
                           ))}
                         </div>
+                      </div>
+
+                      <div className="space-y-2 border-t border-slate-800/40 pt-3.5 mt-2 text-right">
+                        <label className="text-[10.5px] text-slate-300 font-bold block">د بیک اینډ سرور آدرس (Server API host):</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={backendHostInput}
+                            onChange={(e) => {
+                              setBackendHostInput(e.target.value);
+                            }}
+                            placeholder="https://your-backend-server.com"
+                            className="w-full bg-slate-950 border border-slate-850 rounded-xl text-slate-100 px-3 py-2.5 text-[11px] ltr outline-none focus:border-indigo-500"
+                          />
+                          <button
+                            onClick={() => {
+                              localStorage.setItem('dewa_custom_backend_host', backendHostInput);
+                              alert('د سرور نوی آدرس خوندي شو؛ اوس به اړونده سرور کارول کیږي.');
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className="bg-indigo-600 hover:bg-indigo-550 active:scale-95 text-white rounded-xl px-4 text-xs font-bold transition shrink-0"
+                          >
+                            ثبتول
+                          </button>
+                        </div>
+                        <p className="text-[9.5px] text-slate-400 leading-relaxed mt-1">که د سرور ادرس بدل شوی وي، دلته یې نوی پیوستون آدرس ولیکئ ترڅو په موبایل کې په سمه توګه کار وکړي.</p>
                       </div>
 
                       <div className="p-3 bg-slate-950/40 rounded-xl border border-slate-850 space-y-1.5 text-right mt-1 font-sans">
