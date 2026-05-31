@@ -9,6 +9,21 @@ const PORT = 3000;
 // Enable JSON parser
 app.use(express.json());
 
+// Enable CORS for mobile webview requests (origin: https://localhost, file://, etc.)
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Telegram-Bot-Api-Secret-Token');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  next();
+});
+
 // API: Fetch and scrape latest channel posts (CORS-free for front-end)
 app.get('/api/telegram-feed', async (req, res) => {
   const channel = req.query.channel as string || 'da_mine_dewa';
