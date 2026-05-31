@@ -7,6 +7,7 @@ export interface TelegramPost {
   timeLabel: string;
   views: string;
   photoUrl?: string;
+  photoUrls?: string[];
   hasVideo?: boolean;
   videoUrl?: string;
   videoThumbUrl?: string;

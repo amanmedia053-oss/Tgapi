@@ -43,3 +43,21 @@
   direction: ltr;
   text-align: left;
 }
+
+/* Capacitor Safe Area paddings and utility classes */
+.safe-padding-top {
+  padding-top: env(safe-area-inset-top, 0px) !important;
+}
+.safe-padding-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+}
+.safe-header-pt {
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px)) !important;
+}
+.safe-sidebar-pt {
+  padding-top: calc(2rem + env(safe-area-inset-top, 0px)) !important;
+}
+.safe-modal-pt {
+  padding-top: calc(1.5rem + env(safe-area-inset-top, 0px)) !important;
+}
+
