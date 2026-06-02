@@ -18,6 +18,9 @@ export interface TelegramPost {
   hasFile?: boolean;
   fileName?: string;
   fileSize?: string;
+  audioList?: { url: string; title: string; duration?: string }[];
+  fileList?: { fileName: string; fileSize?: string; url?: string; postUrl?: string }[];
+  videoList?: { url: string; thumbUrl?: string }[];
   reactions?: { emoji: string; count: string }[];
   linkPreview?: {
     siteName?: string;

@@ -24,6 +24,11 @@ import {
   Video,
   FileText,
   Music,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Maximize,
   PlayCircle,
   MoreVertical,
   Menu,
@@ -49,12 +54,163 @@ import {
   Trash2,
   Copy,
   Share2,
-  Images
+  Images,
+  Feather,
+  User,
+  Cpu,
+  Award,
+  Book,
+  Phone,
+  MessageSquare,
+  Rocket,
+  Quote,
+  Award as AwardIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+// Custom elegant PDF Book display and download component
+function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: boolean; tc: any }) {
+  const [showTelegramModal, setShowTelegramModal] = useState(false);
+  const [activeFile, setActiveFile] = useState<{ fileName: string; fileSize?: string; url?: string; postUrl?: string } | null>(null);
+
+  const defaultFileName = post.fileName || post.text?.split('\n')?.[0]?.slice(0, 45) || 'پښتو شعرونه کتاب (PDF)';
+  const defaultFileSize = post.fileSize || 'سند / PDF فایل';
+
+  const files = post.fileList && post.fileList.length > 0 ? post.fileList : [{ fileName: defaultFileName, fileSize: defaultFileSize, postUrl: post.postUrl }];
+
+  return (
+    <div className="space-y-2.5 w-full">
+      {files.map((file, idx) => {
+        const name = file.fileName || `${defaultFileName} (${idx + 1})`;
+        const size = file.fileSize || defaultFileSize;
+        
+        return (
+          <div 
+            key={idx}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveFile(file);
+              setShowTelegramModal(true);
+            }}
+            style={{ cursor: 'pointer' }}
+            className={`p-3 rounded-xl border ${
+              isDark 
+                ? 'bg-slate-950/70 border-slate-800 hover:bg-slate-900/80 shadow-md shadow-black/20' 
+                : 'bg-slate-50 border-slate-205 hover:bg-slate-100/50 shadow-sm'
+            } flex items-center justify-between gap-3 text-right font-sans transition-all duration-300 select-none`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={`w-10 h-12 rounded-lg bg-gradient-to-tr ${tc.gradient} flex flex-col items-center justify-center text-white shrink-0 shadow-md relative overflow-hidden`}>
+                <div className="absolute top-0.5 left-0.5 bg-white/20 px-0.5 py-0.2 rounded text-[7px] font-black uppercase tracking-wider">PDF</div>
+                <Book className="w-4 h-4 text-white mt-1.5" />
+              </div>
+              <div className="text-right min-w-0">
+                <h5 className={`text-[11.5px] font-black ${isDark ? 'text-white' : 'text-slate-900'} line-clamp-1 truncate`}>
+                  {name}
+                </h5>
+                <span className="text-[9.5px] text-slate-400 font-mono mt-0.5 block">
+                  {size}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveFile(file);
+                setShowTelegramModal(true);
+              }}
+              style={{ cursor: 'pointer' }}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black text-white ${tc.bg} ${tc.hoverBg} transition active:scale-95 flex items-center gap-1.5 shrink-0 shadow-sm`}
+            >
+              <Send className="w-3.5 h-3.5 -rotate-12" />
+              <span>ډانلوډ</span>
+            </button>
+          </div>
+        );
+      })}
+
+      <AnimatePresence>
+        {showTelegramModal && activeFile && (
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 pb-12 sm:pb-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowTelegramModal(false);
+              }}
+              className="absolute inset-0 bg-slate-950/75 backdrop-blur-xs"
+            />
+            
+            {/* Dialog Card block */}
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.94, opacity: 0, y: 15 }}
+              onClick={(e) => e.stopPropagation()}
+              className={`relative w-full max-w-sm rounded-[24px] p-5.5 border text-right font-sans shadow-2xl transition-colors duration-200 ${
+                isDark 
+                  ? 'bg-slate-900 border-slate-800 text-slate-100 shadow-slate-950/90' 
+                  : 'bg-white border-slate-200 text-slate-800 shadow-slate-300/40'
+              }`}
+            >
+              <div className="flex flex-col items-center text-center gap-3.5">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isDark ? 'bg-indigo-950/60 text-indigo-400' : 'bg-indigo-50 text-indigo-600'} shrink-0`}>
+                  <Send className="w-5 h-5 -rotate-12 animate-pulse" />
+                </div>
+                
+                <div className="space-y-1">
+                  <h4 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                    د کتاب ډاونلوډ او ترلاسه کول
+                  </h4>
+                  <span className="text-[10px] text-slate-400 font-mono font-medium block">
+                    {(activeFile.fileName || defaultFileName).length > 35 ? (activeFile.fileName || defaultFileName).slice(0, 35) + '...' : (activeFile.fileName || defaultFileName)}
+                  </span>
+                </div>
+
+                <p className={`text-[11.5px] leading-relaxed ${isDark ? 'text-slate-300/90' : 'text-slate-600'}`}>
+                  ګرانه او محترمه کاروونکی! دا کتاب په پوره امانتدارۍ سره زمونږ په رسمي ټلیګرام چینل کې خوندي شوی دی. د دې لپاره چې کتاب په بشپړ ډول ډاونلوډ او خلاص کړئ، مهرباني وکړئ لاندې د <span className="text-indigo-400 font-bold">ټلیګرام ته تلل</span> تڼۍ کلیک کړئ.
+                </p>
+                
+                <div className={`w-full h-[1px] ${isDark ? 'bg-slate-800' : 'bg-slate-100'} my-1`} />
+                
+                <div className="flex flex-row-reverse gap-2.5 w-full">
+                  <a
+                    href={activeFile.postUrl || post.postUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setShowTelegramModal(false)}
+                    style={{ cursor: 'pointer' }}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black text-center text-white ${tc.bg} ${tc.hoverBg} transition active:scale-95 flex items-center justify-center gap-1.5 shadow-md`}
+                  >
+                    <Send className="w-3.5 h-3.5 -rotate-12" />
+                    <span>ټلیګرام ته تلل</span>
+                  </a>
+                  <button
+                    onClick={() => setShowTelegramModal(false)}
+                    style={{ cursor: 'pointer' }}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black text-center border transition ${
+                      isDark 
+                        ? 'bg-slate-850 border-slate-800 text-slate-300 hover:bg-slate-800' 
+                        : 'bg-slate-100 hover:bg-slate-150 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    بندول
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // Custom elegant audio player with progress bar tracking
-function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { url: string; title: string; duration?: string; isDark: boolean; tc: any }) {
+function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { key?: any; url: string; title: string; duration?: string; isDark: boolean; tc: any }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState('0:00');
@@ -163,10 +319,255 @@ function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { url: strin
   );
 }
 
+// Custom elegant video player with progress seek bar tracking and overlay play buttons
+function BeautifulVideoPlayer({ url, poster, isDark, tc }: { url: string; poster?: string; isDark: boolean; tc: any }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState('0:00');
+  const [totalDuration, setTotalDuration] = useState('0:00');
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [showControls, setShowControls] = useState(true);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const controlsTimeoutRef = useRef<any>(null);
+
+  const togglePlay = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!videoRef.current) return;
+    if (isPlaying) {
+      videoRef.current.pause();
+    } else {
+      // Pause other playing videos or audios
+      const allVideos = document.querySelectorAll('video');
+      allVideos.forEach(v => {
+        if (v !== videoRef.current) v.pause();
+      });
+      const allAudios = document.querySelectorAll('audio');
+      allAudios.forEach(a => a.pause());
+      
+      videoRef.current.play();
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (!videoRef.current) return;
+    const cur = videoRef.current.currentTime;
+    const dur = videoRef.current.duration || 0;
+    if (dur > 0) {
+      setProgress((cur / dur) * 100);
+    }
+    setCurrentTime(formatTime(cur));
+  };
+
+  const handleLoadedMetadata = () => {
+    if (!videoRef.current) return;
+    setTotalDuration(formatTime(videoRef.current.duration));
+  };
+
+  const formatTime = (secs: number) => {
+    if (isNaN(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    const dur = videoRef.current.duration || 0;
+    const newTime = (parseFloat(e.target.value) / 100) * dur;
+    videoRef.current.currentTime = newTime;
+    setProgress(parseFloat(e.target.value));
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    const newState = !isMuted;
+    videoRef.current.muted = newState;
+    setIsMuted(newState);
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    const val = parseFloat(e.target.value);
+    videoRef.current.volume = val;
+    setVolume(val);
+    if (val === 0) {
+      videoRef.current.muted = true;
+      setIsMuted(true);
+    } else {
+      videoRef.current.muted = false;
+      setIsMuted(false);
+    }
+  };
+
+  const toggleFullscreen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch(err => {
+        console.error('Fullscreen request failed:', err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  const handleMouseMove = () => {
+    setShowControls(true);
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    controlsTimeoutRef.current = setTimeout(() => {
+      if (isPlaying) {
+        setShowControls(false);
+      }
+    }, 2500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    };
+  }, [isPlaying]);
+
+  return (
+    <div 
+      ref={containerRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => isPlaying && setShowControls(false)}
+      onClick={() => togglePlay()}
+      className="relative w-full max-h-[360px] rounded-2xl overflow-hidden bg-black group shadow-xl border border-slate-500/10 dark:border-slate-800 flex items-center justify-center font-sans select-none"
+    >
+      <video 
+        ref={videoRef}
+        src={url}
+        poster={poster || undefined}
+        className="w-full h-full max-h-[360px] object-contain cursor-pointer"
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={() => setIsPlaying(false)}
+        preload="metadata"
+        playsInline
+      />
+      
+      {/* Big Pause/Play Center Overlay Indicator Icon */}
+      {!isPlaying && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none transition duration-300">
+          <div className="w-12 h-12 rounded-full bg-slate-905/80 backdrop-blur border border-white/20 flex items-center justify-center text-white scale-100 hover:scale-105 active:scale-95 transition cursor-pointer pointer-events-auto shadow-lg">
+            <Play className="w-5 h-5 text-indigo-400 fill-indigo-400 translate-x-0.5" />
+          </div>
+        </div>
+      )}
+
+      {/* Control overlay */}
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className={`absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-2 transition-all duration-300 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
+      >
+        <div className="flex items-center gap-2">
+          <input 
+            type="range"
+            min="0"
+            max="100"
+            step="0.01"
+            value={progress}
+            onChange={handleProgressChange}
+            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-505 hover:h-1.5 transition-all outline-none"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 text-white text-xs">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => togglePlay()}
+              className="hover:scale-110 active:scale-95 transition text-slate-200 hover:text-indigo-400"
+              style={{ cursor: 'pointer' }}
+            >
+              {isPlaying ? (
+                <Pause className="w-3.5 h-3.5 fill-current" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-current" />
+              )}
+            </button>
+
+            <div className="flex items-center gap-1.5 group/vol">
+              <button 
+                onClick={toggleMute}
+                className="hover:scale-110 transition text-slate-200 hover:text-indigo-400"
+                style={{ cursor: 'pointer' }}
+              >
+                {isMuted ? (
+                  <VolumeX className="w-3.5 h-3.5" />
+                ) : (
+                  <Volume2 className="w-3.5 h-3.5" />
+                )}
+              </button>
+              <input 
+                type="range"
+                min="0"
+                max="1"
+                step="0.1"
+                value={isMuted ? 0 : volume}
+                onChange={handleVolumeChange}
+                className="w-0 group-hover/vol:w-14 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-550 transition-all duration-200 outline-none"
+              />
+            </div>
+
+            <span className="text-[9px] font-mono text-slate-350 select-none">
+              {currentTime} / {totalDuration}
+            </span>
+          </div>
+
+          <div>
+            <button 
+              onClick={toggleFullscreen}
+              className="hover:scale-110 active:scale-95 transition text-slate-200 hover:text-indigo-450"
+              style={{ cursor: 'pointer' }}
+            >
+              <Maximize className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const extractUrl = (text: string): string | null => {
   if (!text) return null;
   const match = text.match(/https?:\/\/[^\s]+/);
   return match ? match[0] : null;
+};
+
+const getIsBook = (post: TelegramPost | null): boolean => {
+  if (!post) return false;
+  return !!post.hasFile || 
+         !!(post.fileName && (post.fileName.toLowerCase().endsWith('.pdf') || post.fileName.toLowerCase().includes('pdf') || post.fileName.toLowerCase().includes('کتاب'))) ||
+         !!(post.text && (post.text.toLowerCase().includes('.pdf') || post.text.includes('.epub') || post.text.includes('کتاب کښته') || post.text.includes('کتاب ډانلوډ')));
+};
+
+const getPostTextWithFallback = (post: TelegramPost | null): string => {
+  if (!post) return '';
+  if (post.text && post.text.trim() !== '') {
+    return post.text;
+  }
+  if (getIsBook(post)) {
+    return 'کتاب';
+  }
+  if (post.hasVideo || (post.videoList && post.videoList.length > 0)) {
+    return 'ويډيو';
+  }
+  if (post.photoUrl || (post.photoUrls && post.photoUrls.length > 0)) {
+    return 'انځور';
+  }
+  if (post.hasAudio || (post.audioList && post.audioList.length > 0)) {
+    return 'غږ';
+  }
+  return '';
 };
 
 function CustomLinkPreview({ url, isDark }: { url: string; isDark: boolean }) {
@@ -208,9 +609,24 @@ function CustomLinkPreview({ url, isDark }: { url: string; isDark: boolean }) {
 }
 
 export default function App() {
-  const [feedData, setFeedData] = useState<FeedResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [feedData, setFeedData] = useState<FeedResponse | null>(() => {
+    const cached = localStorage.getItem('dewa_cached_feed_data');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    return !localStorage.getItem('dewa_cached_feed_data');
+  });
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  // State for alert notifications of newly published poetry posts
+  const [newPostNotification, setNewPostNotification] = useState<TelegramPost | null>(null);
   
   // Custom states for diagnosing mobile environments (Capacitor/Native Bridge webview issues)
   const [diagnostics, setDiagnostics] = useState<{
@@ -242,6 +658,9 @@ export default function App() {
   // Pagination states for all posts list (starts with 5, loads 5 more automatically)
   const [visibleFullCount, setVisibleFullCount] = useState(5);
   const [isSettingsPageOpen, setIsSettingsPageOpen] = useState(false);
+  const [isAboutPageOpen, setIsAboutPageOpen] = useState(false);
+  const [isContactPageOpen, setIsContactPageOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   // Optical Zoom states for image lightbox
   const [zoomPhotoUrl, setZoomPhotoUrl] = useState<string | null>(null);
@@ -423,6 +842,50 @@ export default function App() {
   const [contactName, setContactName] = useState('');
   const [contactMsg, setContactMsg] = useState('');
   const [contactSuccess, setContactSuccess] = useState(false);
+  const [contactSending, setContactSending] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
+
+  const handleSendTelegramContact = async () => {
+    if (!contactName.trim() || !contactMsg.trim()) {
+      setContactError('مهرباني وکړئ خپل نوم او پیغام دواړه ولیکئ.');
+      return;
+    }
+
+    setContactSending(true);
+    setContactError(null);
+
+    try {
+      let host = backendHostInput.trim();
+      if (!host) {
+        host = typeof window !== 'undefined' ? window.location.origin : 'https://da-mine-dewa.web.app';
+      }
+      
+      const response = await fetch(`${host}/api/send-contact-message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: contactName,
+          message: contactMsg
+        })
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || 'د پیغام په استولو کې د بګ تېروتنه رامنځه شوه.');
+      }
+
+      setContactSuccess(true);
+      setContactName('');
+      setContactMsg('');
+    } catch (err: any) {
+      console.error(err);
+      setContactError(err.message || 'ستاسو د انټرنیټ اړیکې یا سرور پورې سرچینه بنده ده، مهرباني وکړئ وروسته بیا هڅه وکړئ.');
+    } finally {
+      setContactSending(false);
+    }
+  };
 
   const targetChannelName = 'da_mine_dewa';
 
@@ -497,49 +960,85 @@ export default function App() {
         photoUrl = photoUrls[0];
       }
 
-      // Videos
-      const hasVideo = !!postEl.querySelector('.tgme_widget_message_video, .tgme_widget_message_video_player, video');
-      let videoUrl = '';
-      let videoThumbUrl = '';
-      const videoEl = postEl.querySelector('.tgme_widget_message_video, video');
-      if (videoEl) {
-        videoUrl = videoEl.getAttribute('src') || '';
-      }
-      const videoPlayer = postEl.querySelector('.tgme_widget_message_video_player');
-      if (videoPlayer) {
-        const style = videoPlayer.getAttribute('style') || '';
-        const match = style.match(/background-image:\s*url\s*\(\s*['"]?([^'"]+)['"]?\s*\)/i);
-        if (match && match[1]) {
-          videoThumbUrl = match[1];
+      // Extract multiple Videos if any
+      const videoList: { url: string; thumbUrl?: string }[] = [];
+      const videoElements = postEl.querySelectorAll('.tgme_widget_message_video, .tgme_widget_message_video_player, video');
+      
+      const seenVideoUrls = new Set<string>();
+      videoElements.forEach((videoWrap) => {
+        let vUrl = '';
+        let vThumb = '';
+        if (videoWrap.tagName.toLowerCase() === 'video') {
+          vUrl = videoWrap.getAttribute('src') || '';
+        } else {
+          vUrl = videoWrap.querySelector('video')?.getAttribute('src') || '';
         }
-      }
+        
+        const styleAttr = videoWrap.getAttribute('style') || '';
+        const thumbMatch = styleAttr.match(/background-image:\s*url\s*\(\s*['"]?([^'"]+)['"]?\s*\)/i);
+        if (thumbMatch && thumbMatch[1]) {
+          vThumb = thumbMatch[1];
+        }
+        
+        if (vUrl || vThumb) {
+          const key = vUrl || vThumb;
+          if (!seenVideoUrls.has(key)) {
+            seenVideoUrls.add(key);
+            videoList.push({ url: vUrl, thumbUrl: vThumb });
+          }
+        }
+      });
+      
+      const hasVideo = videoList.length > 0;
+      const videoUrl = videoList[0]?.url || '';
+      const videoThumbUrl = videoList[0]?.thumbUrl || '';
 
-      // Audio / Voice notes
-      const hasAudio = !!postEl.querySelector('.tgme_widget_message_voice, .tgme_widget_message_audio, .tgme_widget_message_audio_player, audio');
-      let audioUrl = '';
-      let audioTitle = 'غږیز فایل / پیغام';
-      let audioDuration = '';
-      const audioNode = postEl.querySelector('audio');
-      if (audioNode) {
-        audioUrl = audioNode.getAttribute('src') || '';
+      // Extract multiple Audios if any
+      const audioList: { url: string; title: string; duration?: string }[] = [];
+      const audioElements = postEl.querySelectorAll('.tgme_widget_message_voice, .tgme_widget_message_audio, .tgme_widget_message_audio_player');
+      
+      audioElements.forEach((audioWrap) => {
+        const audioNode = audioWrap.querySelector('audio');
+        const url = audioNode ? audioNode.getAttribute('src') || '' : '';
+        if (url) {
+          const voiceNameNode = audioWrap.querySelector('.tgme_widget_message_voice_name, .tgme_widget_message_audio_title, .tgme_widget_message_document_title');
+          const title = voiceNameNode?.textContent?.trim() || 'غږیز فایل / پیغام';
+          const voiceDurationNode = audioWrap.querySelector('.tgme_widget_message_voice_duration, .tgme_widget_message_audio_duration, .tgme_widget_message_document_extra');
+          const duration = voiceDurationNode?.textContent?.trim() || '';
+          audioList.push({ url, title, duration });
+        }
+      });
+      
+      if (audioList.length === 0) {
+        postEl.querySelectorAll('audio').forEach((audioNode) => {
+          const url = audioNode.getAttribute('src') || '';
+          if (url) {
+            audioList.push({ url, title: 'غږیز فایل / پیغام', duration: '' });
+          }
+        });
       }
-      const voiceNameNode = postEl.querySelector('.tgme_widget_message_voice_name, .tgme_widget_message_audio_title, .tgme_widget_message_document_title');
-      if (voiceNameNode) {
-        audioTitle = voiceNameNode.textContent?.trim() || 'غږیز فایل';
-      }
-      const voiceDurationNode = postEl.querySelector('.tgme_widget_message_voice_duration, .tgme_widget_message_audio_duration, .tgme_widget_message_document_extra');
-      if (voiceDurationNode) {
-        audioDuration = voiceDurationNode.textContent?.trim() || '';
-      }
+      
+      const hasAudio = audioList.length > 0;
+      const audioUrl = audioList[0]?.url || '';
+      const audioTitle = audioList[0]?.title || 'غږیز فایل / پیغام';
+      const audioDuration = audioList[0]?.duration || '';
 
-      // Files Documents
-      const hasFile = !!postEl.querySelector('.tgme_widget_message_document') && !hasAudio;
-      let fileName = 'سند / فایل';
-      let fileSize = '';
-      if (hasFile) {
-        fileName = postEl.querySelector('.tgme_widget_message_document_title')?.textContent?.trim() || 'سند / فایل';
-        fileSize = postEl.querySelector('.tgme_widget_message_document_extra')?.textContent?.trim() || '';
-      }
+      // Extract multiple Files / Documents (excluding audio docs if they are already audio)
+      const fileList: { fileName: string; fileSize?: string; url?: string; postUrl?: string }[] = [];
+      const documentElements = postEl.querySelectorAll('.tgme_widget_message_document');
+      
+      documentElements.forEach((docNode) => {
+        const isAudioDoc = !!docNode.querySelector('.tgme_widget_message_voice, .tgme_widget_message_audio');
+        if (!isAudioDoc) {
+          const fName = docNode.querySelector('.tgme_widget_message_document_title')?.textContent?.trim() || 'سند / فایل';
+          const fSize = docNode.querySelector('.tgme_widget_message_document_extra')?.textContent?.trim() || '';
+          fileList.push({ fileName: fName, fileSize: fSize, postUrl });
+        }
+      });
+      
+      const hasFile = fileList.length > 0;
+      const fileName = fileList[0]?.fileName || 'سند / فایل';
+      const fileSize = fileList[0]?.fileSize || '';
 
       // Inline Reactions
       const reactions: any[] = [];
@@ -602,9 +1101,12 @@ export default function App() {
           audioUrl,
           audioTitle,
           audioDuration,
+          audioList,
           hasFile,
           fileName,
           fileSize,
+          fileList,
+          videoList,
           reactions,
           linkPreview,
           authorName
@@ -666,6 +1168,29 @@ export default function App() {
     return await fetch(url, options);
   };
 
+  const saveAndNotifyFeedData = (newData: FeedResponse) => {
+    try {
+      const previousCached = localStorage.getItem('dewa_cached_feed_data');
+      if (previousCached) {
+        const prevObj = JSON.parse(previousCached);
+        if (prevObj && prevObj.posts && prevObj.posts.length > 0 && newData.posts && newData.posts.length > 0) {
+          const prevHighestId = Math.max(...prevObj.posts.map((p: any) => parseInt(p.id) || 0));
+          const newHighestId = Math.max(...newData.posts.map((p: any) => parseInt(p.id) || 0));
+          if (newHighestId > prevHighestId) {
+            const latestPost = newData.posts.find((p: any) => (parseInt(p.id) || 0) === newHighestId);
+            if (latestPost && notificationsEnabled) {
+              setNewPostNotification(latestPost);
+            }
+          }
+        }
+      }
+      localStorage.setItem('dewa_cached_feed_data', JSON.stringify(newData));
+    } catch (e) {
+      console.warn('[Dewa Cache] Failed to serialize feed data cache', e);
+    }
+    setFeedData(newData);
+  };
+
   const fetchChannelData = async () => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -708,8 +1233,8 @@ export default function App() {
         throw new Error('سرور هیڅ پوسټونه راوانګیرل نه کړل (خالي ځواب).');
       }
 
-      setFeedData(data);
-      console.log('[Dewa Feed] Data loaded successfully from remote API.');
+      saveAndNotifyFeedData(data);
+      console.log('[Dewa Feed] Data loaded successfully from remote API. (Cached)');
       return; // Success!
     } catch (err: any) {
       console.warn('[Dewa Feed] First request failed. Resorting to direct Telegram Scraper Fallback on-device...', err);
@@ -796,8 +1321,8 @@ export default function App() {
       // Sort posts latest first
       parsedData.posts.sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0));
 
-      setFeedData(parsedData);
-      console.log('[Dewa Feed] Direct HTML scrape succeeded & formatted successfully on-client!');
+      saveAndNotifyFeedData(parsedData);
+      console.log('[Dewa Feed] Direct HTML scrape succeeded & formatted successfully on-client! (Cached)');
     } catch (err: any) {
       console.error('[Dewa Feed] Both methods in the connection pipeline have failed.', err);
       directError = err.message || String(err);
@@ -814,7 +1339,13 @@ export default function App() {
         usingDirectFallback: usingFallback
       });
 
-      setErrorMsg('د خپرونو د راکښته کولو پروسه له ستونزو سره مخ شوه.');
+      // Relaxed offline mode handling: if we already have feedData loaded from local Cache, do not show block error screen
+      const hasCached = localStorage.getItem('dewa_cached_feed_data');
+      if (hasCached) {
+        setErrorMsg(null);
+      } else {
+        setErrorMsg('شبکه وصل نشو');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -841,6 +1372,17 @@ export default function App() {
     fetchChannelData();
   }, []);
 
+  // Web browser tab closing safety caution trigger
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = appLanguage === 'en' ? 'Are you sure you want to exit?' : 'ایا غواړئ چې له اپلیکیشن څخه ووځئ؟';
+      return e.returnValue;
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [appLanguage]);
+
   // Native back button listener integrated beautifully with routing and modals
   useEffect(() => {
     const isCap = !!(window as any).Capacitor;
@@ -856,6 +1398,12 @@ export default function App() {
           setActiveModal(null);
         } else if (isSettingsPageOpen) {
           setIsSettingsPageOpen(false);
+        } else if (isAboutPageOpen) {
+          setIsAboutPageOpen(false);
+        } else if (isContactPageOpen) {
+          setIsContactPageOpen(false);
+          setContactSuccess(false);
+          setContactError(null);
         } else if (isSidebarOpen) {
           setIsSidebarOpen(false);
         } else if (selectedPost) {
@@ -866,7 +1414,10 @@ export default function App() {
           setIsSearchOpen(false);
           setSearchQuery('');
         } else {
-          CapApp.exitApp();
+          const confirmExit = window.confirm(appLanguage === 'en' ? 'Are you sure you want to exit?' : 'ایا غواړئ چې له اپلیکیشن څخه ووځئ؟');
+          if (confirmExit) {
+            CapApp.exitApp();
+          }
         }
       }).then(listener => {
         appListener = listener;
@@ -880,7 +1431,7 @@ export default function App() {
         appListener.remove();
       }
     };
-  }, [zoomPhotoUrl, activeModal, isSettingsPageOpen, isSidebarOpen, selectedPost, isFullFeedOpen, isSearchOpen]);
+  }, [zoomPhotoUrl, activeModal, isSettingsPageOpen, isAboutPageOpen, isContactPageOpen, isSidebarOpen, selectedPost, isFullFeedOpen, isSearchOpen]);
 
   // Dynamic status bar styling implementation matching current primary/theme modes
   useEffect(() => {
@@ -938,11 +1489,45 @@ export default function App() {
   // Slider featured posts (10 posts containing images)
   const featuredPosts = allPosts.filter(p => !!p.photoUrl || p.hasVideo).slice(0, 10);
 
-  // Home Page compact items (exactly 30 posts max)
-  const homePosts = allPosts.slice(0, 30);
+  // Home Page compact items filtered by category (exactly 30 posts max)
+  const homePosts = React.useMemo(() => {
+    if (selectedCategory === 'videos') {
+      return allPosts.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
+    }
+    if (selectedCategory === 'images') {
+      return allPosts.filter(p => !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0));
+    }
+    if (selectedCategory === 'audio') {
+      return allPosts.filter(p => !!p.hasAudio || !!p.audioUrl);
+    }
+    if (selectedCategory === 'pdf') {
+      return allPosts.filter(p => getIsBook(p));
+    }
+    if (selectedCategory === 'writings') {
+      return allPosts.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
+    }
+    return allPosts;
+  }, [allPosts, selectedCategory]).slice(0, 30);
 
-  // Full Feed Posts array (all posts loaded and none left out!)
-  const fullFeedPosts = allPosts;
+  // Full Feed Posts array (all posts loaded dynamically with matching category!)
+  const fullFeedPosts = React.useMemo(() => {
+    if (selectedCategory === 'videos') {
+      return allPosts.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
+    }
+    if (selectedCategory === 'images') {
+      return allPosts.filter(p => !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0));
+    }
+    if (selectedCategory === 'audio') {
+      return allPosts.filter(p => !!p.hasAudio || !!p.audioUrl);
+    }
+    if (selectedCategory === 'pdf') {
+      return allPosts.filter(p => getIsBook(p));
+    }
+    if (selectedCategory === 'writings') {
+      return allPosts.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
+    }
+    return allPosts;
+  }, [allPosts, selectedCategory]);
 
   // Next/prev for slider
   const nextFeatured = () => {
@@ -953,6 +1538,30 @@ export default function App() {
   const prevFeatured = () => {
     if (featuredPosts.length === 0) return;
     setFeaturedIndex((prev) => (prev - 1 + featuredPosts.length) % featuredPosts.length);
+  };
+
+  // Swipe mechanics for Featured Slider
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const minSwipeDistance = 50;
+    if (distance > minSwipeDistance) {
+      nextFeatured();
+    } else if (distance < -minSwipeDistance) {
+      prevFeatured();
+    }
   };
 
   useEffect(() => {
@@ -1216,33 +1825,37 @@ export default function App() {
           <button
             onClick={() => setIsSidebarOpen(true)}
             style={{ cursor: 'pointer' }}
-            className="p-2 bg-slate-800 hover:bg-slate-755 rounded-xl text-slate-200 hover:text-white transition active:scale-95 shrink-0"
+            className={`p-2 rounded-xl transition active:scale-95 shrink-0 ${isDark ? 'bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 hover:text-black'}`}
             title="تبصره او مینو"
           >
             <Menu className="w-5 h-5" />
           </button>
           
           <div className="min-w-0 text-right">
-            <h1 className="text-sm sm:text-base font-bold text-white truncate leading-tight">
-              {selectedPost ? 'د پوسټ لوستل' : isSettingsPageOpen ? 'د اپلیکیشن تنظیمات' : isSearchOpen ? 'په پوسټونو کې پلټنه' : isFullFeedOpen ? 'ټول آرشیف پوسټونه' : (feedData?.channelInfo?.title || 'د مینې ډېوه')}
+            <h1 className={`text-sm sm:text-base font-bold truncate leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              {selectedPost ? 'د پوسټ لوستل' : isAboutPageOpen ? 'زمونږ په اړه معلومات' : isContactPageOpen ? 'زمونږ سره اړیکه' : isSettingsPageOpen ? 'د اپلیکیشن تنظیمات' : isSearchOpen ? 'په پوسټونو کې پلټنه' : isFullFeedOpen ? 'ټول آرشیف پوسټونه' : (feedData?.channelInfo?.title || 'پښتو شعرونه')}
             </h1>
           </div>
         </div>
 
         {/* Left side: Back navigation actions and the Action popup */}
         <div className="flex items-center gap-2 relative">
-          {(selectedPost || isSettingsPageOpen || isFullFeedOpen || isSearchOpen) && (
+          {(selectedPost || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen) && (
             <button
               onClick={() => {
                 setSelectedPost(null);
                 setIsSettingsPageOpen(false);
+                setIsAboutPageOpen(false);
+                setIsContactPageOpen(false);
                 setIsFullFeedOpen(false);
                 setIsSearchOpen(false);
                 setSearchQuery('');
+                setContactSuccess(false);
+                setContactError(null);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               style={{ cursor: 'pointer' }}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 rounded-lg text-xs font-bold text-white transition flex items-center gap-1.5 shrink-0"
+              className={`px-3 py-1.5 ${tc.bg} ${tc.hoverBg} active:scale-95 rounded-lg text-xs font-bold text-white transition flex items-center gap-1.5 shrink-0`}
             >
               <ArrowRight className="w-3.5 h-3.5" />
               <span>کورپاڼه</span>
@@ -1254,7 +1867,7 @@ export default function App() {
             onClick={() => setIsPopupOpen(!isPopupOpen)}
             style={{ cursor: 'pointer' }}
             className={`p-2 rounded-xl transition duration-200 ${
-              isPopupOpen ? 'bg-indigo-600 text-white' : 'bg-slate-800 hover:bg-slate-750 text-slate-300'
+              isPopupOpen ? 'bg-indigo-600 text-white' : (isDark ? 'bg-slate-800 hover:bg-slate-750 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-800')
             }`}
             title="پلټنه او تازه کول"
           >
@@ -1339,21 +1952,13 @@ export default function App() {
               {/* Sidebar Content (عکس ➔ نوم ➔ بټنې) */}
               <div className="flex-1 overflow-y-auto p-5 space-y-5 text-right">
                 
-                {/* 1. د چینل عکس او نوم */}
-                <div className={`flex flex-col items-center text-center ${subCardBg} rounded-2xl p-4 border`}>
-                  {/* د چینل عکس */}
-                  <img
-                    src={feedData?.channelInfo?.avatarUrl || 'https://telegram.org/img/t_logo.png'}
-                    referrerPolicy="no-referrer"
-                    className={`w-16 h-16 rounded-full border ${tc.border}/20 object-cover shadow-lg`}
-                    alt="Channel avatar"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://telegram.org/img/t_logo.png';
-                    }}
-                  />
-                  {/* د چینل نوم */}
-                  <h4 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'} mt-3 leading-tight font-sans`}>
-                    {feedData?.channelInfo?.title || 'د مینې ډېوه'}
+                {/* 1. د اپلیکیشن رسمي بڼه (بڼکه او پښتو شعرونه) */}
+                <div className={`flex flex-col items-center text-center ${subCardBg} rounded-2xl p-5 border gap-2.5 shadow-sm`}>
+                  <div className={`w-14 h-14 rounded-full ${isDark ? 'bg-indigo-550/10' : 'bg-indigo-600/10'} flex items-center justify-center border border-indigo-500/30`}>
+                    <Feather className={`w-7 h-7 ${tc.text}`} />
+                  </div>
+                  <h4 className={`text-xs font-black ${isDark ? 'text-white' : 'text-slate-900'} leading-tight font-sans`}>
+                    {appLanguage === 'en' ? 'Pashto Poetry' : 'پښتو شعرونه'}
                   </h4>
                 </div>
 
@@ -1395,7 +2000,11 @@ export default function App() {
                   <button
                     onClick={() => {
                       setIsSidebarOpen(false);
-                      setActiveModal('about');
+                      setIsAboutPageOpen(true);
+                      setIsSettingsPageOpen(false);
+                      setIsFullFeedOpen(false);
+                      setIsSearchOpen(false);
+                      setSelectedPost(null);
                     }}
                     style={{ cursor: 'pointer' }}
                     className={`w-full text-right px-4 py-3 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
@@ -1408,8 +2017,16 @@ export default function App() {
                   <button
                     onClick={() => {
                       setIsSidebarOpen(false);
+                      setSelectedPost(null);
+                      setIsSettingsPageOpen(false);
+                      setIsAboutPageOpen(false);
+                      setIsFullFeedOpen(false);
+                      setIsSearchOpen(false);
+                      setSearchQuery('');
                       setContactSuccess(false);
-                      setActiveModal('contact');
+                      setContactError(null);
+                      setIsContactPageOpen(true);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     style={{ cursor: 'pointer' }}
                     className={`w-full text-right px-4 py-3 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
@@ -1430,18 +2047,20 @@ export default function App() {
                     <span>د ټلیګرام چینل</span>
                   </a>
 
-                  {/* ۶. نوي اپلیکیشنونه */}
-                  <button
+                  {/* ۶. نور اپليکيشنونه */}
+                  <a
+                    href="https://t.me/obaidapp"
+                    target="_blank"
+                    rel="noreferrer"
                     onClick={() => {
                       setIsSidebarOpen(false);
-                      setActiveModal('apps');
                     }}
                     style={{ cursor: 'pointer' }}
                     className={`w-full text-right px-4 py-2.5 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
                   >
                     <Grid className={`w-4 h-4 ${tc.text}`} />
-                    <span>نوي اپلیکیشنونه</span>
-                  </button>
+                    <span>نور اپليکيشنونه</span>
+                  </a>
                 </div>
               </div>
             </motion.div>
@@ -1454,23 +2073,44 @@ export default function App() {
         
         {/* Loader condition */}
         {isLoading && !feedData ? (
-          <div className="py-24 text-center flex flex-col items-center gap-3">
-            <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
-            <p className="text-sm text-slate-400 font-medium">پوسټونه بار کیږي...</p>
+          <div className="space-y-5 w-full font-sans">
+            {[1, 2, 3].map((n) => (
+              <div 
+                key={n} 
+                className={`p-5 rounded-3xl border ${isDark ? 'bg-slate-900/35 border-slate-850/40' : 'bg-white border-slate-100 shadow-sm'} animate-pulse flex flex-col gap-3.5 text-right`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-800/40 dark:bg-slate-700/30 shrink-0" />
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="h-3 w-28 bg-slate-800/50 dark:bg-slate-700/40 rounded-full" />
+                    <div className="h-2 w-14 bg-slate-850/40 dark:bg-slate-800/30 rounded-full" />
+                  </div>
+                </div>
+                <div className="h-44 w-full bg-slate-800/40 dark:bg-slate-700/30 rounded-2xl" />
+                <div className="space-y-2">
+                  <div className="h-3.5 w-full bg-slate-800/40 dark:bg-slate-700/30 rounded-full" />
+                  <div className="h-3.5 w-11/12 bg-slate-800/40 dark:bg-slate-700/30 rounded-full" />
+                  <div className="h-3 w-3/4 bg-slate-805/35 dark:bg-slate-705/25 rounded-full" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : errorMsg ? (
-          <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-6 text-center text-slate-300 space-y-4 text-right flex flex-col items-center">
+          <div className="bg-rose-550/15 border border-rose-500/25 rounded-2xl p-6 text-center text-slate-300 space-y-4 text-right flex flex-col items-center shadow-lg">
             <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
             <div className="text-center w-full">
-              <h3 className="text-sm font-bold text-white">اتصال ټینګ نه شو</h3>
-              <p className="text-xs text-slate-400 mt-1">مهرباني وکړئ خپله انټرنیټي شبکه وګورئ او بیا هڅه وکړئ.</p>
+              <h3 className="text-sm font-bold text-white">شبکه وصل نشو</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                {appLanguage === 'en' ? 'Network could not connect. Please check your internet connection.' : 'شبکه وصل نشو. مهرباني وکړئ د خپل انټرنیټ اړیکه وګورئ او بیا هڅه وکړئ.'}
+              </p>
             </div>
             
             <button
               onClick={fetchChannelData}
-              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold cursor-pointer transition shadow-lg shadow-rose-600/20"
+              style={{ cursor: 'pointer' }}
+              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-550 active:scale-95 text-white bg-red shadow-lg shadow-rose-600/30 rounded-xl text-xs font-semibold cursor-pointer transition shrink-0"
             >
-              کښته کول او بیا نښلول
+              {appLanguage === 'en' ? 'Retry Connection' : 'بیا پیوستون هڅه وکړئ'}
             </button>
 
             {diagnostics && (
@@ -1556,29 +2196,44 @@ export default function App() {
           /* ==========================================================
              C. READING PAGE FOR SINGLE POST (د لوستلو صفحه)
              ========================================================== */
-          <article className="bg-slate-900 border border-slate-800/85 rounded-2xl overflow-hidden shadow-2xl flex flex-col animate-fade-in">
+          <article className={`${isDark ? 'bg-slate-900/60 border-slate-800/85' : 'bg-white border-slate-200 shadow-xl'} rounded-2xl overflow-hidden border flex flex-col animate-fade-in`}>
             {/* Header / Back action */}
-            <div className="px-4 py-3 bg-slate-950/80 border-b border-slate-850 flex items-center justify-between">
+            <div className={`px-4 py-3 ${isDark ? 'bg-slate-950/80 border-slate-850' : 'bg-slate-105 border-slate-200'} border-b flex items-center justify-between`}>
               <button
                 onClick={() => setSelectedPost(null)}
                 style={{ cursor: 'pointer' }}
-                className="text-xs text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1"
+                className={`text-xs ${tc.text} font-bold flex items-center gap-1`}
               >
                 <ArrowRight className="w-3.5 h-3.5" />
                 <span>شاته کورپاڼې ته</span>
               </button>
-              <span className="text-[10px] font-mono text-slate-500 font-semibold">پوسټ #{selectedPost.id}</span>
+              <span className={`text-[10px] font-mono ${isDark ? 'text-slate-500' : 'text-slate-600'} font-semibold`}>پوسټ #{selectedPost.id}</span>
             </div>
 
             {/* Media on Top (عکس یا ویډیو وي) */}
-            {selectedPost.hasVideo && selectedPost.videoUrl ? (
-              <div className="relative bg-black flex flex-col items-center border-b border-slate-850 w-full p-1">
-                <video
-                  src={selectedPost.videoUrl || null}
-                  controls
-                  preload="metadata"
-                  poster={(selectedPost.videoThumbUrl || selectedPost.photoUrl) || null}
-                  className="w-full max-h-[380px] object-contain rounded-lg"
+            {selectedPost.videoList && selectedPost.videoList.length > 0 ? (
+              <div className="flex flex-col gap-3.5 w-full border-b border-slate-850 p-3 bg-black">
+                {selectedPost.videoList.map((videoItem, idx) => (
+                  <div key={idx} className="relative bg-black flex flex-col items-center w-full p-1 border border-slate-805 rounded-xl overflow-hidden max-w-md mx-auto">
+                    <BeautifulVideoPlayer
+                      url={videoItem.url}
+                      poster={videoItem.thumbUrl || selectedPost.photoUrl || undefined}
+                      isDark={isDark}
+                      tc={tc}
+                    />
+                    {selectedPost.videoList!.length > 1 && (
+                      <span className="text-[10px] text-slate-400 mt-1.5 font-mono select-none">د ويډيو فایل #{idx + 1}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : selectedPost.hasVideo && selectedPost.videoUrl ? (
+              <div className="relative bg-black flex flex-col items-center border-b border-slate-850 w-full p-3">
+                <BeautifulVideoPlayer
+                  url={selectedPost.videoUrl}
+                  poster={selectedPost.videoThumbUrl || selectedPost.photoUrl || undefined}
+                  isDark={isDark}
+                  tc={tc}
                 />
               </div>
             ) : (selectedPost.photoUrls && selectedPost.photoUrls.length > 1) ? (
@@ -1669,18 +2324,29 @@ export default function App() {
 
               {selectedPost.htmlText ? (
                 <div
-                  className="text-slate-200 text-[14.5px] leading-relaxed space-y-2.5 font-sans break-words telegram-styles text-right"
+                  className={`${isDark ? 'text-slate-200' : 'text-slate-800 font-medium'} text-[14.5px] leading-relaxed space-y-2.5 font-sans break-words telegram-styles text-right`}
                   dangerouslySetInnerHTML={{ __html: selectedPost.htmlText }}
                 />
               ) : (
-                <p className="text-slate-200 text-[14.5px] leading-relaxed font-sans break-words whitespace-pre-wrap text-right">
+                <p className={`${isDark ? 'text-slate-200' : 'text-slate-800 font-medium'} text-[14.5px] leading-relaxed font-sans break-words whitespace-pre-wrap text-right`}>
                   {selectedPost.text}
                 </p>
               )}
 
               {/* Audio player in detailed post view (if any) */}
-              {selectedPost.hasAudio && selectedPost.audioUrl && (
+              {selectedPost.audioList && selectedPost.audioList.length > 0 ? (
+                <div className="space-y-3">
+                  {selectedPost.audioList.map((audioItem, idx) => (
+                    <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                  ))}
+                </div>
+              ) : selectedPost.hasAudio && selectedPost.audioUrl ? (
                 <BeautifulAudioPlayer url={selectedPost.audioUrl} title={selectedPost.audioTitle || 'غږیز فایل خپرونه'} duration={selectedPost.audioDuration} isDark={isDark} tc={tc} />
+              ) : null}
+
+              {/* Book / PDF downloader in detailed post view (if any) */}
+              {getIsBook(selectedPost) && (
+                <CustomBookDownload post={selectedPost} isDark={isDark} tc={tc} />
               )}
 
               {/* Link Preview (if any) */}
@@ -1785,26 +2451,282 @@ export default function App() {
               </span>
             </div>
           </article>
+        ) : isAboutPageOpen ? (
+          /* ==========================================================
+             D. ABOUT ME SCREEN (د موږ په اړه ځانګړې صفحه)
+             ========================================================== */
+          <div className="space-y-5 animate-fade-in text-right">
+            <div className={`p-5 sm:p-6 rounded-3xl ${cardBg} border border-slate-500/10 dark:border-slate-800 overflow-hidden shadow-xl text-right`}>
+              <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/20' : 'bg-slate-100/90 border-slate-200'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5`}>
+                <button
+                  onClick={() => setIsAboutPageOpen(false)}
+                  style={{ cursor: 'pointer' }}
+                  className={`px-3 py-1.5 rounded-lg transition text-xs font-bold ${isDark ? 'text-slate-400 bg-slate-800 hover:text-white' : 'text-slate-700 bg-slate-200 hover:bg-slate-300'} flex items-center gap-1 shrink-0`}
+                  title="شاته"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  <span>کورپاڼه</span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <Info className={`w-4 h-4 ${tc.text}`} />
+                  <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
+                    پرودوګرامر/پلټونکي په اړه معلومات
+                  </span>
+                </div>
+              </div>
+
+              {/* High-quality profile header card */}
+              <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-900 p-6 flex flex-col items-center text-center gap-4 shadow-md">
+                <div className={`absolute inset-0 bg-gradient-to-r ${tc.gradient} opacity-20`} />
+                <div className="relative w-20 h-20 rounded-full border-2 border-slate-700/80 p-1 flex items-center justify-center bg-slate-950 overflow-hidden shadow-inner shrink-0">
+                  <div className={`w-full h-full rounded-full bg-gradient-to-tr ${tc.gradient} flex items-center justify-center`}>
+                    <User className="w-10 h-10 text-white" />
+                  </div>
+                </div>
+                <div className="relative z-10 w-full">
+                  <h3 className="text-base font-black text-white font-sans tracking-tight">عبیدالله غفاري (Obaidullah Ghaffari)</h3>
+                  <p className="text-[10px] text-slate-400 font-medium font-sans mt-0.5">طالب العلم • AI Developer • Web Enthusiast</p>
+                </div>
+
+                {/* Direct quick action contacts on about page */}
+                <div className="relative z-10 flex flex-wrap items-center justify-center gap-2 w-full mt-10">
+                  <a
+                    href="https://ghafoori.me"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-1.5 px-3 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-lg text-[9.5px] font-bold transition flex items-center gap-1"
+                  >
+                    <Globe className="w-3 h-3 text-indigo-400" />
+                    <span>ghafoori.me</span>
+                  </a>
+                  <a
+                    href="mailto:contact@ghafoori.me"
+                    className="py-1.5 px-3 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-lg text-[9.5px] font-bold transition flex items-center gap-1"
+                  >
+                    <Mail className="w-3 h-3 text-rose-400" />
+                    <span>contact@ghafoori.me</span>
+                  </a>
+                  <a
+                    href="https://wa.me/93700005555"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-1.5 px-3 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-lg text-[9.5px] font-bold transition flex items-center gap-1"
+                  >
+                    <MessageSquare className="w-3 h-3 text-emerald-400" />
+                    <span>WhatsApp</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Developer full characteristics and biographies */}
+              <div className="space-y-4 mt-5 font-sans text-right">
+                <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
+                  <div className="flex items-center gap-1.5 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                    <span className="text-xs">زما په اړه لنډ معلومات</span>
+                    <User className="w-4 h-4" />
+                  </div>
+                  <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                    زه <strong>عبیدالله غفاري</strong> یم، د غیور او مېلمه پال لوګر ولایت اوسېدونکی او د نننۍ جهادي مدرسې د اوومې درجې طالب العلم. د ټکنالوژۍ، نوې او مدرنې بڼې، مصنوعي ځیرکتیا او کلتوري ارزښتونو سره توده مینه لرم او پرمختګ ته ژمن یم.
+                  </p>
+                </div>
+
+                <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
+                  <div className="flex items-center gap-1.5 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                    <span className="text-xs">زما لوی هدف او موخه</span>
+                    <Rocket className="w-4 h-4" />
+                  </div>
+                  <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                     دین ته رښتینی خدمت کول، ګران هېواد افغانستان ته پرمختللی اسهال ورکول، او د پښتو خوږې ژبې کلتور او ملي شعور ساتل زمونږ د سفر تر ټولو مهم اهداف دي ترڅو ټولنې ته په ګډه بېساري خدمتونه وړاندې کړو.
+                  </p>
+                </div>
+
+                <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
+                  <div className="flex items-center gap-1.5 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                    <span className="text-xs">ورځنۍ منظمې بوختیاوې</span>
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                  <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                    مطالعه او پوهنلیک لوستل، دیني زده کړې، په انټرنیټي او افلاین ویبونو کې نوي کارونه جوړول، کلتوري هلې ځلې کول او د هر وړ کلام خپرول.
+                  </p>
+                </div>
+
+                <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
+                  <div className="flex items-center gap-1.5 text-teal-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                    <span className="text-xs">د اپلیکیشن کلتوري اسانتیاوې</span>
+                    <Check className="w-4 h-4" />
+                  </div>
+                  <ul className="space-y-2 text-[11px] text-slate-400 font-sans mt-2 pr-1 leading-relaxed">
+                    <li className="flex items-start gap-2 justify-start">
+                      <Check className={`w-3.5 h-3.5 ${tc.text} mt-0.5 shrink-0`} />
+                      <span>د انټرنیټ غوښتنو پرمختللی شیمر لوډر اغېزه د چټک غبرګون لپاره.</span>
+                    </li>
+                    <li className="flex items-start gap-2 justify-start">
+                      <Check className={`w-3.5 h-3.5 ${tc.text} mt-0.5 shrink-0`} />
+                      <span>د کورپاڼې د غوره فیچر سلایډر کنټرول د غاړې تڼیو او پرمختللي لاس اشارې وسيلې (Swipe) په واسطه.</span>
+                    </li>
+                    <li className="flex items-start gap-2 justify-start">
+                      <Check className={`w-3.5 h-3.5 ${tc.text} mt-0.5 shrink-0`} />
+                      <span>بشپړ کنټرول مینو او د روښانه او تیاره بڼو پرمختللی تطبیق په پښتني رنګونو کې.</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Bottom Developer Credits Card */}
+              <div className={`mt-6 p-4 rounded-2xl ${subCardBg} border border-slate-500/5 flex flex-col gap-2.5 text-right font-sans`}>
+                <span className={`text-[9.5px] ${tc.text} font-black uppercase tracking-wider block`}>د اړیکو بله پاڼه او کلتوري ډالۍ</span>
+                <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-655'} leading-relaxed`}>
+                  تاسو کولی شئ د هر ډول رغنده وړاندیز، نوښت او خپلو شعرونو د کتنې او اضافه کولو د بډاینې لپاره لاندې رسمي لینک سره اړیکه ونیسئ.
+                </p>
+                <a
+                  href="mailto:poetry.pashto@dewa-design.one"
+                  className={`inline-flex items-center gap-1.5 self-start text-[10px] font-black ${tc.text} hover:underline mt-1`}
+                >
+                  <span>poetry.pashto@dewa-design.one</span>
+                  <Mail className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+          </div>
+        ) : isContactPageOpen ? (
+          /* ==========================================================
+             D2. CONTACT ME SCREEN (د اړیکې بېله او ځانګړې نوې صفحه الوتکې سره)
+             ========================================================== */
+          <div className="space-y-5 animate-fade-in text-right">
+            <div className={`p-5 sm:p-6 rounded-3xl ${cardBg} border border-slate-500/10 dark:border-slate-800 overflow-hidden shadow-xl text-right`}>
+              <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/20' : 'bg-slate-100/90 border-slate-200'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5`}>
+                <button
+                  onClick={() => setIsContactPageOpen(false)}
+                  style={{ cursor: 'pointer' }}
+                  className={`px-3 py-1.5 rounded-lg transition text-xs font-bold ${isDark ? 'text-slate-400 bg-slate-800 hover:text-white' : 'text-slate-700 bg-slate-200 hover:bg-slate-300'} flex items-center gap-1 shrink-0`}
+                  title="شاته"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  <span>کورپاڼه</span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <Mail className={`w-4 h-4 ${tc.text}`} />
+                  <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
+                    رابطه او د ټلیګرام روباټ له لارې پیغام لیږل
+                  </span>
+                </div>
+              </div>
+
+              {contactSuccess ? (
+                <div className="text-center py-10 space-y-4 max-w-md mx-auto">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto shadow-md">
+                    <Check className="w-8 h-8 animate-bounce" />
+                  </div>
+                  <h4 className="text-sm font-black text-emerald-500 dark:text-emerald-400">ستاسو پیغام واستول شو!</h4>
+                  <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                    ستاسو لیکنه د ټلیګرام د اډمین روباټ ته په مستقیم او خوندي ډول واستول شوه. اډمین به ډیر ژر ستاسو پېغام ولولي او ځواب کړي. مننه له همکارۍ مو!
+                  </p>
+                  <button
+                    onClick={() => {
+                      setContactSuccess(false);
+                      setContactName('');
+                      setContactMsg('');
+                      setContactError(null);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className={`px-8 py-3 ${tc.bg} ${tc.hoverBg} text-white rounded-xl text-xs font-black transition shadow-lg inline-flex items-center gap-1.5`}
+                  >
+                    <span>بل پیغام لیږل</span>
+                    <Mail className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-5 max-w-lg mx-auto">
+                  <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                    خپل نوم او د پېغام متن ولیکئ ترڅو په مستقیم او اتومات ډول زمونږ د ټلیګرام روباټ اډمین ته د لید لپاره ورسیږي:
+                  </p>
+
+                  {contactError && (
+                    <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 text-xs text-rose-400 leading-relaxed font-sans space-y-2">
+                      <p className="font-bold flex items-center gap-1.5 justify-start">
+                        <span>⚠️ د پیوستون ستونزه:</span>
+                      </p>
+                      <p>{contactError}</p>
+                      {(contactError.includes('TELEGRAM_BOT_TOKEN') || contactError.includes('configuration_missing')) && (
+                        <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800/10 dark:border-slate-800/40 text-[10.5px] text-slate-400 space-y-1.5 mt-2">
+                          <p className="font-bold text-slate-300">💡 د تنظیماتو ساده لارښود:</p>
+                          <p>۱. په **Google AI Studio** کې د خپلو Secrets یا پاڼې د تنظیماتو برخې ته لاړ شئ.</p>
+                          <p>۲. د اوپن سورس بوټ پرمخ بیولو لپاره دا دوه چاپیریالي متغییرونه (Secrets) زیات کړئ:</p>
+                          <p className="font-mono bg-slate-900 px-1.5 py-0.5 rounded text-indigo-405 font-semibold text-center block">TELEGRAM_BOT_TOKEN</p>
+                          <p className="font-mono bg-slate-900 px-1.5 py-0.5 rounded text-indigo-405 font-semibold text-center block">TELEGRAM_ADMIN_CHAT_ID</p>
+                          <p>۳. د ارزښتونو تر ثبتولو وروسته اپلیکیشن تنظیم کړئ ترڅو پیغامونه واستول شي.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-black block`}>
+                      ستاسو نوم یا پېژندنه:
+                    </label>
+                    <input
+                      type="text"
+                      value={contactName}
+                      disabled={contactSending}
+                      onChange={(e) => setContactName(e.target.value)}
+                      placeholder="دلته د ځان پېژندنه ولیکئ..."
+                      className={`w-full focus:ring-1 focus:ring-indigo-500 rounded-xl px-4 py-3 text-xs font-semibold outline-none transition text-right font-sans ${isDark ? 'bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-650' : 'bg-slate-100 border border-slate-205 text-slate-900 placeholder-slate-500'}`}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-black block`}>
+                      ستاسو د پيغام متن:
+                    </label>
+                    <textarea
+                      value={contactMsg}
+                      disabled={contactSending}
+                      onChange={(e) => setContactMsg(e.target.value)}
+                      placeholder="خپل پیغام یا وړاندیز دلته ولیکئ..."
+                      rows={6}
+                      className={`w-full focus:ring-1 focus:ring-indigo-500 rounded-xl px-4 py-3 text-xs font-semibold outline-none transition text-right font-sans resize-none ${isDark ? 'bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-650' : 'bg-slate-100 border border-slate-205 text-slate-900 placeholder-slate-500'}`}
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleSendTelegramContact}
+                    disabled={contactSending}
+                    style={{ cursor: contactSending ? 'not-allowed' : 'pointer' }}
+                    className={`w-full py-3.5 ${tc.bg} ${tc.hoverBg} text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50`}
+                  >
+                    {contactSending ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>د لېږلو په حال کې دی...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4 -rotate-12" />
+                        <span>پیغام واستوه په مستقیم ډول</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         ) : isSettingsPageOpen ? (
           /* ==========================================================
              E. SETTINGS SCREEN (د ترتیباتو او تنظیماتو بېله صفحه)
              ========================================================== */
           <div className="space-y-5 animate-fade-in text-right">
             <div className={`p-5 sm:p-6 rounded-3xl ${cardBg} border border-slate-800/10 dark:border-slate-800 overflow-hidden shadow-xl text-right`}>
-              <div className="px-5 py-4 bg-slate-950/70 border-b border-slate-800/20 flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5">
+              <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/20' : 'bg-slate-100/90 border-slate-200'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5`}>
                 <button
                   onClick={() => setIsSettingsPageOpen(false)}
                   style={{ cursor: 'pointer' }}
-                  className={`px-3 py-1.5 rounded-lg transition text-xs font-bold ${isDark ? 'text-slate-400 bg-slate-800 hover:text-white' : 'text-slate-700 bg-slate-105 hover:bg-slate-200'} flex items-center gap-1 shrink-0`}
-                  title="تړل"
+                  className={`px-3 py-1.5 rounded-lg transition text-xs font-bold ${isDark ? 'text-slate-400 bg-slate-800 hover:text-white' : 'text-slate-700 bg-slate-200 hover:bg-slate-300'} flex items-center gap-1 shrink-0`}
+                  title="شاته"
                 >
                   <ArrowRight className="w-4 h-4" />
-                  <span>د ترتیباتو وتل</span>
+                  <span>کورپاڼه</span>
                 </button>
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
-                    د اپلیکیشن تنظیمات (مستقیم ترتیبات)
-                  </span>
                   <Settings className="w-4 h-4 text-indigo-400" />
                 </div>
               </div>
@@ -1943,42 +2865,10 @@ export default function App() {
                           {sz === 'sm' && 'وړوکي'}
                           {sz === 'base' && 'منځنی'}
                           {sz === 'lg' && 'لوی'}
-                          {sz === 'xl' && 'بزرګ'}
+                          {sz === 'xl' && 'ډېر لوی'}
                         </span>
                       </button>
                     ))}
-                  </div>
-                </div>
-
-                {/* 5. APP LANGUAGE */}
-                <div className="space-y-2.5 border-t border-slate-500/10 pt-4">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-bold flex items-center justify-start gap-1 px-1`}>
-                    <Globe className={`w-3.5 h-3.5 ${tc.text}`} />
-                    <span>{tr.language}</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setAppLanguage('ps')}
-                      style={{ cursor: 'pointer' }}
-                      className={`py-2.5 px-3 rounded-xl border text-[11px] font-bold transition ${
-                        appLanguage === 'ps'
-                          ? `${tc.bg} ${tc.border} text-white shadow-md`
-                          : `${isDark ? 'bg-slate-950/60 border-slate-850 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 border-slate-205 text-slate-700 hover:bg-slate-150'}`
-                      }`}
-                    >
-                      <span>پښتو (Pashto)</span>
-                    </button>
-                    <button
-                      onClick={() => setAppLanguage('en')}
-                      style={{ cursor: 'pointer' }}
-                      className={`py-2.5 px-3 rounded-xl border text-[11px] font-bold transition ${
-                        appLanguage === 'en'
-                          ? `${tc.bg} ${tc.border} text-white shadow-md`
-                          : `${isDark ? 'bg-slate-950/60 border-slate-850 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 border-slate-205 text-slate-700 hover:bg-slate-150'}`
-                      }`}
-                    >
-                      <span>English</span>
-                    </button>
                   </div>
                 </div>
 
@@ -1999,33 +2889,7 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* 7. CUSTOM BACKEND HOST ADDRESS */}
-                <div className="space-y-2 border-t border-slate-500/10 pt-4">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-bold flex items-center justify-start gap-1 px-1`}>
-                    <span>د لینک سرور آدرس (Server API Host)</span>
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={backendHostInput}
-                      onChange={(e) => {
-                        setBackendHostInput(e.target.value);
-                      }}
-                      placeholder="https://your-backend-server.com"
-                      className={`w-full ${isDark ? 'bg-slate-950/80 border-slate-855 text-slate-100' : 'bg-white border-slate-200 text-slate-900'} border rounded-xl px-3 py-2.5 text-[11px] ltr outline-none focus:ring-1 focus:ring-indigo-500`}
-                    />
-                    <button
-                      onClick={() => {
-                        localStorage.setItem('dewa_custom_backend_host', backendHostInput);
-                        alert('د سرور نوی پیوستون آدرس خوندي شو؛ له دې سرور څخه به پروسیس کې اخیستل کیږي.');
-                      }}
-                      style={{ cursor: 'pointer' }}
-                      className={`${tc.bg} ${tc.hoverBg} active:scale-95 text-white rounded-xl px-4 text-xs font-bold transition shrink-0`}
-                    >
-                      {tr.pari}
-                    </button>
-                  </div>
-                </div>
+
 
                 {/* 8. RESET STORAGE / CLEAR CACHE */}
                 <div className="space-y-2 border-t border-slate-500/10 pt-4">
@@ -2037,10 +2901,14 @@ export default function App() {
                     <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-600'} leading-relaxed`}>{tr.clearCacheHelp}</p>
                     <button
                       onClick={() => {
-                        if (window.confirm('ایا د سټوریج او فابریکې ترتیباتو د بیرته نصبولو اراده لرئ؟ (تایید کړئ)')) {
-                          localStorage.clear();
-                          alert(tr.clearCacheSuccess);
-                          window.location.reload();
+                        if (window.confirm(appLanguage === 'en' ? 'Are you sure you want to clear cached posts?' : 'ایا غواړئ چې ثبت شوي لنډمهاله معلومات (پوسټونه) پاک کړئ؟')) {
+                          localStorage.removeItem('dewa_cached_feed_data');
+                          setFeedData(null);
+                          setIsLoading(true);
+                          setIsSettingsPageOpen(false);
+                          setActiveModal(null);
+                          alert(appLanguage === 'en' ? 'Cached posts cleared successfully!' : 'ثبت شوي معلومات په بریالیتوب سره پاک شول!');
+                          fetchChannelData();
                         }
                       }}
                       style={{ cursor: 'pointer' }}
@@ -2057,7 +2925,7 @@ export default function App() {
                   style={{ cursor: 'pointer' }}
                   className={`w-full py-3 ${tc.bg} ${tc.hoverBg} text-white rounded-xl text-xs font-bold transition mt-2`}
                 >
-                  ټول تنظیمات خوندي کړئ او وتلئ
+                  {appLanguage === 'en' ? 'Home' : 'کورپاڼه'}
                 </button>
               </div>
             </div>
@@ -2067,15 +2935,15 @@ export default function App() {
              D. SEARCH PAGE (د پلټنې بېله او ځانګړې صفحه)
              ========================================================== */
           <div className="space-y-5 animate-fade-in text-right">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-xl">
-              <span className="text-xs font-bold text-slate-350">په ټولو پوسټونو کې موضوع یا کلیمه وپلټئ:</span>
+            <div className={`border rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-xl ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className={`text-xs font-bold ${isDark ? 'text-slate-350' : 'text-slate-700'}`}>په ټولو پوسټونو کې موضوع یا کلیمه وپلټئ:</span>
               <div className="relative">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="دلته د پوسټونو موضوع یا کلمه وپلټئ..."
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl py-3 pr-10 pl-4 text-xs font-medium text-slate-100 outline-none transition duration-200 text-right font-sans"
+                  className={`w-full focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl py-3 pr-10 pl-4 text-xs font-medium outline-none transition duration-200 text-right font-sans ${isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-102 border-slate-300 text-slate-900'}`}
                   autoFocus
                 />
                 <Search className="absolute right-3.5 top-3.5 w-4 h-4 text-slate-500 pointer-events-none" />
@@ -2083,7 +2951,7 @@ export default function App() {
                   <button
                     onClick={() => setSearchQuery('')}
                     style={{ cursor: 'pointer' }}
-                    className="absolute left-3 top-2.5 text-[10px] bg-slate-800 hover:bg-slate-755 font-bold px-2.5 py-1 rounded text-slate-300 transition"
+                    className={`absolute left-3 top-2.5 text-[10px] font-bold px-2.5 py-1 rounded transition ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-200 hover:bg-slate-300 text-slate-800'}`}
                   >
                     بیا پیل
                   </button>
@@ -2126,7 +2994,7 @@ export default function App() {
                         <span>{post.timeLabel || 'وروستی'}</span>
                       </div>
                       <p className="text-[13.5px] text-slate-205 line-clamp-2 leading-relaxed font-sans pr-1 font-medium mt-0.5">
-                        {post.text || 'د انځور د خلاصولو او لوستلو لپاره دلته کلیک وکړئ...'}
+                        {getPostTextWithFallback(post)}
                       </p>
                       {post.photoUrls && post.photoUrls.length > 1 && (
                         <div 
@@ -2153,11 +3021,17 @@ export default function App() {
                           ))}
                         </div>
                       )}
-                      {post.hasAudio && post.audioUrl && (
+                      {post.audioList && post.audioList.length > 0 ? (
+                        <div className="mt-2.5 space-y-2.5">
+                          {post.audioList.map((audioItem, idx) => (
+                            <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                          ))}
+                        </div>
+                      ) : post.hasAudio && post.audioUrl ? (
                         <div className="mt-2.5">
                           <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 ))
@@ -2176,10 +3050,13 @@ export default function App() {
 
             {/* FEATURED SLIDER HERO HEADER (انډیکيټر سره لس انځور لرونکي پوسټونه - ساده او ښکلی) */}
             {featuredPosts.length > 0 && (
-              <section className="bg-slate-900 border border-slate-800/80 rounded-2xl p-3.5 shadow-md flex flex-col gap-2.5">
+              <section className={`${isDark ? 'bg-slate-900 border-slate-800/80' : 'bg-white border-slate-200 shadow-md'} rounded-2xl p-3.5 border flex flex-col gap-2.5 transition-colors duration-300`}>
                 {/* Main Slider Screen */}
                 <div 
                   onClick={() => setSelectedPost(featuredPosts[featuredIndex])}
+                  onTouchStart={onTouchStart}
+                  onTouchMove={onTouchMove}
+                  onTouchEnd={onTouchEnd}
                   style={{ cursor: 'pointer' }}
                   className="relative h-44 sm:h-48 rounded-xl overflow-hidden bg-slate-950 border border-slate-800/60 flex items-center justify-center group"
                 >
@@ -2198,8 +3075,35 @@ export default function App() {
                       <Video className="w-12 h-12" />
                     </div>
                   )}
+
+                  {/* Left Arrow Button Overlay */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      prevFeatured();
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 bg-black/55 hover:bg-black/85 text-white rounded-full p-1.5 transition active:scale-90 shadow-lg border border-white/10 backdrop-blur-xs z-10"
+                    title="مخکینی"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-white" />
+                  </button>
+
+                  {/* Right Arrow Button Overlay */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      nextFeatured();
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-black/55 hover:bg-black/85 text-white rounded-full p-1.5 transition active:scale-90 shadow-lg border border-white/10 backdrop-blur-xs z-10"
+                    title="بل پوسټ"
+                  >
+                    <ChevronRight className="w-4 h-4 text-white" />
+                  </button>
+
                   {/* Subtle Indicator Badge */}
-                  <div className="absolute top-3 right-3 bg-indigo-600 text-white font-mono font-black text-xs px-3 py-1 rounded-xl shadow-md select-none">
+                  <div className={`absolute top-3 right-3 ${tc.bg} text-white font-mono font-black text-xs px-2.5 py-1 rounded-xl shadow-md select-none`}>
                     {featuredIndex + 1}
                   </div>
                   
@@ -2211,7 +3115,7 @@ export default function App() {
                 </div>
 
                 {/* Title outline */}
-                <p className="text-xs text-slate-200 mt-0.5 truncate font-medium text-right leading-relaxed px-1">
+                <p className={`text-xs ${isDark ? 'text-slate-200' : 'text-slate-800 font-bold'} mt-0.5 truncate text-right leading-relaxed px-1`}>
                   {featuredPosts[featuredIndex].text || 'د لوستلو لپاره کلیک کړئ...'}
                 </p>
 
@@ -2223,7 +3127,9 @@ export default function App() {
                       onClick={() => setFeaturedIndex(idx)}
                       style={{ cursor: 'pointer' }}
                       className={`h-1.5 rounded-full transition-all duration-300 ${
-                        idx === featuredIndex ? 'w-4.5 bg-indigo-500' : 'w-1.5 bg-slate-700 hover:bg-slate-650'
+                        idx === featuredIndex 
+                          ? `w-4.5 ${tc.bg}` 
+                          : `${isDark ? 'bg-slate-700 hover:bg-slate-650' : 'bg-slate-300 hover:bg-slate-400'}`
                       }`}
                       title={`Slide ${idx + 1}`}
                     />
@@ -2231,6 +3137,49 @@ export default function App() {
                 </div>
               </section>
             )}
+
+            {/* CATEGORIES GRID TABS (د پوسټونو بېلا بېلې کټګورۍ) */}
+            <div className="w-full mt-4 mb-2">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <span className={`text-[11px] font-black ${isDark ? 'text-slate-300' : 'text-slate-700'} font-sans`}>
+                  د پورته شويو پوسټونو موضوعي کټګورۍ:
+                </span>
+                <span className={`text-[9px] font-mono ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {homePosts.length} توکي موندل شوي
+                </span>
+              </div>
+              <div 
+                className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none text-right"
+                style={{ direction: 'rtl' }}
+              >
+                {[
+                  { id: 'all', label: 'ټول', icon: Layers },
+                  { id: 'videos', label: 'ويډيوګانې', icon: Video },
+                  { id: 'images', label: 'انځورونه', icon: ImageIcon },
+                  { id: 'audio', label: 'غږيز فايلونه', icon: Music },
+                  { id: 'pdf', label: 'کتابونه pdf', icon: BookOpen },
+                  { id: 'writings', label: 'ليکنې', icon: FileText },
+                ].map((cat) => {
+                  const CatIcon = cat.icon;
+                  const isActive = selectedCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id)}
+                      style={{ cursor: 'pointer' }}
+                      className={`px-3.5 py-2 rounded-xl text-[10.5px] font-black font-sans transition flex items-center gap-1.5 shrink-0 select-none shadow-sm ${
+                        isActive
+                          ? `${tc.bg} text-white`
+                          : `${isDark ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'} border`
+                      }`}
+                    >
+                      <CatIcon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : tc.text}`} />
+                      <span>{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* RECENT COMPACT LISTS (د هر پوسټ لږ متن او څنګ ته د عکسونو ښکلی ډیزاین) */}
             <div className="space-y-3">
@@ -2301,8 +3250,8 @@ export default function App() {
                                     {post.timeLabel || 'وروستی'}
                                   </span>
                                 </div>
-                                <p className={`${fs.body} ${isDark ? 'text-slate-200' : 'text-slate-800'} line-clamp-2 leading-relaxed font-sans pr-1 font-medium select-none`}>
-                                  {post.text || 'د تفصیل خپرولو د لوستلو لپاره دلته کلیک وکړئ...'}
+                                <p className={`${fs.body} ${isDark ? 'text-slate-200' : 'text-slate-800'} line-clamp-2 whitespace-pre-line leading-relaxed font-sans pr-1 font-medium select-none`}>
+                                  {getPostTextWithFallback(post)}
                                 </p>
 
                                 {post.photoUrls && post.photoUrls.length > 1 && (
@@ -2331,8 +3280,18 @@ export default function App() {
                                   </div>
                                 )}
 
-                                {post.hasAudio && post.audioUrl && (
+                                {post.audioList && post.audioList.length > 0 ? (
+                                  <div className="space-y-2.5">
+                                    {post.audioList.map((audioItem, idx) => (
+                                      <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                    ))}
+                                  </div>
+                                ) : post.hasAudio && post.audioUrl ? (
                                   <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                                ) : null}
+
+                                {getIsBook(post) && (
+                                  <CustomBookDownload post={post} isDark={isDark} tc={tc} />
                                 )}
 
                                 {post.linkPreview ? (
@@ -2431,8 +3390,8 @@ export default function App() {
                                   <Clock className="w-2.5 h-2.5" />
                                   {post.timeLabel || 'Recent'}
                                 </span>
-                                <p className={`mt-1 text-[11.5px] sm:text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'} line-clamp-2 leading-relaxed`}>
-                                  {post.text || 'لوستل پيلیږي...'}
+                                <p className={`mt-1 text-[11.5px] sm:text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'} line-clamp-2 whitespace-pre-line leading-relaxed`}>
+                                  {getPostTextWithFallback(post)}
                                 </p>
                                 {post.photoUrls && post.photoUrls.length > 1 && (
                                   <div 
@@ -2459,8 +3418,18 @@ export default function App() {
                                     ))}
                                   </div>
                                 )}
-                                {post.hasAudio && post.audioUrl && (
+                                {post.audioList && post.audioList.length > 0 ? (
+                                  <div className="space-y-2.5">
+                                    {post.audioList.map((audioItem, idx) => (
+                                      <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                    ))}
+                                  </div>
+                                ) : post.hasAudio && post.audioUrl ? (
                                   <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                                ) : null}
+
+                                {getIsBook(post) && (
+                                  <CustomBookDownload post={post} isDark={isDark} tc={tc} />
                                 )}
                               </div>
                               {post.reactions && post.reactions.length > 0 && (
@@ -2492,14 +3461,26 @@ export default function App() {
                             </span>
                             <div className="flex-1 min-w-0 pr-1">
                               <p className={`text-[12.5px] sm:text-[13px] ${isDark ? 'text-slate-200' : 'text-slate-800'} font-semibold truncate`}>
-                                {post.text || 'لوستل پيل کړئ...'}
+                                {getPostTextWithFallback(post)}
                               </p>
                               <span className="text-[9px] text-slate-500 flex items-center gap-1.5 mt-0.5 font-sans">
                                 {post.timeLabel || 'ثبت شوی'}
                               </span>
-                              {post.hasAudio && post.audioUrl && (
+                              {post.audioList && post.audioList.length > 0 ? (
+                                <div className="mt-1.5 max-w-xs scale-95 origin-right space-y-1.5">
+                                  {post.audioList.map((audioItem, idx) => (
+                                    <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                  ))}
+                                </div>
+                              ) : post.hasAudio && post.audioUrl ? (
                                 <div className="mt-1.5 max-w-xs scale-95 origin-right">
                                   <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                                </div>
+                              ) : null}
+
+                              {getIsBook(post) && (
+                                <div className="mt-1.5 max-w-xs scale-95 origin-right">
+                                  <CustomBookDownload post={post} isDark={isDark} tc={tc} />
                                 </div>
                               )}
                             </div>
@@ -2557,11 +3538,21 @@ export default function App() {
                                   {post.timeLabel || 'پورته شوی'}
                                 </span>
                               </div>
-                              <p className={`${fs.body} ${isDark ? 'text-slate-100' : 'text-slate-850'} leading-relaxed font-sans pr-1 font-medium`}>
-                                {post.text}
+                              <p className={`${fs.body} ${isDark ? 'text-slate-100' : 'text-slate-850'} whitespace-pre-line leading-relaxed font-sans pr-1 font-medium`}>
+                                {getPostTextWithFallback(post)}
                               </p>
-                              {post.hasAudio && post.audioUrl && (
+                              {post.audioList && post.audioList.length > 0 ? (
+                                <div className="space-y-2.5">
+                                  {post.audioList.map((audioItem, idx) => (
+                                    <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                  ))}
+                                </div>
+                              ) : post.hasAudio && post.audioUrl ? (
                                 <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                              ) : null}
+
+                              {getIsBook(post) && (
+                                <CustomBookDownload post={post} isDark={isDark} tc={tc} />
                               )}
                               {post.reactions && post.reactions.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 justify-start">
@@ -2597,11 +3588,21 @@ export default function App() {
                                 {post.timeLabel || 'Recent'}
                               </span>
                             </div>
-                            <p className={`${fs.body} ${isDark ? 'text-slate-200' : 'text-slate-800'} leading-relaxed pr-1`}>
-                              {post.text || 'د تېرو معلوماتو لوستل پيل کړئ...'}
+                            <p className={`${fs.body} ${isDark ? 'text-slate-200' : 'text-slate-800'} whitespace-pre-line leading-relaxed pr-1`}>
+                              {getPostTextWithFallback(post)}
                             </p>
-                            {post.hasAudio && post.audioUrl && (
+                            {post.audioList && post.audioList.length > 0 ? (
+                              <div className="space-y-2.5">
+                                {post.audioList.map((audioItem, idx) => (
+                                  <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                ))}
+                              </div>
+                            ) : post.hasAudio && post.audioUrl ? (
                               <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                            ) : null}
+
+                            {getIsBook(post) && (
+                              <CustomBookDownload post={post} isDark={isDark} tc={tc} />
                             )}
                             {post.reactions && post.reactions.length > 0 && (
                               <div className="flex flex-wrap gap-1 justify-start pt-1">
@@ -2643,23 +3644,6 @@ export default function App() {
              B. DETAILED FULL LIST VIEW PAGE (بشپړ لیست پاڼه د ۱۰ باچ باچ لوډیدو سره)
              ========================================================== */
           <div className="space-y-5 animate-fade-in">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-805 px-1">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-4 bg-indigo-500 rounded-full animate-bounce"></span>
-                <h3 className="text-sm font-bold text-white">د آرشیف ټول پوسټونه (په تدریجي ډول لوډ کيدونکي)</h3>
-              </div>
-              <button
-                onClick={() => {
-                  setIsFullFeedOpen(false);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                style={{ cursor: 'pointer' }}
-                className="text-xs text-indigo-400 font-bold hover:underline"
-              >
-                کورسفحه ⇽
-              </button>
-            </div>
-
              {/* Compact items list for full archive feed */}
             <div className="flex flex-col gap-2.5">
               {fullFeedPosts.map((post) => (
@@ -2721,7 +3705,7 @@ export default function App() {
                         </span>
                       </div>
                       <p className="text-xs sm:text-xs text-slate-205 line-clamp-2 leading-relaxed font-sans pr-1">
-                        {post.text || 'د انځور د خلاصولو او لوستلو لپاره دلته کلیک وکړئ...'}
+                        {getPostTextWithFallback(post)}
                       </p>
 
                       {post.photoUrls && post.photoUrls.length > 1 && (
@@ -2750,8 +3734,22 @@ export default function App() {
                         </div>
                       )}
 
-                      {post.hasAudio && post.audioUrl && (
-                        <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                      {post.audioList && post.audioList.length > 0 ? (
+                        <div className="space-y-2.5 mt-2">
+                          {post.audioList.map((audioItem, idx) => (
+                            <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                          ))}
+                        </div>
+                      ) : post.hasAudio && post.audioUrl ? (
+                        <div className="mt-2">
+                          <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                        </div>
+                      ) : null}
+
+                      {getIsBook(post) && (
+                        <div className="mt-2.5">
+                          <CustomBookDownload post={post} isDark={isDark} tc={tc} />
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2810,14 +3808,7 @@ export default function App() {
               >
                 {feedData?.channelInfo?.title || 'دا مینه دیوه'}
               </motion.h2>
-              <motion.p
-                initial={{ y: 15, opacity: 0 }}
-                animate={{ y: 0, opacity: 0.7 }}
-                transition={{ delay: 0.5 }}
-                className="text-xs text-indigo-400 font-mono"
-              >
-                @{feedData?.channelInfo?.username || 'da_mine_dewa'}
-              </motion.p>
+
             </div>
 
             {/* Timed progress loader */}
@@ -2920,7 +3911,7 @@ export default function App() {
                 className={`w-full max-w-sm ${cardBg} border border-slate-800/20 dark:border-slate-800 rounded-3xl overflow-hidden shadow-2xl text-right`}
               >
                 {/* Header title block */}
-                <div className="px-5 py-4 bg-slate-950/70 border-b border-slate-800/10 dark:border-slate-800/60 flex items-center justify-between">
+                <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/10 dark:border-slate-800/60' : 'bg-slate-100 border-slate-200'} border-b flex items-center justify-between`}>
                   <button
                     onClick={() => setActiveModal(null)}
                     style={{ cursor: 'pointer' }}
@@ -3074,42 +4065,10 @@ export default function App() {
                                 {sz === 'sm' && 'وړوکي'}
                                 {sz === 'base' && 'منځنی'}
                                 {sz === 'lg' && 'لوی'}
-                                {sz === 'xl' && 'بزرګ'}
+                                {sz === 'xl' && 'ډېر لوی'}
                               </span>
                             </button>
                           ))}
-                        </div>
-                      </div>
-
-                      {/* 5. APP LANGUAGE */}
-                      <div className="space-y-2 border-t border-slate-500/10 pt-3">
-                        <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-bold flex items-center justify-start gap-1 px-1`}>
-                          <Globe className={`w-3.5 h-3.5 ${tc.text}`} />
-                          <span>{tr.language}</span>
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => setAppLanguage('ps')}
-                            style={{ cursor: 'pointer' }}
-                            className={`py-2 px-3 rounded-xl border text-[11px] font-bold transition ${
-                              appLanguage === 'ps'
-                                ? `${tc.bg} ${tc.border} text-white shadow-md`
-                                : `${isDark ? 'bg-slate-950/60 border-slate-850 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 border-slate-205 text-slate-700 hover:bg-slate-150'}`
-                            }`}
-                          >
-                            <span>پښتو (Pashto)</span>
-                          </button>
-                          <button
-                            onClick={() => setAppLanguage('en')}
-                            style={{ cursor: 'pointer' }}
-                            className={`py-2 px-3 rounded-xl border text-[11px] font-bold transition ${
-                              appLanguage === 'en'
-                                ? `${tc.bg} ${tc.border} text-white shadow-md`
-                                : `${isDark ? 'bg-slate-950/60 border-slate-850 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 border-slate-205 text-slate-700 hover:bg-slate-150'}`
-                            }`}
-                          >
-                            <span>English</span>
-                          </button>
                         </div>
                       </div>
 
@@ -3168,10 +4127,14 @@ export default function App() {
                           <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-600'} leading-relaxed`}>{tr.clearCacheHelp}</p>
                           <button
                             onClick={() => {
-                              if (window.confirm('ایا د سټوریج او فابریکې ترتیباتو د بیرته نصبولو اراده لرئ؟ (تایید کړئ)')) {
-                                localStorage.clear();
-                                alert(tr.clearCacheSuccess);
-                                window.location.reload();
+                              if (window.confirm(appLanguage === 'en' ? 'Are you sure you want to clear cached posts?' : 'ایا غواړئ چې ثبت شوي لنډمهاله معلومات (پوسټونه) پاک کړئ؟')) {
+                                localStorage.removeItem('dewa_cached_feed_data');
+                                setFeedData(null);
+                                setIsLoading(true);
+                                setIsSettingsPageOpen(false);
+                                setActiveModal(null);
+                                alert(appLanguage === 'en' ? 'Cached posts cleared successfully!' : 'ثبت شوي کښته شوي پوسټونه په بریالیتوب سره پاک شول!');
+                                fetchChannelData();
                               }
                             }}
                             style={{ cursor: 'pointer' }}
@@ -3201,105 +4164,209 @@ export default function App() {
                         style={{ cursor: 'pointer' }}
                         className={`w-full py-2.5 ${tc.bg} ${tc.hoverBg} text-white rounded-xl text-xs font-bold transition mt-2`}
                       >
-                        {tr.close}
+                        {appLanguage === 'en' ? 'Home' : 'کورپاڼه'}
                       </button>
                     </div>
                   )}
 
                   {/* About Content */}
                   {activeModal === 'about' && (
-                    <div className="space-y-3.5 text-right font-sans">
-                      <div className="flex flex-col items-center text-center pb-2">
-                        <img
-                          src={feedData?.channelInfo?.avatarUrl || 'https://telegram.org/img/t_logo.png'}
-                          referrerPolicy="no-referrer"
-                          className="w-14 h-14 rounded-full border border-indigo-500/20 object-cover mb-2 shadow-sm"
-                          alt="Channel avatar"
-                        />
-                        <h4 className="text-white text-xs font-black font-mono">da_mine_dewa</h4>
+                    <div className="space-y-4 text-right font-sans max-h-[75vh] overflow-y-auto pr-1">
+                      {/* Hero Section Card */}
+                      <div className="relative overflow-hidden rounded-2xl border border-slate-500/10 shadow-lg">
+                        {/* Gradient Header */}
+                        <div className="h-24 bg-gradient-to-r from-blue-700 via-purple-700 to-indigo-700 flex items-end justify-center pb-2 relative">
+                          <div className="absolute top-2 left-2 bg-black/40 backdrop-blur-xs px-2.5 py-0.5 rounded-full text-[8px] font-mono text-indigo-300">
+                            Developer Profile
+                          </div>
+                        </div>
+                        {/* Profile Info Card Content */}
+                        <div className={`pt-12 pb-5 px-4 text-center relative ${subCardBg}`}>
+                          {/* Circular Avatar */}
+                          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full border-4 border-slate-900 bg-slate-950 overflow-hidden shadow-lg">
+                            <img
+                              src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200"
+                              className="w-full h-full object-cover"
+                              alt="Obaidullah Ghaffari Portal"
+                            />
+                          </div>
+                          
+                          <h4 className={`text-base font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>عبیدالله غفاري</h4>
+                          <span className="text-[10px] text-slate-400 block mt-1 tracking-wider">
+                            طالب العلم • AI Developer • Web Enthusiast
+                          </span>
+
+                          {/* Quick Action Contact Buttons */}
+                          <div className="flex items-center justify-center gap-2 mt-4">
+                            <a
+                              href="https://ghafoori.me"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="py-1.5 px-3 bg-indigo-650/10 hover:bg-indigo-600/20 text-indigo-400 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                            >
+                              <Globe className="w-3 h-3" />
+                              <span>Website</span>
+                            </a>
+                            <a
+                              href="mailto:contact@ghafoori.me"
+                              className="py-1.5 px-3 bg-indigo-650/10 hover:bg-indigo-600/20 text-indigo-400 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                            >
+                              <Mail className="w-3 h-3" />
+                              <span>Email</span>
+                            </a>
+                            <a
+                              href="https://wa.me/93700005555"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="py-1.5 px-3 bg-indigo-650/10 hover:bg-indigo-600/20 text-indigo-400 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                            >
+                              <MessageSquare className="w-3 h-3" />
+                              <span>WhatsApp</span>
+                            </a>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-[11.5px] text-slate-350 leading-relaxed">
-                        دا مینه دیوه رسمي علمي پاڼه یو د پوهې، پرمختګ او پښتو فکري ځلا خپرندویه سرچینه ده زمونږ هدف پښتو فکری او کلتوري روزنه ده.
-                      </p>
-                      <p className="text-[11px] text-slate-400 leading-relaxed border-t border-slate-850 pt-3">
-                        دلته تاسې د پورې اړوند ټول نوي پوسټونه بدون له ځنډه لیدلی شئ. دا پښتو د عالي ټیکنالوجۍ په ذریعه خپرېږي.
-                      </p>
+
+                      {/* About Me Card */}
+                      <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2 text-right`}>
+                        <div className="flex items-center gap-2 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                          <span className="text-xs">زما په اړه</span>
+                          <User className="w-4 h-4" />
+                        </div>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                          زه عبیدالله غفاري یم، د لوګر ولایت اوسېدونکی او د جهادي مدرسې د اوومې درجې طالب العلم. د ټکنالوژۍ، ویب پرافتیا, مصنوعي ځیرکتیا او زده کړې سره ځانګړې مینه لرم او هڅه کوم چې د دین، هېواد او پښتو ژبې لپاره ګټور ډیجیټلي خدمتونه وړاندې کړم.
+                        </p>
+                      </div>
+
+                      {/* Mission Card */}
+                      <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2 text-right`}>
+                        <div className="flex items-center gap-2 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                          <span className="text-xs">زما موخه</span>
+                          <Rocket className="w-4 h-4" />
+                        </div>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                          دین ته خدمت، هېواد ته خدمت، پښتو ژبې ته وده ورکول، امت او بشریت ته ګټور پاتې کېدل، د پوهې خپرول، نوښت او پرمختګ.
+                        </p>
+                      </div>
+
+                      {/* Activities Card */}
+                      <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2 text-right`}>
+                        <div className="flex items-center gap-2 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                          <span className="text-xs">ورځنۍ بوختیاوې</span>
+                          <Calendar className="w-4 h-4" />
+                        </div>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                          مطالعه، دیني زده کړې، AI او ټکنالوژي، ویب پرافتیا، کتاب لوستل، آنلاین کورسونه، ټولنیزې رسنۍ، نوې تجربې.
+                        </p>
+                      </div>
+
+                      {/* Skills Section */}
+                      <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2.5 text-right`}>
+                        <div className="flex items-center gap-2 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                          <span className="text-xs">مهارتونه (Skills)</span>
+                          <Cpu className="w-4 h-4" />
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 justify-end">
+                          {['AI', 'Web Development', 'Blogging', 'Content Creation', 'Research', 'Learning', 'UI Design', 'Problem Solving'].map((sk) => (
+                            <span
+                              key={sk}
+                              className={`py-1 px-2.5 rounded-lg text-[9.5px] font-bold ${
+                                isDark ? 'bg-slate-950 text-indigo-400 border border-slate-850/80' : 'bg-slate-100 text-indigo-600 border border-slate-200'
+                              }`}
+                            >
+                              {sk}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Interests Card */}
+                      <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2 text-right`}>
+                        <div className="flex items-center gap-2 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                          <span className="text-xs">خوښونې</span>
+                          <Heart className="w-4 h-4" />
+                        </div>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-705'} leading-relaxed`}>
+                          لیکوالي، بلاګ لیکنه، مطالعه، ټکنالوژي، پروګرامنګ، ویبپاڼې، نوښت، ګټورتوب.
+                        </p>
+                      </div>
+
+                      {/* Quote Card (Glass Card) */}
+                      <div className="p-4 rounded-xl border border-white/10 bg-slate-900/40 backdrop-blur-md relative overflow-hidden text-right">
+                        <Quote className="absolute -left-1 -bottom-1 w-16 h-16 text-indigo-500/10 -rotate-12 pointer-events-none" />
+                        <div className="flex items-start gap-2 justify-end">
+                          <p className="text-[10.5px] text-indigo-300 font-medium italic leading-relaxed">
+                            "بریالیتوب منزل نه دی، بلکې د زده کړې، هڅې او خدمت دوامداره سفر دی."
+                          </p>
+                          <Quote className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                        </div>
+                      </div>
+
+                      {/* Statistics Section */}
+                      <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-3 text-right`}>
+                        <div className="flex items-center gap-2 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                          <span className="text-xs">احصایه او پرمختګ</span>
+                          <Award className="w-4 h-4" />
+                        </div>
+                        <div className="space-y-2 w-full">
+                          {/* Item 1 */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[9.5px]">
+                              <span className="font-mono text-indigo-400">90%</span>
+                              <span className="text-slate-350">لوستل او زده کړه</span>
+                            </div>
+                            <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-indigo-500 h-full rounded-full" style={{ width: '90%' }} />
+                            </div>
+                          </div>
+                          {/* Item 2 */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[9.5px]">
+                              <span className="font-mono text-indigo-400">85%</span>
+                              <span className="text-slate-350">ټکنالوژي</span>
+                            </div>
+                            <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-indigo-500 h-full rounded-full" style={{ width: '85%' }} />
+                            </div>
+                          </div>
+                          {/* Item 3 */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[9.5px]">
+                              <span className="font-mono text-indigo-400">80%</span>
+                              <span className="text-slate-350">نوښت</span>
+                            </div>
+                            <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-indigo-500 h-full rounded-full" style={{ width: '80%' }} />
+                            </div>
+                          </div>
+                          {/* Item 4 */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[9.5px]">
+                              <span className="font-mono text-indigo-400">95%</span>
+                              <span className="text-slate-350">خدمت</span>
+                            </div>
+                            <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-indigo-505 h-full rounded-full" style={{ width: '95%' }} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer Section */}
+                      <div className="pt-2 border-t border-slate-500/10 flex flex-col items-center gap-1 text-center font-sans">
+                        <span className="text-[10px] text-slate-400 flex items-center justify-center">
+                          Made with <Heart className="w-3 h-3 text-rose-500 mx-1 inline" /> by عبیدالله غفاري
+                        </span>
+                        <span className="text-[9px] text-slate-500">Version 1.0</span>
+                      </div>
+
                       <button
                         onClick={() => setActiveModal(null)}
                         style={{ cursor: 'pointer' }}
-                        className="w-full py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-xl text-xs font-bold transition mt-2"
+                        className={`w-full py-2.5 ${tc.bg} ${tc.hoverBg} text-white rounded-xl text-xs font-bold transition mt-2`}
                       >
-                        بند کړئ
+                        {appLanguage === 'en' ? 'Close' : 'بند کړئ'}
                       </button>
-                    </div>
-                  )}
-
-                  {/* Contact Us Messaging Content */}
-                  {activeModal === 'contact' && (
-                    <div className="space-y-3 text-right">
-                      {contactSuccess ? (
-                        <div className="text-center py-6 space-y-3">
-                          <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
-                            <Check className="w-6 h-6 animate-pulse" />
-                          </div>
-                          <h4 className="text-xs font-bold text-white">پیغام واستول شو!</h4>
-                          <p className="text-[10px] text-slate-400 leading-normal">
-                            ملاتړ ټیم ته ورسېد. ډیر ژر به ځواب شي.
-                          </p>
-                          <button
-                            onClick={() => {
-                              setContactSuccess(false);
-                              setContactName('');
-                              setContactMsg('');
-                              setActiveModal(null);
-                            }}
-                            style={{ cursor: 'pointer' }}
-                            className="px-6 py-2 bg-slate-800 hover:bg-slate-75 * text-slate-250 rounded-xl text-xs font-semibold transition"
-                          >
-                            مننه
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <p className="text-[11px] text-slate-400">ستاسو د اړیکې او پوښتنو فورمه:</p>
-                          
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-slate-300 font-bold block">ستاسو نوم یا شمیره:</label>
-                            <input
-                              type="text"
-                              value={contactName}
-                              onChange={(e) => setContactName(e.target.value)}
-                              placeholder="پردلته نوم ولیکئ..."
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-200 outline-none focus:border-indigo-500 text-right font-sans"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-slate-300 font-bold block">موضوع یا د پیغام متن:</label>
-                            <textarea
-                              value={contactMsg}
-                              onChange={(e) => setContactMsg(e.target.value)}
-                              placeholder="خپل پیغام ولیکئ..."
-                              rows={3}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-200 outline-none focus:border-indigo-500 text-right font-sans resize-none"
-                            />
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              if (!contactName.trim() || !contactMsg.trim()) {
-                                return;
-                              }
-                              setContactSuccess(true);
-                            }}
-                            style={{ cursor: 'pointer' }}
-                            className="w-full py-3 bg-indigo-600 hover:bg-indigo-550 text-white rounded-xl text-xs font-bold transition mt-2 flex items-center justify-center gap-2 shadow-lg"
-                          >
-                            <Send className="w-3.5 h-3.5 -rotate-12 animate-pulse" />
-                            <span>پیغام مې واستوئ</span>
-                          </button>
-                        </div>
-                      )}
                     </div>
                   )}
 
