@@ -354,6 +354,52 @@ app.post('/api/bot-test-channel', async (req, res) => {
   }
 });
 
+// API: Proxy call to forward contact us messages to the Telegram Bot (accessible only to bot admin)
+app.post('/api/send-contact-message', async (req, res) => {
+  const { name, message } = req.body;
+  if (!name || !message) {
+    return res.status(400).json({ error: 'نوم او پیغام دواړه اړین دي.' });
+  }
+
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+
+  if (!token || !chatId) {
+    console.warn('TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID is missing in environment variables');
+    return res.status(400).json({
+      error: 'configuration_missing',
+      message: 'د پیغام لیږلو لپاره د ټلیګرام روباټ او اډمین معلومات نه دي تنظیم شوي. مهرباني وکړئ TELEGRAM_BOT_TOKEN او TELEGRAM_ADMIN_CHAT_ID په چاپېریالي متغیرونو (Environment Variables/Secrets) کې اضافه کړئ.'
+    });
+  }
+
+  try {
+    const text = `📬 *د اړیکې پیغام د اپلیکیشن څخه*\n\n👤 *شخص:* ${name}\n\n💬 *پیغام:*\n${message}`;
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'Markdown',
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      console.error('Telegram API error response:', result);
+      return res.status(500).json({ error: 'telegram_api_error', message: result.description || 'د ټلیګرام روباټ له لارې د استولو تېروتنه رامنځته شوه.' });
+    }
+
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error('Failed to send Telegram message:', error);
+    return res.status(500).json({ error: 'server_error', message: error.message });
+  }
+});
+
 // Mount Vite middleware / static files router
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
