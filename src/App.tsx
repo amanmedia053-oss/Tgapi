@@ -828,6 +828,17 @@ export default function App() {
   // Optical Zoom states for image lightbox
   const [zoomPhotoUrl, setZoomPhotoUrl] = useState<string | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
+  const [zoomPhotoUrlsList, setZoomPhotoUrlsList] = useState<string[]>([]);
+  const [zoomPhotoIndex, setZoomPhotoIndex] = useState<number>(0);
+
+  const openPhotoLightbox = (url: string, list: string[] = []) => {
+    const photoList = list.length > 0 ? list : [url];
+    const index = photoList.indexOf(url);
+    setZoomPhotoUrlsList(photoList);
+    setZoomPhotoIndex(index !== -1 ? index : 0);
+    setZoomPhotoUrl(url);
+    setZoomScale(1);
+  };
 
   // New states for Sidebar, three-dot menu, and search filtering
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -846,7 +857,7 @@ export default function App() {
   
   // Custom interactive & persistent style/layout configurations
   const [textSizeClass, setTextSizeClass] = useState<'sm' | 'base' | 'lg' | 'xl'>(() => {
-    return (localStorage.getItem('dewa_text_size') as any) || 'base';
+    return (localStorage.getItem('dewa_text_size') as any) || 'xl';
   });
   const [homeLayout, setHomeLayout] = useState<'standard' | 'grid' | 'compact' | 'masonry' | 'minimalist'>(() => {
     return (localStorage.getItem('dewa_home_layout') as any) || 'standard';
@@ -863,6 +874,53 @@ export default function App() {
   const [appLanguage, setAppLanguage] = useState<'ps' | 'en'>(() => {
     return (localStorage.getItem('dewa_app_language') as any) || 'ps';
   });
+
+  // State and handles for our beautiful custom toast alerts and confirmation prompt sheets
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [showClearCacheConfirm, setShowClearCacheConfirm] = useState(false);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+  };
+
+  const handlePerformClearCache = () => {
+    localStorage.removeItem('dewa_cached_feed_data');
+    setFeedData(null);
+    setIsLoading(true);
+    setIsSettingsPageOpen(false);
+    setActiveModal(null);
+    setShowClearCacheConfirm(false);
+    showToast(appLanguage === 'en' ? 'App storage and cache cleared successfully!' : 'کاشه په بریالیتوب سره پاکه شوه او غوښتنلیک بیا فعاله شو!', 'success');
+    fetchChannelData();
+  };
+
+  // Automatically clear toast alerts after a brief visual display duration
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => {
+      setToast(null);
+    }, 3200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // Genius Scroll Restoration Auto-Tracker & Restorer Hook
+  const listScrollPosRef = useRef<number>(0);
+  const prevInSubpageRef = useRef<boolean>(false);
+  const isInSubpage = !!(selectedPost || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen);
+
+  useEffect(() => {
+    if (isInSubpage && !prevInSubpageRef.current) {
+      // Entering subpage detail view: store original scroll position of main lists
+      listScrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
+    } else if (!isInSubpage && prevInSubpageRef.current) {
+      // Returning to main listing: restore scroll position
+      const savedPos = listScrollPosRef.current;
+      setTimeout(() => {
+        window.scrollTo({ top: savedPos, behavior: 'instant' });
+      }, 70);
+    }
+    prevInSubpageRef.current = isInSubpage;
+  }, [isInSubpage]);
 
   // Persists changes to local storage
   useEffect(() => {
@@ -1830,9 +1888,9 @@ export default function App() {
   const tr = translations[appLanguage] || translations.ps;
 
   const fs = {
-    title: textSizeClass === 'sm' ? 'text-xs' : textSizeClass === 'base' ? 'text-sm' : textSizeClass === 'lg' ? 'text-base' : 'text-lg',
-    body: textSizeClass === 'sm' ? 'text-[11.5px]' : textSizeClass === 'base' ? 'text-[12.5px] sm:text-[13px]' : textSizeClass === 'lg' ? 'text-[14px] sm:text-[14.5px]' : 'text-[16px] sm:text-[17px]',
-    desc: textSizeClass === 'sm' ? 'text-[10px]' : textSizeClass === 'base' ? 'text-[11px]' : textSizeClass === 'lg' ? 'text-[12px]' : 'text-[13.5px]'
+    title: textSizeClass === 'sm' ? 'text-sm' : textSizeClass === 'base' ? 'text-base' : textSizeClass === 'lg' ? 'text-lg' : 'text-xl',
+    body: textSizeClass === 'sm' ? 'text-[13.0px] sm:text-[14.0px]' : textSizeClass === 'base' ? 'text-[14.5px] sm:text-[15.5px]' : textSizeClass === 'lg' ? 'text-[16.5px] sm:text-[17.5px]' : 'text-[18.5px] sm:text-[20.0px]',
+    desc: textSizeClass === 'sm' ? 'text-[11px]' : textSizeClass === 'base' ? 'text-[12px]' : textSizeClass === 'lg' ? 'text-[13.5px]' : 'text-[15px]'
   };
 
   const themeColorsMap: Record<string, {
@@ -2265,19 +2323,17 @@ export default function App() {
                   </a>
 
                   {/* ۶. نور اپليکيشنونه */}
-                  <a
-                    href="https://t.me/obaidapp"
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
                     onClick={() => {
                       setIsSidebarOpen(false);
+                      setActiveModal('apps');
                     }}
                     style={{ cursor: 'pointer' }}
                     className={`w-full text-right px-4 py-2.5 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
                   >
                     <Grid className={`w-4 h-4 ${tc.text}`} />
                     <span>نور اپليکيشنونه</span>
-                  </a>
+                  </button>
 
                   {/* ۷. له اپلیکیشن څخه وتل */}
                   <button
@@ -2467,22 +2523,21 @@ export default function App() {
                 />
               </div>
             ) : (selectedPost.photoUrls && selectedPost.photoUrls.length > 1) ? (
-              <div className="relative bg-slate-950 border-b border-slate-850 p-4">
+              <div className={`relative ${isDark ? 'bg-slate-950 border-slate-850' : 'bg-slate-50 border-slate-205'} border-b p-4`}>
                 <div className={`grid gap-2.5 ${
                   selectedPost.photoUrls.length === 2 ? 'grid-cols-2' : 
                   selectedPost.photoUrls.length === 3 ? 'grid-cols-3' : 
                   'grid-cols-2 sm:grid-cols-3'
                 }`}>
                   {selectedPost.photoUrls.map((url, idx) => (
-                    <div key={idx} className="relative group overflow-hidden rounded-xl aspect-square bg-slate-900 border border-slate-800/40">
+                    <div key={idx} className={`relative group overflow-hidden rounded-xl aspect-square border ${isDark ? 'bg-slate-900 border-slate-850' : 'bg-white border-slate-200'}`}>
                       <img
                         src={url}
                         referrerPolicy="no-referrer"
                         alt={`Photo ${idx + 1}`}
                         className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition duration-300"
                         onClick={() => {
-                          setZoomPhotoUrl(url);
-                          setZoomScale(1);
+                          openPhotoLightbox(url, selectedPost.photoUrls);
                         }}
                       />
                       <button
@@ -2499,20 +2554,19 @@ export default function App() {
                     </div>
                   ))}
                 </div>
-                <div className="text-[10px] text-slate-400 mt-2.5 text-center select-none font-sans">
+                <div className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'} mt-2.5 text-center select-none font-sans`}>
                   د زوم کولو لپاره په هر عکس کلیک وکړئ • ټول {selectedPost.photoUrls.length} انځورونه
                 </div>
               </div>
             ) : selectedPost.photoUrl ? (
-              <div className="relative bg-slate-950 flex flex-col items-center border-b border-slate-850">
+              <div className={`relative ${isDark ? 'bg-slate-950 border-slate-850' : 'bg-slate-50 border-slate-205'} flex flex-col items-center border-b`}>
                 <img
                   src={selectedPost.photoUrl || null}
                   referrerPolicy="no-referrer"
                   alt="Reading visual"
                   className="w-full max-h-[380px] object-contain cursor-zoom-in hover:opacity-90 transition duration-200"
                   onClick={() => {
-                    setZoomPhotoUrl(selectedPost.photoUrl!);
-                    setZoomScale(1);
+                    openPhotoLightbox(selectedPost.photoUrl!, [selectedPost.photoUrl!]);
                   }}
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = 'none';
@@ -2571,36 +2625,29 @@ export default function App() {
               {selectedPost.audioList && selectedPost.audioList.length > 0 ? (
                 <div className="space-y-3">
                   {selectedPost.audioList.map((audioItem, idx) => (
-                    <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                    <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل'} isDark={isDark} tc={tc} />
                   ))}
                 </div>
-              ) : selectedPost.hasAudio && selectedPost.audioUrl ? (
-                <BeautifulAudioPlayer url={selectedPost.audioUrl} title={selectedPost.audioTitle || 'غږیز فایل خپرونه'} duration={selectedPost.audioDuration} isDark={isDark} tc={tc} />
               ) : null}
 
-              {/* Book / PDF downloader in detailed post view (if any) */}
-              {getIsBook(selectedPost) && (
-                <CustomBookDownload post={selectedPost} isDark={isDark} tc={tc} />
-              )}
-
+              {/* Link preview rendering under post body text */}
               {selectedPost.linkPreview ? (
                 <a
                   href={selectedPost.linkPreview.url}
                   target="_blank"
                   rel="noreferrer"
-                  className={`block ${isDark ? 'bg-slate-950/70 border-slate-800 hover:bg-slate-950/90' : 'bg-slate-100 hover:bg-slate-150 border-slate-200'} border rounded-xl p-3.5 transition`}
+                  className={`block border rounded-xl overflow-hidden ${isDark ? 'bg-slate-950/40 border-slate-800/60 hover:bg-slate-950/70' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'} transition p-3 mt-3`}
                 >
-                  <div className="flex gap-3 min-w-0">
-                    {selectedPost.linkPreview.photoUrl && (
-                      <img
-                        src={selectedPost.linkPreview.photoUrl}
-                        referrerPolicy="no-referrer"
-                        className="w-12 h-12 rounded bg-slate-900 object-cover shrink-0 border border-slate-850"
-                        alt="Link preview"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
+                  <div className="flex items-center gap-3 text-right font-sans">
+                    {selectedPost.linkPreview.thumbUrl && (
+                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-900 shrink-0 border border-slate-800">
+                        <img 
+                          src={selectedPost.linkPreview.thumbUrl} 
+                          referrerPolicy="no-referrer"
+                          alt="preview mini thumb" 
+                          className="w-full h-full object-cover" 
+                        />
+                      </div>
                     )}
                     <div className="min-w-0 flex-1">
                       {selectedPost.linkPreview.siteName && (
@@ -2623,11 +2670,11 @@ export default function App() {
 
               {/* Copy & Share Action Buttons Row */}
               {selectedPost.text && selectedPost.text.trim() !== '' && (
-                <div className={`flex flex-col sm:flex-row gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-200'} justify-start`}>
+                <div className={`flex flex-col sm:flex-row gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-205'} justify-start`}>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedPost.text || '');
-                      alert('لیست او متن په بریالیتوب سره کاپي شو!');
+                      showToast('متن په برياليتوب سره کاپي شو! 📋', 'success');
                     }}
                     style={{ cursor: 'pointer' }}
                     className={`flex-1 py-3 px-4 ${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-750'} border rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-2 shadow-xs group`}
@@ -2645,7 +2692,7 @@ export default function App() {
                         }).catch((err) => console.log(err));
                       } else {
                         navigator.clipboard.writeText(`${selectedPost.text || ''}\n\nدا پيغام د پښتو شعرونو او ادب د اپليکيشن څخه شريک شو.`);
-                        alert('ستاسو سیسټم د مستقیم شریکولو ملاتړ نه کوي؛ پیغام کاپي شو چې په بل ځای کې یې پیسټ کړئ!');
+                        showToast('ستاسو سیسټم د مستقیم شریکولو ملاتړ نه کوي؛ پیغام کاپي شو! 📋', 'info');
                       }
                     }}
                     style={{ cursor: 'pointer' }}
@@ -2724,20 +2771,20 @@ export default function App() {
                 {/* Direct quick action contacts on about page */}
                 <div className="relative z-10 flex flex-wrap items-center justify-center gap-2 w-full mt-2">
                   <a
-                    href="https://ghafoori.me"
+                    href="https://wa.me/93779705897"
                     target="_blank"
                     rel="noreferrer"
-                    className="py-1.5 px-3 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-lg text-[9.5px] font-bold transition flex items-center gap-1"
+                    className="py-1.5 px-3 bg-emerald-600/90 hover:bg-emerald-600 border border-emerald-500 text-white rounded-lg text-[10.5px] font-bold transition flex items-center gap-1 shadow-sm font-sans"
                   >
-                    <Globe className="w-3 h-3 text-indigo-400" />
-                    <span>ghafoori.me</span>
+                    <Phone className="w-3.5 h-3.5 text-white" />
+                    <span>واټساپ اړیکه (+93779705897)</span>
                   </a>
                   <a
-                    href="mailto:contact@ghafoori.me"
-                    className="py-1.5 px-3 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-lg text-[9.5px] font-bold transition flex items-center gap-1"
+                    href="mailto:obaidkhanghafari@gmail.com"
+                    className="py-1.5 px-3 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-bold transition flex items-center gap-1 shadow-sm font-sans"
                   >
-                    <Mail className="w-3 h-3 text-rose-400" />
-                    <span>contact@ghafoori.me</span>
+                    <Mail className="w-3.5 h-3.5 text-rose-400" />
+                    <span>obaidkhanghafari@gmail.com</span>
                   </a>
                 </div>
               </div>
@@ -3138,15 +3185,7 @@ export default function App() {
                     <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-600'} leading-relaxed`}>{tr.clearCacheHelp}</p>
                     <button
                       onClick={() => {
-                        if (window.confirm(appLanguage === 'en' ? 'Are you sure you want to clear cached posts?' : 'ایا غواړئ چې ثبت شوي لنډمهاله معلومات (پوسټونه) پاک کړئ؟')) {
-                          localStorage.removeItem('dewa_cached_feed_data');
-                          setFeedData(null);
-                          setIsLoading(true);
-                          setIsSettingsPageOpen(false);
-                          setActiveModal(null);
-                          alert(appLanguage === 'en' ? 'Cached posts cleared successfully!' : 'ثبت شوي معلومات په بریالیتوب سره پاک شول!');
-                          fetchChannelData();
-                        }
+                        setShowClearCacheConfirm(true);
                       }}
                       style={{ cursor: 'pointer' }}
                       className="bg-rose-600 hover:bg-rose-550 active:scale-95 text-white py-2.5 px-3.5 rounded-xl text-[10.5px] font-bold transition flex items-center justify-center gap-1.5 self-start"
@@ -4479,15 +4518,7 @@ export default function App() {
                           <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-600'} leading-relaxed`}>{tr.clearCacheHelp}</p>
                           <button
                             onClick={() => {
-                              if (window.confirm(appLanguage === 'en' ? 'Are you sure you want to clear cached posts?' : 'ایا غواړئ چې ثبت شوي لنډمهاله معلومات (پوسټونه) پاک کړئ؟')) {
-                                localStorage.removeItem('dewa_cached_feed_data');
-                                setFeedData(null);
-                                setIsLoading(true);
-                                setIsSettingsPageOpen(false);
-                                setActiveModal(null);
-                                alert(appLanguage === 'en' ? 'Cached posts cleared successfully!' : 'ثبت شوي کښته شوي پوسټونه په بریالیتوب سره پاک شول!');
-                                fetchChannelData();
-                              }
+                              setShowClearCacheConfirm(true);
                             }}
                             style={{ cursor: 'pointer' }}
                             className="bg-rose-600 hover:bg-rose-550 active:scale-95 text-white py-2 px-3 rounded-xl text-[10.5px] font-bold transition flex items-center justify-center gap-1.5 self-start"
@@ -4806,7 +4837,12 @@ export default function App() {
                 >
                   <X className="w-5 h-5 text-white" />
                 </button>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
+                  {zoomPhotoUrlsList.length > 1 && (
+                    <span className="bg-slate-900/95 text-white px-3 py-1.5 rounded-xl text-xs font-mono font-black border border-slate-800 select-none">
+                      {zoomPhotoIndex + 1} / {zoomPhotoUrlsList.length}
+                    </span>
+                  )}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -4829,6 +4865,43 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+              {/* Navigation arrows for multi-image switching */}
+              {zoomPhotoUrlsList.length > 1 && (
+                <>
+                  {/* Previous Button (Left Arrow) */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const prevIndex = (zoomPhotoIndex - 1 + zoomPhotoUrlsList.length) % zoomPhotoUrlsList.length;
+                      setZoomPhotoIndex(prevIndex);
+                      setZoomPhotoUrl(zoomPhotoUrlsList[prevIndex]);
+                      setZoomScale(1);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3.5 bg-black/60 hover:bg-black/90 text-white rounded-full transition active:scale-90 z-[1000] border border-white/10"
+                    title="مخکینی انځور"
+                  >
+                    <ChevronLeft className="w-6 h-6 text-white" />
+                  </button>
+
+                  {/* Next Button (Right Arrow) */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const nextIndex = (zoomPhotoIndex + 1) % zoomPhotoUrlsList.length;
+                      setZoomPhotoIndex(nextIndex);
+                      setZoomPhotoUrl(zoomPhotoUrlsList[nextIndex]);
+                      setZoomScale(1);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3.5 bg-black/60 hover:bg-black/90 text-white rounded-full transition active:scale-90 z-[1000] border border-white/10"
+                    title="بل انځور"
+                  >
+                    <ChevronRight className="w-6 h-6 text-white" />
+                  </button>
+                </>
+              )}
 
               {/* Zoom Preview Canvas */}
               <motion.div
