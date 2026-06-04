@@ -88,7 +88,12 @@ app.get('/api/telegram-feed', async (req, res) => {
 
         // Message content
         const $textEl = $post.find('.tgme_widget_message_text');
-        const plainText = $textEl.text().trim();
+        
+        // Clone message element to replace <br> tags with native newlines (\n) to keep poem stanzas and spacing intact
+        const $textClone = $textEl.clone();
+        $textClone.find('br').replaceWith('\n');
+        
+        const plainText = $textClone.text().trim();
         const htmlTextContent = $textEl.html();
 
         // Process Text Links (converting relative TG links to absolute Web Client links / standard links)
@@ -269,27 +274,27 @@ app.get('/api/telegram-feed', async (req, res) => {
     const page1Posts = parseHtmlPosts(html1);
     allPosts.push(...page1Posts);
 
-    // Try fetching Page 2 for archive load capacity
-    const postIdsNumeric = page1Posts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
-    if (postIdsNumeric.length > 0) {
-      const minPostId = Math.min(...postIdsNumeric);
-      const url2 = `https://t.me/s/${cleanChannel}?before=${minPostId}`;
-      const html2 = await scrapePage(url2);
-      if (html2) {
-        const page2Posts = parseHtmlPosts(html2);
-        allPosts.push(...page2Posts);
-
-        // Try page 3 as well so we have up to 50-60 total posts!
-        const postIdsNumeric2 = page2Posts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
-        if (postIdsNumeric2.length > 0) {
-          const minPostId2 = Math.min(...postIdsNumeric2);
-          const url3 = `https://t.me/s/${cleanChannel}?before=${minPostId2}`;
-          const html3 = await scrapePage(url3);
-          if (html3) {
-            const page3Posts = parseHtmlPosts(html3);
-            allPosts.push(...page3Posts);
+    // Dynamic looping crawl to fetch up to 6 pages of historic items
+    let currentPosts = page1Posts;
+    for (let page = 2; page <= 6; page++) {
+      const postIdsNumeric = currentPosts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
+      if (postIdsNumeric.length > 0) {
+        const minPostId = Math.min(...postIdsNumeric);
+        const nextUrl = `https://t.me/s/${cleanChannel}?before=${minPostId}`;
+        const nextHtml = await scrapePage(nextUrl);
+        if (nextHtml) {
+          const nextPosts = parseHtmlPosts(nextHtml);
+          if (nextPosts.length > 0) {
+            allPosts.push(...nextPosts);
+            currentPosts = nextPosts;
+          } else {
+            break;
           }
+        } else {
+          break;
         }
+      } else {
+        break;
       }
     }
 
