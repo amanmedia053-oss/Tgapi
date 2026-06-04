@@ -274,9 +274,14 @@ app.get('/api/telegram-feed', async (req, res) => {
     const page1Posts = parseHtmlPosts(html1);
     allPosts.push(...page1Posts);
 
-    // Dynamic looping crawl to fetch up to 6 pages of historic items
+    // If "before" is requested, we are pagination/scrolling so only scrape a small block (1 or 2 pages)
+    // If it's initial load, scrape up to 150 posts
+    const maxPages = beforeVal ? 2 : 12; // 12 pages * ~15-20 posts = ~180-240 posts max, broken early if allPosts.length >= 150
     let currentPosts = page1Posts;
-    for (let page = 2; page <= 6; page++) {
+    for (let page = 2; page <= maxPages; page++) {
+      if (!beforeVal && allPosts.length >= 150) {
+        break; // Stop fetching older content if we have 150 posts initially
+      }
       const postIdsNumeric = currentPosts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
       if (postIdsNumeric.length > 0) {
         const minPostId = Math.min(...postIdsNumeric);
@@ -305,6 +310,8 @@ app.get('/api/telegram-feed', async (req, res) => {
       return idB - idA;
     });
 
+    const slicedPosts = beforeVal ? sortedPosts : sortedPosts.slice(0, 150);
+
     res.json({
       channelInfo: {
         username: cleanChannel,
@@ -313,7 +320,7 @@ app.get('/api/telegram-feed', async (req, res) => {
         subscribers,
         description,
       },
-      posts: sortedPosts
+      posts: slicedPosts
     });
 
   } catch (error: any) {
