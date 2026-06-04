@@ -97,7 +97,7 @@ function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: 
             className={`p-3 rounded-xl border ${
               isDark 
                 ? 'bg-slate-950/70 border-slate-800 hover:bg-slate-900/80 shadow-md shadow-black/20' 
-                : 'bg-slate-50 border-slate-205 hover:bg-slate-100/50 shadow-sm'
+                : 'bg-slate-50 border-slate-205 hover:bg-slate-105 shadow-sm'
             } flex items-center justify-between gap-3 text-right font-sans transition-all duration-300 select-none`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
@@ -132,7 +132,13 @@ function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: 
 
       <AnimatePresence>
         {showTelegramModal && activeFile && (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 pb-12 sm:pb-4">
+          <div 
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowTelegramModal(false);
+            }}
+            className="fixed inset-0 z-[99999] flex items-end justify-center p-0"
+          >
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -145,57 +151,67 @@ function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: 
               className="absolute inset-0 bg-slate-950/75 backdrop-blur-xs"
             />
             
-            {/* Dialog Card block */}
+            {/* Bottom Sheet Card */}
             <motion.div
-              initial={{ scale: 0.94, opacity: 0, y: 15 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.94, opacity: 0, y: 15 }}
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 240 }}
               onClick={(e) => e.stopPropagation()}
-              className={`relative w-full max-w-sm rounded-[24px] p-5.5 border text-right font-sans shadow-2xl transition-colors duration-200 ${
+              className={`relative w-full max-w-md rounded-t-[32px] sm:rounded-b-[28px] sm:mb-6 p-6 pb-10 sm:pb-6 border text-right font-sans shadow-2xl transition-colors duration-200 ${
                 isDark 
-                  ? 'bg-slate-900 border-slate-800 text-slate-100 shadow-slate-950/90' 
-                  : 'bg-white border-slate-200 text-slate-800 shadow-slate-300/40'
+                  ? 'bg-gradient-to-b from-slate-900 to-slate-950 border-slate-805 text-slate-100 shadow-slate-950/90' 
+                  : 'bg-white border-slate-250 text-slate-800 shadow-slate-300/40'
               }`}
             >
-              <div className="flex flex-col items-center text-center gap-3.5">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isDark ? 'bg-indigo-950/60 text-indigo-400' : 'bg-indigo-50 text-indigo-600'} shrink-0`}>
-                  <Send className="w-5 h-5 -rotate-12 animate-pulse" />
+              {/* Elegant Top Sheet Handle */}
+              <div className="w-12 h-1.5 bg-slate-500/25 rounded-full mx-auto mb-5" />
+
+              <div className="flex flex-col items-center text-center gap-4">
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center ${isDark ? 'bg-indigo-950/60 text-indigo-400' : 'bg-indigo-50 text-indigo-600'} shrink-0 shadow-inner`}>
+                  <Send className="w-6 h-6 -rotate-12 animate-pulse" />
                 </div>
                 
-                <div className="space-y-1">
-                  <h4 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                <div className="space-y-1.5 w-full">
+                  <h4 className={`text-base sm:text-lg font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
                     د کتاب ډاونلوډ او ترلاسه کول
                   </h4>
-                  <span className="text-[10px] text-slate-400 font-mono font-medium block animate-pulse">
-                    {(activeFile.fileName || defaultFileName).length > 35 ? (activeFile.fileName || defaultFileName).slice(0, 35) + '...' : (activeFile.fileName || defaultFileName)}
+                  <span className="text-[10px] sm:text-xs text-indigo-400 font-mono font-bold block max-w-xs mx-auto truncate">
+                    {activeFile.fileName || defaultFileName}
                   </span>
                 </div>
 
-                <p className={`text-[11.5px] leading-relaxed ${isDark ? 'text-slate-300/90' : 'text-slate-600'}`}>
+                <p className={`text-xs sm:text-[13px] leading-relaxed ${isDark ? 'text-slate-350' : 'text-slate-650'} px-2`}>
                   ګرانه او محترمه کاروونکی! دا کتاب په پوره امانتدارۍ سره زمونږ په رسمي ټلیګرام چینل کې خوندي شوی دی. د دې لپاره چې کتاب په بشپړ ډول ډاونلوډ او خلاص کړئ، مهرباني وکړئ لاندې د <span className="text-indigo-400 font-bold">ډانلوډ (ټلیګرام)</span> تڼۍ کلیک کړئ.
                 </p>
                 
-                <div className={`w-full h-[1px] ${isDark ? 'bg-slate-800' : 'bg-slate-100'} my-1`} />
+                <div className={`w-full h-[1px] ${isDark ? 'bg-slate-800/60' : 'bg-slate-100'} my-1`} />
                 
-                <div className="flex flex-row-reverse gap-2.5 w-full">
+                <div className="flex flex-col sm:flex-row-reverse gap-3 w-full">
                   <a
                     href={activeFile.postUrl || post.postUrl}
                     target="_blank"
                     rel="noreferrer"
-                    onClick={() => setShowTelegramModal(false)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowTelegramModal(false);
+                    }}
                     style={{ cursor: 'pointer' }}
-                    className={`flex-1 py-1.5 sm:py-2.5 px-4 rounded-xl text-xs font-black text-center text-white ${tc.bg} ${tc.hoverBg} transition active:scale-95 flex items-center justify-center gap-1.5 shadow-md`}
+                    className={`w-full sm:flex-1 py-3 px-5 rounded-2xl text-xs sm:text-sm font-black text-center text-white ${tc.bg} ${tc.hoverBg} transition active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/10`}
                   >
-                    <Send className="w-3.5 h-3.5 -rotate-12" />
+                    <Send className="w-4 h-4 -rotate-12" />
                     <span>ډانلوډ (ټلیګرام)</span>
                   </a>
                   <button
-                    onClick={() => setShowTelegramModal(false)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowTelegramModal(false);
+                    }}
                     style={{ cursor: 'pointer' }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black text-center border transition ${
+                    className={`w-full sm:flex-1 py-3 px-5 rounded-2xl text-xs sm:text-sm font-black text-center border transition active:scale-95 ${
                       isDark 
-                        ? 'bg-slate-850 border-slate-800 text-slate-300 hover:bg-slate-800' 
-                        : 'bg-slate-100 hover:bg-slate-150 border-slate-200 text-slate-700'
+                        ? 'bg-slate-850 hover:bg-slate-800 border-slate-800 text-slate-300' 
+                        : 'bg-slate-50 hover:bg-slate-100 border-slate-205 text-slate-700'
                     }`}
                   >
                     بندول
@@ -836,7 +852,7 @@ export default function App() {
     return (localStorage.getItem('dewa_home_layout') as any) || 'standard';
   });
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
-    return (localStorage.getItem('dewa_theme_mode') as any) || 'dark';
+    return (localStorage.getItem('dewa_theme_mode') as any) || 'light';
   });
   const [primaryColorTheme, setPrimaryColorTheme] = useState<'indigo' | 'emerald' | 'rose' | 'amber' | 'violet' | 'cyan' | 'teal' | 'crimson' | 'orange' | 'slate'>(() => {
     return (localStorage.getItem('dewa_primary_color') as any) || 'indigo';
@@ -1020,12 +1036,12 @@ export default function App() {
     setContactError(null);
 
     try {
-      let host = backendHostInput.trim();
-      if (!host) {
-        host = typeof window !== 'undefined' ? window.location.origin : 'https://da-mine-dewa.web.app';
-      }
+      const cleanHost = backendHostInput.trim();
+      const fetchUrl = cleanHost 
+        ? `${cleanHost}/api/send-contact-message` 
+        : `/api/send-contact-message`;
       
-      const response = await fetch(`${host}/api/send-contact-message`, {
+      const response = await fetch(fetchUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1036,7 +1052,14 @@ export default function App() {
         })
       });
 
-      const result = await response.json();
+      let result: any = {};
+      try {
+        const textData = await response.text();
+        result = JSON.parse(textData);
+      } catch (jsonErr) {
+        result = { message: `د سرور ځواب په لوستلو کې تېروتنه ایا انټرنیټ یا سرور بند دی؟ (کوډ: ${response.status})` };
+      }
+
       if (!response.ok) {
         throw new Error(result.message || 'د پیغام په استولو کې د بګ تېروتنه رامنځه شوه.');
       }
@@ -1435,56 +1458,43 @@ export default function App() {
         throw new Error('د ټلیګرام د مستقیم کود په پروسس کولو کې خطا رامنځته شوه (HTML parse returned no elements).');
       }
 
-      // Try fetching older posts client-side for richer initial feed
+      // Try fetching older posts client-side in a dynamic loop to fetch up to 150 posts initially
       try {
-        const postIdsNumeric = parsedData.posts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
-        if (postIdsNumeric.length > 0) {
-          const minPostId1 = Math.min(...postIdsNumeric);
-          const directUrl2 = `https://t.me/s/${targetChannelName}?before=${minPostId1}`;
+        let currentPagingPosts = [...parsedData.posts];
+        const uniqueIds = new Set(parsedData.posts.map(p => p.id));
+        for (let pageIdx = 2; pageIdx <= 12; pageIdx++) {
+          if (parsedData.posts.length >= 150) {
+            break; // Stop client scraping once we have 150 posts initially
+          }
+          const postIdsNumeric = currentPagingPosts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
+          if (postIdsNumeric.length === 0) break;
+          const minPostId = Math.min(...postIdsNumeric);
+          const nextUrl = `https://t.me/s/${targetChannelName}?before=${minPostId}`;
           
-          const response2 = await dewaFetch(directUrl2, {
+          const responseN = await dewaFetch(nextUrl, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
             }
           });
-          if (response2.ok) {
-            const htmlText2 = await response2.text();
-            const parsedData2 = parseClientTelegramHtml(htmlText2, targetChannelName);
-            if (parsedData2 && parsedData2.posts.length > 0) {
-              const uniqueIds = new Set(parsedData.posts.map(p => p.id));
-              const filteredNew2 = parsedData2.posts.filter(p => !uniqueIds.has(p.id));
-              parsedData.posts.push(...filteredNew2);
-
-              // Try page 3 client-side
-              const postIdsNumeric2 = parsedData2.posts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
-              if (postIdsNumeric2.length > 0) {
-                const minPostId2 = Math.min(...postIdsNumeric2);
-                const directUrl3 = `https://t.me/s/${targetChannelName}?before=${minPostId2}`;
-                
-                const response3 = await dewaFetch(directUrl3, {
-                  headers: {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
-                  }
-                });
-                if (response3.ok) {
-                  const htmlText3 = await response3.text();
-                  const parsedData3 = parseClientTelegramHtml(htmlText3, targetChannelName);
-                  if (parsedData3 && parsedData3.posts.length > 0) {
-                    const uniqueIds2 = new Set(parsedData.posts.map(p => p.id));
-                    const filteredNew3 = parsedData3.posts.filter(p => !uniqueIds2.has(p.id));
-                    parsedData.posts.push(...filteredNew3);
-                  }
-                }
-              }
-            }
-          }
+          if (!responseN.ok) break;
+          const htmlTextN = await responseN.text();
+          const parsedDataN = parseClientTelegramHtml(htmlTextN, targetChannelName);
+          if (!parsedDataN || !parsedDataN.posts || parsedDataN.posts.length === 0) break;
+          
+          const filteredNew = parsedDataN.posts.filter(p => !uniqueIds.has(p.id));
+          if (filteredNew.length === 0) break;
+          
+          filteredNew.forEach(p => uniqueIds.add(p.id));
+          parsedData.posts.push(...filteredNew);
+          currentPagingPosts = parsedDataN.posts;
         }
       } catch (colErr) {
         console.warn('[Dewa Feed] Direct client fallback paging failed but primary loaded ok', colErr);
       }
 
-      // Sort posts latest first
+      // Sort posts latest first and limit to 150 initially
       parsedData.posts.sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0));
+      parsedData.posts = parsedData.posts.slice(0, 150);
 
       saveAndNotifyFeedData(parsedData);
       console.log('[Dewa Feed] Direct HTML scrape succeeded & formatted successfully on-client! (Cached)');
@@ -2040,6 +2050,35 @@ export default function App() {
             </button>
           )}
 
+          {/* New Attractive Theme Switcher Option (ښکلی او جذاب تڼۍ د مېنو بار کې) */}
+          <button
+            onClick={() => setThemeMode(isDark ? 'light' : 'dark')}
+            style={{ cursor: 'pointer' }}
+            className={`p-2 rounded-xl transition duration-300 relative flex items-center justify-center overflow-hidden hover:scale-105 active:scale-95 ${
+              isDark 
+                ? 'bg-slate-800 text-amber-400 hover:bg-slate-750 hover:text-amber-300 shadow-lg shadow-amber-500/10 border border-slate-700/50' 
+                : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100/90 hover:text-indigo-700 shadow-md shadow-indigo-500/5 border border-indigo-100/50'
+            }`}
+            title={isDark ? 'روښانه بڼه' : 'تياره بڼه'}
+          >
+            <motion.div
+              layout
+              initial={false}
+              animate={{ rotate: isDark ? 360 : 0, scale: 1 }}
+              transition={{
+                rotate: { type: 'spring', stiffness: 220, damping: 14 },
+                scale: { type: 'spring', stiffness: 300, damping: 12 }
+              }}
+              className="flex items-center justify-center"
+            >
+              {isDark ? (
+                <Sun className="w-5 h-5 fill-amber-400/20 text-amber-400" />
+              ) : (
+                <Moon className="w-5 h-5 fill-indigo-600/10 text-indigo-600" />
+              )}
+            </motion.div>
+          </button>
+
           {/* Three-Dot Action Trigger */}
           <button
             onClick={() => setIsPopupOpen(!isPopupOpen)}
@@ -2515,7 +2554,7 @@ export default function App() {
 
               {selectedPost.htmlText ? (
                 <div
-                  className={`${isDark ? 'text-slate-205' : 'text-slate-805 font-medium'} text-[15.5px] sm:text-[17px] leading-[1.85] sm:leading-[1.95] space-y-2.5 font-sans break-words telegram-styles text-right pr-1`}
+                  className={`${isDark ? 'text-slate-200' : 'text-slate-800 font-medium'} text-[15.5px] sm:text-[17px] leading-[1.85] sm:leading-[1.95] space-y-2.5 font-sans break-words telegram-styles text-right pr-1`}
                   dangerouslySetInnerHTML={{ __html: makeHtmlHashtagsClickable(selectedPost.htmlText) }}
                 />
               ) : (
@@ -2544,7 +2583,6 @@ export default function App() {
                 <CustomBookDownload post={selectedPost} isDark={isDark} tc={tc} />
               )}
 
-              {/* Link Preview (if any) */}
               {selectedPost.linkPreview ? (
                 <a
                   href={selectedPost.linkPreview.url}
@@ -2555,7 +2593,7 @@ export default function App() {
                   <div className="flex gap-3 min-w-0">
                     {selectedPost.linkPreview.photoUrl && (
                       <img
-                        src={selectedPost.linkPreview.photoUrl || null}
+                        src={selectedPost.linkPreview.photoUrl}
                         referrerPolicy="no-referrer"
                         className="w-12 h-12 rounded bg-slate-900 object-cover shrink-0 border border-slate-850"
                         alt="Link preview"
@@ -2606,7 +2644,7 @@ export default function App() {
                           url: window.location.href,
                         }).catch((err) => console.log(err));
                       } else {
-                        navigator.clipboard.writeText(`${selectedPost.text || ''}\n\nدا پيغام د ښکلو کيسو او شعرونو د اپليکيشن څخه شريک شو.`);
+                        navigator.clipboard.writeText(`${selectedPost.text || ''}\n\nدا پيغام د پښتو شعرونو او ادب د اپليکيشن څخه شريک شو.`);
                         alert('ستاسو سیسټم د مستقیم شریکولو ملاتړ نه کوي؛ پیغام کاپي شو چې په بل ځای کې یې پیسټ کړئ!');
                       }
                     }}
@@ -2665,7 +2703,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <Info className={`w-4 h-4 ${tc.text}`} />
                   <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
-                    پرودوګرامر/پلټونکي په اړه معلومات
+                    زموږ په اړه
                   </span>
                 </div>
               </div>
@@ -2673,18 +2711,18 @@ export default function App() {
               {/* High-quality profile header card */}
               <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-900 p-6 flex flex-col items-center text-center gap-4 shadow-md">
                 <div className={`absolute inset-0 bg-gradient-to-r ${tc.gradient} opacity-20`} />
-                <div className="relative w-20 h-20 rounded-full border-2 border-slate-700/80 p-1 flex items-center justify-center bg-slate-950 overflow-hidden shadow-inner shrink-0">
+                <div className="relative w-23 h-23 rounded-full border-2 border-indigo-500/40 p-1 flex items-center justify-center bg-slate-950 overflow-hidden shadow-inner shrink-0">
                   <div className={`w-full h-full rounded-full bg-gradient-to-tr ${tc.gradient} flex items-center justify-center`}>
-                    <User className="w-10 h-10 text-white" />
+                    <User className="w-12 h-12 text-white" />
                   </div>
                 </div>
-                <div className="relative z-10 w-full">
-                  <h3 className="text-base font-black text-white font-sans tracking-tight">عبیدالله غفاري (Obaidullah Ghaffari)</h3>
-                  <p className="text-[10px] text-slate-400 font-medium font-sans mt-0.5">طالب العلم • AI Developer • Web Enthusiast</p>
+                <div className="relative z-10 w-full font-sans">
+                  <h3 className="text-base font-black text-white tracking-tight">عبیدالله غفاري (Obaidullah Ghaffari)</h3>
+                  <p className="text-[10px] text-slate-400 font-medium mt-1">طالب العلم • د علم، مطالعې او ټکنالوژۍ مینهوال</p>
                 </div>
 
                 {/* Direct quick action contacts on about page */}
-                <div className="relative z-10 flex flex-wrap items-center justify-center gap-2 w-full mt-10">
+                <div className="relative z-10 flex flex-wrap items-center justify-center gap-2 w-full mt-2">
                   <a
                     href="https://ghafoori.me"
                     target="_blank"
@@ -2701,47 +2739,51 @@ export default function App() {
                     <Mail className="w-3 h-3 text-rose-400" />
                     <span>contact@ghafoori.me</span>
                   </a>
-                  <a
-                    href="https://wa.me/93700005555"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="py-1.5 px-3 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-lg text-[9.5px] font-bold transition flex items-center gap-1"
-                  >
-                    <MessageSquare className="w-3 h-3 text-emerald-400" />
-                    <span>WhatsApp</span>
-                  </a>
                 </div>
               </div>
 
               {/* Developer full characteristics and biographies */}
               <div className="space-y-4 mt-5 font-sans text-right">
-                <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
+                <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-3`}>
                   <div className="flex items-center gap-1.5 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
-                    <span className="text-xs">زما په اړه لنډ معلومات</span>
+                    <span className="text-xs">پېژندنه او زده کړې</span>
                     <User className="w-4 h-4" />
                   </div>
-                  <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
-                    زه <strong>عبیدالله غفاري</strong> یم، د غیور او مېلمه پال لوګر ولایت اوسېدونکی او د نننۍ جهادي مدرسې د اوومې درجې طالب العلم. د ټکنالوژۍ، نوې او مدرنې بڼې، مصنوعي ځیرکتیا او کلتوري ارزښتونو سره توده مینه لرم او پرمختګ ته ژمن یم.
+                  <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
+                    زه <strong>عبیدالله غفاري</strong> یم، د جهادي مدرسې د اوومې درجې طالب العلم او د علم، مطالعې او ټکنالوژۍ مینهوال. زما هڅه دا ده چې د اسلامي ارزښتونو، ګټورو معلوماتو او مثبتو افکارو د خپرولو لپاره له عصري وسایلو او ټکنالوژۍ څخه ګټه واخلم.
+                  </p>
+                  <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
+                    ځان د ټول عمر زده کوونکی ګڼم او باور لرم چې علم د انسان د پرمختګ او نېکمرغۍ تر ټولو ستره وسیله ده. له دیني زده کړو سره سره د کمپیوټر، ویبپاڼو، مصنوعي ځیرکتیا (AI)، لیکوالۍ او ډیجیټلي نړۍ په اړه هم زده کړې او تجربې ترلاسه کوم.
                   </p>
                 </div>
 
                 <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
                   <div className="flex items-center gap-1.5 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
-                    <span className="text-xs">زما لوی هدف او موخه</span>
+                    <span className="text-xs">زما اساسي هدفونه</span>
                     <Rocket className="w-4 h-4" />
                   </div>
-                  <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
-                     دین ته رښتینی خدمت کول، ګران هېواد افغانستان ته پرمختللی اسهال ورکول، او د پښتو خوږې ژبې کلتور او ملي شعور ساتل زمونږ د سفر تر ټولو مهم اهداف دي ترڅو ټولنې ته په ګډه بېساري خدمتونه وړاندې کړو.
+                  <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
+                    زما موخه د اسلام خدمت، د ګټورې پوهې خپرول او د داسې محتوا وړاندې کول دي چې د خلکو لپاره د خیر، پوهې او مثبت بدلون سبب شي. هڅه کوم چې د خپلو وړتیاوو او امکاناتو په اندازه د اسلامي او تعلیمي خدمتونو په برخه کې اغېزمن رول ولرم.
                   </p>
                 </div>
 
                 <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
                   <div className="flex items-center gap-1.5 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
-                    <span className="text-xs">ورځنۍ منظمې بوختیاوې</span>
+                    <span className="text-xs">خوښې برخه او بوختیاوې</span>
                     <Calendar className="w-4 h-4" />
                   </div>
-                  <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
-                    مطالعه او پوهنلیک لوستل، دیني زده کړې، په انټرنیټي او افلاین ویبونو کې نوي کارونه جوړول، کلتوري هلې ځلې کول او د هر وړ کلام خپرول.
+                  <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
+                    مطالعه، لیکوالي، د نوو مهارتونو زده کړه، د ګټورو پروژو جوړول او د وخت اغېزمنه ګټه اخیستنه زما له خوښیو څخه دي. باور لرم چې اخلاص، دوامداره زده کړه او نېک نیت د هر بریالي کار بنسټ جوړوي.
+                  </p>
+                </div>
+
+                <div className={`p-4 rounded-xl border-2 border-emerald-500/20 bg-emerald-500/5 space-y-2`}>
+                  <div className="flex items-center gap-1.5 text-emerald-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
+                    <span className="text-xs">زما شعار</span>
+                    <span className="text-base">🌿📖</span>
+                  </div>
+                  <p className={`text-xs ${isDark ? 'text-emerald-300' : 'text-emerald-850'} leading-relaxed font-black text-center py-1`}>
+                    "غوره انسان هغه دی چې خلکو ته ډېر ګټور وي." 🌿📖
                   </p>
                 </div>
 
@@ -2771,7 +2813,7 @@ export default function App() {
               <div className={`mt-6 p-4 rounded-2xl ${subCardBg} border border-slate-500/5 flex flex-col gap-2.5 text-right font-sans`}>
                 <span className={`text-[9.5px] ${tc.text} font-black uppercase tracking-wider block`}>د اړیکو بله پاڼه او کلتوري ډالۍ</span>
                 <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-655'} leading-relaxed`}>
-                  تاسو کولی شئ د هر ډول رغنده وړاندیز، نوښت او خپلو شعرونو د کتنې او اضافه کولو د بډاینې لپاره لاندې رسمي لینک سره اړیکه ونیسئ.
+                  تاسو کولی شئ د هر ډول رغنده وړاندیز, نوښت او خپلو شعرونو د کتنې او اضافه کولو د بډاینې لپاره لاندې رسمي لینک سره اړیکه ونیسئ.
                 </p>
                 <a
                   href="mailto:poetry.pashto@dewa-design.one"
@@ -3166,7 +3208,7 @@ export default function App() {
                     key={post.id}
                     onClick={() => setSelectedPost(post)}
                     style={{ cursor: 'pointer' }}
-                    className="bg-slate-900/95 hover:bg-slate-850/90 p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-sm border border-slate-800/20"
+                    className={`${isDark ? 'bg-slate-900/95 hover:bg-slate-850/90 border-slate-800/20 text-slate-100' : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-900'} border p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md`}
                   >
                     {post.photoUrl && (!post.photoUrls || post.photoUrls.length <= 1) ? (
                       <div className="w-16 h-16 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
@@ -3185,7 +3227,7 @@ export default function App() {
                     ) : null}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 text-[10px] text-slate-500 mb-1 font-mono">
-                        <span className="bg-slate-950 px-2 py-0.5 rounded text-[9.5px] font-mono text-indigo-400 font-bold">#{post.id}</span>
+                        <span className={`${isDark ? 'bg-slate-950' : 'bg-slate-100'} px-2 py-0.5 rounded text-[9.5px] font-mono text-indigo-400 font-bold`}>#{post.id}</span>
                         <span>{post.timeLabel || 'وروستی'}</span>
                       </div>
                       <BeautifulTelegramText 
@@ -3359,12 +3401,9 @@ export default function App() {
 
             {/* CATEGORIES GRID TABS (د پوسټونو بېلا بېلې کټګورۍ) */}
             <div className="w-full mt-4 mb-2">
-              <div className="flex items-center justify-between mb-2 px-1">
+              <div className="flex items-center mb-2 px-1 text-right">
                 <span className={`text-[11px] font-black ${isDark ? 'text-slate-300' : 'text-slate-700'} font-sans`}>
                   د پورته شويو پوسټونو موضوعي کټګورۍ:
-                </span>
-                <span className={`text-[9px] font-mono ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                  {fullFeedPosts.length} توکي موندل شوي
                 </span>
               </div>
               <div 
@@ -3884,7 +3923,7 @@ export default function App() {
                   key={post.id}
                   onClick={() => setSelectedPost(post)}
                   style={{ cursor: 'pointer' }}
-                  className={`${cardBg} border p-4 rounded-xl flex items-center gap-4 transition group select-none text-right shadow-sm`}
+                  className={`${isDark ? 'bg-slate-900/50 border-white/40 hover:bg-slate-800/60' : 'bg-white border-slate-200 hover:bg-slate-100/80 shadow-md'} border p-4 rounded-xl flex items-center gap-4 transition group select-none text-right`}
                 >
                   {/* Right: Enlarged thumbnail image with no white stroke */}
                   {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
