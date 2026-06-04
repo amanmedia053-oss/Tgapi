@@ -385,7 +385,8 @@ app.post('/api/send-contact-message', async (req, res) => {
   }
 
   try {
-    const text = `📬 *د اړیکې پیغام د اپلیکیشن څخه*\n\n👤 *شخص:* ${name}\n\n💬 *پیغام:*\n${message}`;
+    // Use plain text formatting rather than Markdown to prevent Telegram parsing exceptions caused by special characters like "_" or "*" in name/message
+    const text = `📬 د اړیکې پیغام د اپلیکیشن څخه\n\n👤 شخص: ${name}\n\n💬 پیغام:\n${message}`;
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
     const response = await fetch(url, {
       method: 'POST',
@@ -395,7 +396,6 @@ app.post('/api/send-contact-message', async (req, res) => {
       body: JSON.stringify({
         chat_id: chatId,
         text: text,
-        parse_mode: 'Markdown',
       }),
     });
 
