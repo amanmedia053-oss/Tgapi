@@ -64,7 +64,8 @@ import {
   MessageSquare,
   Rocket,
   Quote,
-  Award as AwardIcon
+  Award as AwardIcon,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -165,13 +166,13 @@ function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: 
                   <h4 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
                     د کتاب ډاونلوډ او ترلاسه کول
                   </h4>
-                  <span className="text-[10px] text-slate-400 font-mono font-medium block">
+                  <span className="text-[10px] text-slate-400 font-mono font-medium block animate-pulse">
                     {(activeFile.fileName || defaultFileName).length > 35 ? (activeFile.fileName || defaultFileName).slice(0, 35) + '...' : (activeFile.fileName || defaultFileName)}
                   </span>
                 </div>
 
                 <p className={`text-[11.5px] leading-relaxed ${isDark ? 'text-slate-300/90' : 'text-slate-600'}`}>
-                  ګرانه او محترمه کاروونکی! دا کتاب په پوره امانتدارۍ سره زمونږ په رسمي ټلیګرام چینل کې خوندي شوی دی. د دې لپاره چې کتاب په بشپړ ډول ډاونلوډ او خلاص کړئ، مهرباني وکړئ لاندې د <span className="text-indigo-400 font-bold">ټلیګرام ته تلل</span> تڼۍ کلیک کړئ.
+                  ګرانه او محترمه کاروونکی! دا کتاب په پوره امانتدارۍ سره زمونږ په رسمي ټلیګرام چینل کې خوندي شوی دی. د دې لپاره چې کتاب په بشپړ ډول ډاونلوډ او خلاص کړئ، مهرباني وکړئ لاندې د <span className="text-indigo-400 font-bold">ډانلوډ (ټلیګرام)</span> تڼۍ کلیک کړئ.
                 </p>
                 
                 <div className={`w-full h-[1px] ${isDark ? 'bg-slate-800' : 'bg-slate-100'} my-1`} />
@@ -183,10 +184,10 @@ function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: 
                     rel="noreferrer"
                     onClick={() => setShowTelegramModal(false)}
                     style={{ cursor: 'pointer' }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black text-center text-white ${tc.bg} ${tc.hoverBg} transition active:scale-95 flex items-center justify-center gap-1.5 shadow-md`}
+                    className={`flex-1 py-1.5 sm:py-2.5 px-4 rounded-xl text-xs font-black text-center text-white ${tc.bg} ${tc.hoverBg} transition active:scale-95 flex items-center justify-center gap-1.5 shadow-md`}
                   >
                     <Send className="w-3.5 h-3.5 -rotate-12" />
-                    <span>ټلیګرام ته تلل</span>
+                    <span>ډانلوډ (ټلیګرام)</span>
                   </a>
                   <button
                     onClick={() => setShowTelegramModal(false)}
@@ -205,6 +206,129 @@ function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: 
           </div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+const makeHtmlHashtagsClickable = (html: string) => {
+  if (!html) return '';
+  return html.replace(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g, (match) => {
+    return `<span class="text-indigo-400 hover:text-indigo-350 font-black hover:underline mx-0.5 inline-block" style="cursor: pointer;" onclick="if(window.handleHashtagClickGlobal) window.handleHashtagClickGlobal('${match}')">${match}</span>`;
+  });
+};
+
+// Custom text component to render Telegram formatting beautifully (with line-breaks and stanzas)
+function BeautifulTelegramText({ text, isDark, fs, limitLines = 6, showExpander = true }: { text: string; isDark: boolean; fs: any; limitLines?: number; showExpander?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!text) return null;
+
+  // 1. Normalize literal \n, double escaped \\n, HTML line breaks, and empty lines
+  const cleanText = text
+    .replace(/\\n/g, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+
+  // Enforce exactly 3 lines limit for List View previews (when showExpander is true)
+  const actualLimit = showExpander ? 3 : limitLines;
+
+  // Split by newline to respect visual poetry stanzas and empty line spacing
+  let lines = cleanText.split('\n');
+  
+  // For List View previews, remove any completely empty/whitespace-only lines so they don't consume preview constraints
+  if (showExpander) {
+    lines = lines.filter(line => line.trim() !== '');
+  }
+  
+  const needsTruncation = lines.length > actualLimit;
+  
+  // Truncate to actualLimit lines if needed, preserving exact spacing of those lines
+  const displayedText = (needsTruncation && !expanded) 
+    ? lines.slice(0, actualLimit).join('\n') 
+    : lines.join('\n');
+
+  // 3. Render and highlight hashtags to be fully clickable search queries
+  const renderWithHashtags = (rawText: string, isTruncated: boolean) => {
+    if (!rawText) return '';
+    const regex = /(#[\u0600-\u06FFa-zA-Z0-9_]+)/g;
+    const parts = rawText.split(regex);
+    const elements = parts.map((part, index) => {
+      if (part.startsWith('#')) {
+        return (
+          <span
+            key={index}
+            onClick={(e) => {
+              e.stopPropagation();
+              if ((window as any).handleHashtagClickGlobal) {
+                (window as any).handleHashtagClickGlobal(part);
+              }
+            }}
+            className="text-indigo-400 hover:text-indigo-350 font-black cursor-pointer transition select-none mx-0.5 inline-block hover:underline"
+            title={`پلټنه: ${part}`}
+          >
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
+
+    if (isTruncated && !expanded) {
+      elements.push(
+        <span
+          key="more-suffix"
+          className="text-indigo-400 font-bold hover:text-indigo-350 transition select-none mr-2 inline-block whitespace-nowrap align-middle"
+          style={{ direction: 'rtl' }}
+        >
+          ... نور وګورئ
+        </span>
+      );
+
+      // Extract all hashtags from complete cleanText and find those that are currently hidden
+      const allHashtags = Array.from(new Set(cleanText.match(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g) || []));
+      const displayedHashtags = Array.from(new Set(rawText.match(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g) || []));
+      const missingHashtags = allHashtags.filter(tag => !displayedHashtags.includes(tag));
+
+      if (missingHashtags.length > 0) {
+        elements.push(
+          <div key="missing-tags-container" className="mt-2 bg-indigo-500/5 py-1 px-2.5 rounded-lg text-right text-[11px] font-medium leading-relaxed max-w-full flex flex-wrap gap-1 items-center justify-start border border-indigo-400/5" style={{ direction: 'rtl' }}>
+            <span className="text-slate-400/95 ml-1 select-none font-sans text-[10.5px]">هشتګونه:</span>
+            {missingHashtags.map((tag, idx) => (
+              <span
+                key={`missing-${idx}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if ((window as any).handleHashtagClickGlobal) {
+                    (window as any).handleHashtagClickGlobal(tag);
+                  }
+                }}
+                className="text-indigo-400 hover:text-indigo-350 font-extrabold cursor-pointer transition select-none hover:underline"
+                title={`پلټنه: ${tag}`}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        );
+      }
+    }
+    return elements;
+  };
+
+  return (
+    <div className="space-y-1 text-right w-full">
+      <div 
+        className={`${fs?.body || 'text-[12.5px] sm:text-[13px]'} ${
+          isDark ? 'text-slate-200' : 'text-slate-800'
+        } whitespace-pre-wrap break-words leading-[2.1] sm:leading-[2.25] pr-1 font-medium font-sans select-text`}
+        style={{ direction: 'rtl' }}
+      >
+        {renderWithHashtags(displayedText, needsTruncation)}
+      </div>
     </div>
   );
 }
@@ -552,6 +676,29 @@ const getIsBook = (post: TelegramPost | null): boolean => {
 
 const getPostTextWithFallback = (post: TelegramPost | null): string => {
   if (!post) return '';
+
+  // Recover beautiful newlines and stanzas from htmlText if available, protecting old cached posts structure
+  if (post.htmlText && post.htmlText.trim() !== '') {
+    let processed = post.htmlText
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<\/div>/gi, '\n');
+    
+    // Safely remove other HTML tags to get pure clean plain text with preserved spacing/stanzas
+    processed = processed.replace(/<[^>]*>/g, '');
+    
+    // Unescape common HTML escape character sequences
+    processed = processed
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+      
+    if (processed.trim() !== '') {
+      return processed;
+    }
+  }
+
   if (post.text && post.text.trim() !== '') {
     return post.text;
   }
@@ -675,6 +822,7 @@ export default function App() {
   // Splash Screen and Welcome Dialog states
   const [showSplash, setShowSplash] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [splashProgress, setSplashProgress] = useState(0);
 
   // Active modal state for sidebar actions (settings, about, contact, apps)
@@ -724,6 +872,23 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('dewa_app_language', appLanguage);
   }, [appLanguage]);
+
+  // Global listener for hashtag clicks to trigger search from any component
+  useEffect(() => {
+    (window as any).handleHashtagClickGlobal = (tag: string) => {
+      setSearchQuery(tag);
+      setIsSearchOpen(true);
+      setSelectedPost(null);
+      setIsAboutPageOpen(false);
+      setIsContactPageOpen(false);
+      setIsSettingsPageOpen(false);
+      setIsFullFeedOpen(false);
+      setActiveModal(null);
+    };
+    return () => {
+      delete (window as any).handleHashtagClickGlobal;
+    };
+  }, []);
 
   // States for loading older pages dynamically
   const [isScrapingMore, setIsScrapingMore] = useState(false);
@@ -1384,6 +1549,16 @@ export default function App() {
   }, [appLanguage]);
 
   // Native back button listener integrated beautifully with routing and modals
+  const handleExitApp = async () => {
+    try {
+      const { App: CapApp } = await import('@capacitor/app');
+      CapApp.exitApp();
+    } catch (err) {
+      console.warn('Could not load @capacitor/app plugin, falling back:', err);
+      setShowExitConfirmation(false);
+    }
+  };
+
   useEffect(() => {
     const isCap = !!(window as any).Capacitor;
     if (!isCap) return;
@@ -1413,11 +1588,10 @@ export default function App() {
         } else if (isSearchOpen) {
           setIsSearchOpen(false);
           setSearchQuery('');
+        } else if (showExitConfirmation) {
+          setShowExitConfirmation(false);
         } else {
-          const confirmExit = window.confirm(appLanguage === 'en' ? 'Are you sure you want to exit?' : 'ایا غواړئ چې له اپلیکیشن څخه ووځئ؟');
-          if (confirmExit) {
-            CapApp.exitApp();
-          }
+          setShowExitConfirmation(true);
         }
       }).then(listener => {
         appListener = listener;
@@ -1431,7 +1605,7 @@ export default function App() {
         appListener.remove();
       }
     };
-  }, [zoomPhotoUrl, activeModal, isSettingsPageOpen, isAboutPageOpen, isContactPageOpen, isSidebarOpen, selectedPost, isFullFeedOpen, isSearchOpen]);
+  }, [zoomPhotoUrl, activeModal, isSettingsPageOpen, isAboutPageOpen, isContactPageOpen, isSidebarOpen, selectedPost, isFullFeedOpen, isSearchOpen, showExitConfirmation]);
 
   // Dynamic status bar styling implementation matching current primary/theme modes
   useEffect(() => {
@@ -1486,8 +1660,12 @@ export default function App() {
     return matchesSearch;
   }).sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0)) : [];
 
-  // Slider featured posts (10 posts containing images)
-  const featuredPosts = allPosts.filter(p => !!p.photoUrl || p.hasVideo).slice(0, 10);
+  // Slider featured posts (10 random posts from any category to keep it dynamic and fresh)
+  const featuredPosts = React.useMemo(() => {
+    if (!allPosts || allPosts.length === 0) return [];
+    const shuffled = [...allPosts].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, 10);
+  }, [feedData?.posts]);
 
   // Home Page compact items filtered by category (exactly 30 posts max)
   const homePosts = React.useMemo(() => {
@@ -2061,6 +2239,19 @@ export default function App() {
                     <Grid className={`w-4 h-4 ${tc.text}`} />
                     <span>نور اپليکيشنونه</span>
                   </a>
+
+                  {/* ۷. له اپلیکیشن څخه وتل */}
+                  <button
+                    onClick={() => {
+                      setIsSidebarOpen(false);
+                      setShowExitConfirmation(true);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className={`w-full text-right px-4 py-2.5 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-rose-450 border-rose-950/20' : 'hover:bg-slate-250 text-rose-600 border-rose-200'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
+                  >
+                    <LogOut className="w-4 h-4 text-rose-500" />
+                    <span>له اپلیکیشن څخه وتل</span>
+                  </button>
                 </div>
               </div>
             </motion.div>
@@ -2198,7 +2389,7 @@ export default function App() {
              ========================================================== */
           <article className={`${isDark ? 'bg-slate-900/60 border-slate-800/85' : 'bg-white border-slate-200 shadow-xl'} rounded-2xl overflow-hidden border flex flex-col animate-fade-in`}>
             {/* Header / Back action */}
-            <div className={`px-4 py-3 ${isDark ? 'bg-slate-950/80 border-slate-850' : 'bg-slate-105 border-slate-200'} border-b flex items-center justify-between`}>
+            <div className={`px-4 py-3 ${isDark ? 'bg-slate-950/80 border-slate-850' : 'bg-slate-50 border-slate-200'} border-b flex items-center justify-between`}>
               <button
                 onClick={() => setSelectedPost(null)}
                 style={{ cursor: 'pointer' }}
@@ -2324,13 +2515,17 @@ export default function App() {
 
               {selectedPost.htmlText ? (
                 <div
-                  className={`${isDark ? 'text-slate-200' : 'text-slate-800 font-medium'} text-[14.5px] leading-relaxed space-y-2.5 font-sans break-words telegram-styles text-right`}
-                  dangerouslySetInnerHTML={{ __html: selectedPost.htmlText }}
+                  className={`${isDark ? 'text-slate-205' : 'text-slate-805 font-medium'} text-[15.5px] sm:text-[17px] leading-[1.85] sm:leading-[1.95] space-y-2.5 font-sans break-words telegram-styles text-right pr-1`}
+                  dangerouslySetInnerHTML={{ __html: makeHtmlHashtagsClickable(selectedPost.htmlText) }}
                 />
               ) : (
-                <p className={`${isDark ? 'text-slate-200' : 'text-slate-800 font-medium'} text-[14.5px] leading-relaxed font-sans break-words whitespace-pre-wrap text-right`}>
-                  {selectedPost.text}
-                </p>
+                <BeautifulTelegramText 
+                  text={selectedPost.text} 
+                  isDark={isDark} 
+                  fs={{ body: 'text-[15.5px] sm:text-[17px]' }} 
+                  limitLines={250} 
+                  showExpander={false}
+                />
               )}
 
               {/* Audio player in detailed post view (if any) */}
@@ -2355,7 +2550,7 @@ export default function App() {
                   href={selectedPost.linkPreview.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="block bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 transition hover:bg-slate-950/90"
+                  className={`block ${isDark ? 'bg-slate-950/70 border-slate-800 hover:bg-slate-950/90' : 'bg-slate-100 hover:bg-slate-150 border-slate-200'} border rounded-xl p-3.5 transition`}
                 >
                   <div className="flex gap-3 min-w-0">
                     {selectedPost.linkPreview.photoUrl && (
@@ -2375,10 +2570,10 @@ export default function App() {
                           {selectedPost.linkPreview.siteName}
                         </span>
                       )}
-                      <h4 className="text-xs font-bold text-white truncate mt-0.5">
+                      <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} truncate mt-0.5`}>
                         {selectedPost.linkPreview.title}
                       </h4>
-                      <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">
+                      <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'} line-clamp-1 mt-0.5`}>
                         {selectedPost.linkPreview.description}
                       </p>
                     </div>
@@ -2390,14 +2585,14 @@ export default function App() {
 
               {/* Copy & Share Action Buttons Row */}
               {selectedPost.text && selectedPost.text.trim() !== '' && (
-                <div className="flex flex-col sm:flex-row gap-2.5 pt-3.5 border-t border-slate-800/40 justify-start">
+                <div className={`flex flex-col sm:flex-row gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-200'} justify-start`}>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedPost.text || '');
                       alert('لیست او متن په بریالیتوب سره کاپي شو!');
                     }}
                     style={{ cursor: 'pointer' }}
-                    className="flex-1 py-3 px-4 bg-slate-950/70 hover:bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-200 transition active:scale-95 flex items-center justify-center gap-2 shadow-xs group"
+                    className={`flex-1 py-3 px-4 ${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-750'} border rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-2 shadow-xs group`}
                   >
                     <Copy className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition" />
                     <span>متن کاپي کړئ (Copy)</span>
@@ -2423,30 +2618,30 @@ export default function App() {
                   </button>
                 </div>
               )}
-
-              {/* Dynamic Telegram Reactions Block (ايموجي ريکشن شمير د ټلیګرام په شان) */}
-              {selectedPost.reactions && selectedPost.reactions.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-3.5 border-t border-slate-800/60 justify-start">
-                  {selectedPost.reactions.map((react, i) => (
-                    <div
-                      key={i}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-950/80 rounded-full border border-slate-800/40 text-xs text-slate-200 select-none"
-                    >
-                      <span className="text-sm">{react.emoji}</span>
-                      <span className="font-mono text-[9px] text-slate-400 font-bold">{react.count}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
+            {/* Dynamic Telegram Reactions Block (ايموجي ريکشن شمير د ټلیګرام په شان) */}
+            {selectedPost.reactions && selectedPost.reactions.length > 0 && (
+              <div className={`flex flex-wrap gap-1.5 pt-3.5 border-t ${isDark ? 'border-slate-800/60' : 'border-slate-200'} justify-start px-5 sm:px-6 pb-4`}>
+                {selectedPost.reactions.map((react, i) => (
+                  <div
+                    key={i}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 ${isDark ? 'bg-slate-950/80 border-slate-800 text-slate-200' : 'bg-slate-100 border-slate-200 text-slate-700'} rounded-full border text-xs select-none`}
+                  >
+                    <span className="text-sm">{react.emoji}</span>
+                    <span className={`font-mono text-[9px] ${isDark ? 'text-slate-400' : 'text-slate-500'} font-bold`}>{react.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Footer metadata counter */}
-            <div className="px-5 py-3.5 bg-slate-950/40 border-t border-slate-950 text-xs text-slate-400 flex items-center justify-between">
+            <div className={`px-5 py-3.5 ${isDark ? 'bg-slate-950/40 border-slate-900 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'} border-t text-xs flex items-center justify-between`}>
               <span className="flex items-center gap-1.5 font-mono">
-                <Eye className="w-4 h-4 text-slate-400" />
+                <Eye className={`w-4 h-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
                 <span>{selectedPost.views || '0'} كتنې</span>
               </span>
-              <span className="text-[11.5px] font-sans text-slate-300 font-semibold">
+              <span className={`text-[11.5px] font-sans ${isDark ? 'text-slate-300' : 'text-slate-800'} font-semibold`}>
                 {selectedPost.authorName ? `خپرونکی: ${selectedPost.authorName}` : 'د مینې ډېوه خپرونه'}
               </span>
             </div>
@@ -2993,9 +3188,12 @@ export default function App() {
                         <span className="bg-slate-950 px-2 py-0.5 rounded text-[9.5px] font-mono text-indigo-400 font-bold">#{post.id}</span>
                         <span>{post.timeLabel || 'وروستی'}</span>
                       </div>
-                      <p className="text-[13.5px] text-slate-205 line-clamp-2 leading-relaxed font-sans pr-1 font-medium mt-0.5">
-                        {getPostTextWithFallback(post)}
-                      </p>
+                      <BeautifulTelegramText 
+                        text={getPostTextWithFallback(post)}
+                        isDark={isDark}
+                        fs={{ body: 'text-[13.5px]' }}
+                        limitLines={6}
+                      />
                       {post.photoUrls && post.photoUrls.length > 1 && (
                         <div 
                           onClick={(e) => e.stopPropagation()} 
@@ -3070,11 +3268,32 @@ export default function App() {
                         (e.target as HTMLImageElement).style.display = 'none';
                       }}
                     />
-                  ) : (
-                    <div className="w-full h-full bg-slate-950/90 flex items-center justify-center text-indigo-400">
-                      <Video className="w-12 h-12" />
-                    </div>
-                  )}
+                  ) : (() => {
+                    const featText = featuredPosts[featuredIndex].text || '';
+                    const cleanFeatText = featText.replace(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g, '').trim();
+                    const featLines = cleanFeatText.split('\n').map(l => l.trim()).filter(l => l !== '');
+                    const visibleFeatLines = featLines.slice(0, 4).join('\n');
+                    const featuredGradients = [
+                      "from-sky-500 via-indigo-600 to-purple-700",
+                      "from-rose-500 via-pink-600 to-indigo-700",
+                      "from-emerald-500 via-teal-600 to-cyan-700",
+                      "from-amber-500 via-red-600 to-rose-700",
+                      "from-violet-500 via-purple-600 to-pink-700",
+                      "from-cyan-500 via-blue-600 to-indigo-700",
+                      "from-fuchsia-500 via-rose-600 to-orange-700",
+                      "from-teal-500 via-emerald-600 to-lime-700"
+                    ];
+                    const selectedGradient = featuredGradients[featuredIndex % featuredGradients.length];
+                    return (
+                      <div className={`w-full h-full bg-gradient-to-tr ${selectedGradient} p-5 flex flex-col items-center justify-center text-center text-white relative select-none`}>
+                        {/* Beautiful quotation mark background */}
+                        <span className="absolute top-2 right-4 text-white/10 text-8xl font-serif leading-none select-none">”</span>
+                        <p className="text-white text-xs sm:text-sm font-black font-sans leading-relaxed max-w-[85%] pr-1 text-center whitespace-pre-line line-clamp-4" style={{ direction: 'rtl' }}>
+                          {visibleFeatLines || 'پښتو غزل او شعر د لوستلو لپاره ...'}
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   {/* Left Arrow Button Overlay */}
                   <button
@@ -3103,8 +3322,8 @@ export default function App() {
                   </button>
 
                   {/* Subtle Indicator Badge */}
-                  <div className={`absolute top-3 right-3 ${tc.bg} text-white font-mono font-black text-xs px-2.5 py-1 rounded-xl shadow-md select-none`}>
-                    {featuredIndex + 1}
+                  <div className={`absolute top-3 left-3 ${tc.bg} text-white font-mono font-black text-xs px-2.5 py-1 rounded-xl shadow-md select-none z-10`}>
+                    {featuredIndex + 1}/{featuredPosts.length}
                   </div>
                   
                   {featuredPosts[featuredIndex].hasVideo && (
@@ -3115,11 +3334,11 @@ export default function App() {
                 </div>
 
                 {/* Title outline */}
-                <p className={`text-xs ${isDark ? 'text-slate-200' : 'text-slate-800 font-bold'} mt-0.5 truncate text-right leading-relaxed px-1`}>
+                <p className={`text-xs ${isDark ? 'text-slate-300' : 'text-slate-700 font-bold'} mt-0.5 truncate text-right leading-relaxed px-1`}>
                   {featuredPosts[featuredIndex].text || 'د لوستلو لپاره کلیک کړئ...'}
                 </p>
 
-                {/* Dot slider indicator */}
+                {/* Dot slider indicator with fully visible dots (added non-active width classes w-1.5) */}
                 <div className="flex justify-center items-center gap-1.5 mt-0.5">
                   {featuredPosts.map((_, idx) => (
                     <button
@@ -3128,8 +3347,8 @@ export default function App() {
                       style={{ cursor: 'pointer' }}
                       className={`h-1.5 rounded-full transition-all duration-300 ${
                         idx === featuredIndex 
-                          ? `w-4.5 ${tc.bg}` 
-                          : `${isDark ? 'bg-slate-700 hover:bg-slate-650' : 'bg-slate-300 hover:bg-slate-400'}`
+                          ? `w-5.5 ${tc.bg}` 
+                          : `w-1.5 ${isDark ? 'bg-slate-600 hover:bg-slate-500' : 'bg-slate-300 hover:bg-slate-400'}`
                       }`}
                       title={`Slide ${idx + 1}`}
                     />
@@ -3145,7 +3364,7 @@ export default function App() {
                   د پورته شويو پوسټونو موضوعي کټګورۍ:
                 </span>
                 <span className={`text-[9px] font-mono ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                  {homePosts.length} توکي موندل شوي
+                  {fullFeedPosts.length} توکي موندل شوي
                 </span>
               </div>
               <div 
@@ -3250,9 +3469,12 @@ export default function App() {
                                     {post.timeLabel || 'وروستی'}
                                   </span>
                                 </div>
-                                <p className={`${fs.body} ${isDark ? 'text-slate-200' : 'text-slate-800'} line-clamp-2 whitespace-pre-line leading-relaxed font-sans pr-1 font-medium select-none`}>
-                                  {getPostTextWithFallback(post)}
-                                </p>
+                                <BeautifulTelegramText 
+                                  text={getPostTextWithFallback(post)}
+                                  isDark={isDark}
+                                  fs={fs}
+                                  limitLines={6}
+                                />
 
                                 {post.photoUrls && post.photoUrls.length > 1 && (
                                   <div 
@@ -3390,9 +3612,12 @@ export default function App() {
                                   <Clock className="w-2.5 h-2.5" />
                                   {post.timeLabel || 'Recent'}
                                 </span>
-                                <p className={`mt-1 text-[11.5px] sm:text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'} line-clamp-2 whitespace-pre-line leading-relaxed`}>
-                                  {getPostTextWithFallback(post)}
-                                </p>
+                                <BeautifulTelegramText 
+                                  text={getPostTextWithFallback(post)}
+                                  isDark={isDark}
+                                  fs={{ body: 'text-[11.5px] sm:text-xs font-semibold' }}
+                                  limitLines={4}
+                                />
                                 {post.photoUrls && post.photoUrls.length > 1 && (
                                   <div 
                                     onClick={(e) => e.stopPropagation()} 
@@ -3538,9 +3763,12 @@ export default function App() {
                                   {post.timeLabel || 'پورته شوی'}
                                 </span>
                               </div>
-                              <p className={`${fs.body} ${isDark ? 'text-slate-100' : 'text-slate-850'} whitespace-pre-line leading-relaxed font-sans pr-1 font-medium`}>
-                                {getPostTextWithFallback(post)}
-                              </p>
+                              <BeautifulTelegramText 
+                                text={getPostTextWithFallback(post)}
+                                isDark={isDark}
+                                fs={fs}
+                                limitLines={8}
+                              />
                               {post.audioList && post.audioList.length > 0 ? (
                                 <div className="space-y-2.5">
                                   {post.audioList.map((audioItem, idx) => (
@@ -3588,9 +3816,12 @@ export default function App() {
                                 {post.timeLabel || 'Recent'}
                               </span>
                             </div>
-                            <p className={`${fs.body} ${isDark ? 'text-slate-200' : 'text-slate-800'} whitespace-pre-line leading-relaxed pr-1`}>
-                              {getPostTextWithFallback(post)}
-                            </p>
+                            <BeautifulTelegramText 
+                              text={getPostTextWithFallback(post)}
+                              isDark={isDark}
+                              fs={fs}
+                              limitLines={8}
+                            />
                             {post.audioList && post.audioList.length > 0 ? (
                               <div className="space-y-2.5">
                                 {post.audioList.map((audioItem, idx) => (
@@ -3625,19 +3856,21 @@ export default function App() {
             </div>
 
             {/* VIEW MORE BUTTON TO LAND IN FULL FEED (نور وګورئ بټن) */}
-            <div className="py-6 flex justify-center">
-              <button
-                onClick={() => {
-                  setIsFullFeedOpen(true);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                style={{ cursor: 'pointer' }}
-                className={`w-full max-w-sm py-3.5 px-6 ${tc.bg} ${tc.hoverBg} text-white font-bold text-sm rounded-xl shadow-lg hover:shadow-indigo-500/20 active:scale-95 transition flex items-center justify-center gap-2`}
-              >
-                <span>نور وګورئ</span>
-                <ArrowLeft className="w-4 h-4 text-white animate-pulse" />
-              </button>
-            </div>
+            {fullFeedPosts.length > 30 && (
+              <div className="py-6 flex justify-center">
+                <button
+                  onClick={() => {
+                    setIsFullFeedOpen(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  className={`w-full max-w-sm py-3.5 px-6 ${tc.bg} ${tc.hoverBg} text-white font-bold text-sm rounded-xl shadow-lg hover:shadow-indigo-500/20 active:scale-95 transition flex items-center justify-center gap-2`}
+                >
+                  <span>نور وګورئ</span>
+                  <ArrowLeft className="w-4 h-4 text-white animate-pulse" />
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           /* ==========================================================
@@ -3651,7 +3884,7 @@ export default function App() {
                   key={post.id}
                   onClick={() => setSelectedPost(post)}
                   style={{ cursor: 'pointer' }}
-                  className="bg-slate-900/90 hover:bg-slate-850/90 p-4 rounded-xl flex items-center gap-4 transition group select-none text-right shadow-sm"
+                  className={`${cardBg} border p-4 rounded-xl flex items-center gap-4 transition group select-none text-right shadow-sm`}
                 >
                   {/* Right: Enlarged thumbnail image with no white stroke */}
                   {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
@@ -3698,15 +3931,18 @@ export default function App() {
                   <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5 h-full w-full">
                     <div>
                       <div className="flex items-center gap-2 text-[10px] text-slate-400 mb-1.5 font-sans">
-                        <span className="bg-slate-950 px-2 py-0.5 rounded text-[9.5px] font-mono text-indigo-400 font-bold">#{post.id}</span>
+                        <span className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-bold text-white ${tc.bg}`}>#{post.id}</span>
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-slate-500" />
                           {post.timeLabel || 'Recent'}
                         </span>
                       </div>
-                      <p className="text-xs sm:text-xs text-slate-205 line-clamp-2 leading-relaxed font-sans pr-1">
-                        {getPostTextWithFallback(post)}
-                      </p>
+                      <BeautifulTelegramText 
+                        text={getPostTextWithFallback(post)}
+                        isDark={isDark}
+                        fs={{ body: 'text-[12.5px] sm:text-[13px] font-semibold' }}
+                        limitLines={6}
+                      />
 
                       {post.photoUrls && post.photoUrls.length > 1 && (
                         <div 
@@ -3778,7 +4014,10 @@ export default function App() {
          SPLASH SCREEN OVERLAY (ښایسته شروع صفحه د ۵ سکینډه وال لوډینګ سره)
          ========================================================== */}
       {showSplash && (
-        <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-6 text-center select-none">
+        <div className={`fixed inset-0 z-[100] ${isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-800'} flex flex-col items-center justify-between py-12 px-6 text-center select-none transition-colors duration-300`}>
+          {/* Top spacer to push contents down */}
+          <div className="flex-1" />
+
           <div className="w-full max-w-sm flex flex-col items-center gap-6">
             {/* Logo/Avatar container with animated glow styling */}
             <motion.div
@@ -3790,7 +4029,7 @@ export default function App() {
               <img
                 src={feedData?.channelInfo?.avatarUrl || 'https://telegram.org/img/t_logo.png'}
                 referrerPolicy="no-referrer"
-                className="w-24 h-24 rounded-full bg-slate-900 object-cover shadow-inner"
+                className={`w-24 h-24 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} object-cover shadow-inner`}
                 alt="Channel logo"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://telegram.org/img/t_logo.png';
@@ -3799,30 +4038,44 @@ export default function App() {
             </motion.div>
             
             {/* Channel title & metadata */}
-            <div className="space-y-2">
+            <div className="space-y-4">
               <motion.h2 
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.3 }}
-                className="text-2xl font-black text-white tracking-wide"
+                className={`text-2xl sm:text-3xl font-black ${isDark ? 'text-white' : 'text-slate-900'} tracking-wide font-sans text-center`}
               >
-                {feedData?.channelInfo?.title || 'دا مینه دیوه'}
+                {feedData?.channelInfo?.title || 'ښه راغلاست'}
               </motion.h2>
-
             </div>
 
             {/* Timed progress loader */}
-            <div className="w-4/5 bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800 relative mt-4">
+            <div className={`w-4/5 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-200 border-slate-300'} h-1.5 rounded-full overflow-hidden border relative mt-4`}>
               <div 
                 className="h-full bg-indigo-500 rounded-full transition-all duration-75 ease-out" 
                 style={{ width: `${splashProgress}%` }}
               />
             </div>
             
-            <span className="text-[10px] text-slate-500 font-mono tracking-wider">
+            <span className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-slate-400'} font-mono tracking-wider`}>
               صبر وکړئ، معلومات لوډیږي... {Math.round(splashProgress)}%
             </span>
           </div>
+
+          {/* Spacer to push developer info to bottom */}
+          <div className="flex-1" />
+
+          {/* Developer credit at the bottom of the screen */}
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.45 }}
+            className="w-full flex justify-center pb-2"
+          >
+            <div className={`text-xs font-mono font-bold tracking-wider uppercase ${isDark ? 'text-indigo-400 bg-indigo-950/40 border-indigo-900/40' : 'text-indigo-600 bg-indigo-50 border-indigo-200'} border px-4 py-1.5 rounded-full shadow-sm`}>
+              Develop by obaidullah ghafari
+            </div>
+          </motion.div>
         </div>
       )}
 
@@ -3881,6 +4134,66 @@ export default function App() {
                 >
                   مننه، د اپلیکیشن کارول پیل کړئ
                 </button>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ==========================================================
+         EXIT CONFIRMATION DIALOG (ښکلی د وتلو ډیالوګ په پښتو ژبه)
+         ========================================================== */}
+      <AnimatePresence>
+        {showExitConfirmation && (
+          <>
+            {/* Overlay backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowExitConfirmation(false)}
+              className="fixed inset-0 bg-black/80 z-[110] backdrop-blur-xs cursor-pointer"
+            />
+            {/* Centered Modal view */}
+            <div className="fixed inset-0 z-[120] overflow-y-auto flex items-center justify-center p-4">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 30 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 30 }}
+                className={`w-full max-w-sm border rounded-3xl p-6 shadow-2xl relative text-right font-sans ${isDark ? 'bg-slate-900 border-slate-800 text-white shadow-slate-950/95' : 'bg-white border-slate-200 text-slate-800 shadow-slate-400/30'}`}
+              >
+                {/* Visual Exit Confirmation Icon */}
+                <div className="mx-auto w-14 h-14 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 mb-4">
+                  <AlertCircle className="w-8 h-8" />
+                </div>
+                
+                <h3 className="text-sm font-black text-center mb-2 font-sans">
+                  له اپلیکیشن څخه وتل
+                </h3>
+                
+                <p className={`text-[12px] text-center leading-relaxed mb-6 font-sans ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                  ایا تاسو واقعیا غواړئ چې له اپلیکیشن څخه ووځئ؟ که غواړئ پاتې شئ یا بل څه وګورئ نو د منسوخ تڼۍ کېکاږئ.
+                </p>
+
+                <div className="flex items-center gap-3 w-full font-sans">
+                  {/* Cancel Button */}
+                  <button
+                    onClick={() => setShowExitConfirmation(false)}
+                    style={{ cursor: 'pointer' }}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all text-center ${isDark ? 'bg-slate-800 hover:bg-slate-750 text-slate-200' : 'bg-slate-100 hover:bg-slate-150 text-slate-700'}`}
+                  >
+                    منسوخ (پاتې کېدل)
+                  </button>
+
+                  {/* Confirm Exit Button */}
+                  <button
+                    onClick={handleExitApp}
+                    style={{ cursor: 'pointer' }}
+                    className="flex-1 py-3 bg-gradient-to-r from-rose-600 to-red-500 text-white hover:from-rose-550 hover:to-red-450 active:scale-95 rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-600/20 text-center"
+                  >
+                    هو، وتل غواړم
+                  </button>
+                </div>
               </motion.div>
             </div>
           </>
