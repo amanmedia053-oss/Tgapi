@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ۱. جاوا ۲۱ (د Gradle د ستونزو لپاره)
+      # ۱. د جاوا ۲۱ غښتلی چاپیریال د نویو Gradle بڼو مالتړ لپاره
       - name: set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm install
-          # د Capacitor اړین کتابتونونه انسټالول
+          # د Capacitor غښتلي او اړین کتابتونونه انسټالول
           npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets @capacitor/share @capacitor/filesystem
 
       - name: Build Web App
@@ -29,55 +29,61 @@ jobs:
 
       - name: Sync with Capacitor
         run: |
-          # د اپلیکیشن نوم او خپل Package ID
+          # د اپلیکیشن نوم او خپل Package ID تنظیمول (com.amanmedia.love)
           npx cap init "د مينې ډيوه" "com.amanmedia.love" --web-dir dist
           npx cap add android
 
-      # ۳. د شبکې او انټرنیټ د ستونزې حل (اصلاح شوې برخه)
+      # ۳. د شبکې او سرور پیوستون، د فایلونو ثبتولو او نوټیفیکیشنونو د اجازو خلاصول
       - name: Configure Capacitor HTTP and Android Permissions
         run: |
-          # الف: په اتومات ډول د CapacitorHttp فعالول ترڅو شبکه بنده نشي (CORS Fix)
+          # الف: د شبکې او پیوستون د ستونزو (CORS Fix) لپاره په اتومات ډول د CapacitorHttp فعالول
           if [ -f "capacitor.config.json" ]; then
             jq '.plugins.CapacitorHttp.enabled = true' capacitor.config.json > tmp.json && mv tmp.json capacitor.config.json
           elif [ -f "capacitor.config.ts" ]; then
             echo "Warning: TypeScript config found, please ensure CapacitorHttp is enabled manually."
           fi
 
-          # د باوري همغږۍ (Sync) لپاره کمانډ چلول
+          # د همغږۍ (Sync) کمانډ چلول د اندروید پروژې د لوړولو لپاره
           npx cap sync android
 
           cd android/app/src/main
           
-          # ب: په خوندي ډول د انټرنیټ او سټوریج اجازې خلاصول (پرته له دې چې مانیفیسټ خراب شي)
+          # ب: په خوندي ډول د انټرنیټ، سټوریج (غالري کې د عکس ذخیره کولو لپاره) او نوټیفیکیشنونو اجازې خلاصول او ور اضافه کول
           grep -q "android.permission.INTERNET" AndroidManifest.xml || sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET" />' AndroidManifest.xml
           grep -q "android.permission.READ_EXTERNAL_STORAGE" AndroidManifest.xml || sed -i '/<manifest/a \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />' AndroidManifest.xml
           grep -q "android.permission.WRITE_EXTERNAL_STORAGE" AndroidManifest.xml || sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />' AndroidManifest.xml
+          grep -q "android.permission.POST_NOTIFICATIONS" AndroidManifest.xml || sed -i '/<manifest/a \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' AndroidManifest.xml
+          grep -q "android.permission.READ_MEDIA_IMAGES" AndroidManifest.xml || sed -i '/<manifest/a \    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />' AndroidManifest.xml
           
-          # ج: د دباوند او HTTP ټرافیک (Cleartext) فعالول
+          # ج: د دباوند او HTTP ټرافیک (Cleartext) او میراثي سټوریج فعاله ساتل ترڅو په ټولو اندروید بڼو کې انځور ذخیره شي
           sed -i 's/<application/<application android:usesCleartextTraffic="true" android:requestLegacyExternalStorage="true"/g' AndroidManifest.xml
           
-          # د تایید لپاره د فایل ښودل
+          # د تایید او بشپړتیا لپاره د فايل منځپانګه ښودل
           cat AndroidManifest.xml
 
-      # ۲. د آیکن برخه
+      # ۲. د آیکن او لوګو برخه په اتومات بڼه
       - name: Generate Icon
         run: |
           if [ -f "logo.png" ]; then
             mkdir -p assets
             cp logo.png assets/icon.png
             npx capacitor-assets generate --android
+          elif [ -f "src/assets/logo.png" ]; then
+            mkdir -p assets
+            cp src/assets/logo.png assets/icon.png
+            npx capacitor-assets generate --android
           else
-            echo "Warning: logo.png not found, skipping icon generation."
+            echo "Warning: No logo found, skipping icon generation."
           fi
 
-      # ۴. د Kotlin د تکراري فایلونو ستونزه (Fix)
+      # ۴. د اندروید په نویو بڼو کې د Kotlin او نورو سورسونو ترمنځ تباه کوونکي کشمکش کنټرولول
       - name: Fix Kotlin Dependency Conflict
         run: |
           cd android
           echo "" >> build.gradle
           echo "allprojects {" >> build.gradle
           echo "    configurations.all {" >> build.gradle
-          echo "        resolutionStrategy {" >> build.gradle
+          echo "    resolutionStrategy {" >> build.gradle
           echo "            force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'" >> build.gradle
           echo "            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'" >> build.gradle
           echo "            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'" >> build.gradle
