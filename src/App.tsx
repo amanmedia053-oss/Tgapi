@@ -988,8 +988,68 @@ export default function App() {
     localStorage.setItem('dewa_app_language', appLanguage);
   }, [appLanguage]);
 
-  // Triggers real HTML5 notifications (or in-app backup floating card)
-  const triggerLocalNotification = React.useCallback((post: TelegramPost) => {
+  // Native Capacitor Background Notification Scheduler
+  const scheduleNativeBackgroundNotifications = React.useCallback(async (posts: TelegramPost[]) => {
+    if (!notificationsEnabled) return;
+    try {
+      const { LocalNotifications } = await import('@capacitor/local-notifications');
+      
+      const permStatus = await LocalNotifications.checkPermissions();
+      if (permStatus.display !== 'granted') {
+        const reqStatus = await LocalNotifications.requestPermissions();
+        if (reqStatus.display !== 'granted') {
+          console.log('[Dewa Native Notif] Native permission denied.');
+          return;
+        }
+      }
+
+      const available = posts.filter(p => p && p.text && p.text.length > 20);
+      if (available.length === 0) return;
+
+      // Cancel previous scheduled background items (Ids 100 to 110)
+      try {
+        await LocalNotifications.cancel({
+          notifications: Array.from({ length: 10 }, (_, i) => ({ id: 100 + i }))
+        });
+      } catch (cE) {
+        console.warn('[Dewa Native Notif] Cancel error:', cE);
+      }
+
+      // Schedule 5 notifications spread over the next 24 hours (Surprises are picked randomly!)
+      const scheduledList: any[] = [];
+      const spreadIntervalHours = [4.8, 9.6, 14.4, 19.2, 24.0];
+
+      for (let i = 0; i < spreadIntervalHours.length; i++) {
+        const delayHours = spreadIntervalHours[i];
+        const triggerTime = new Date(Date.now() + delayHours * 60 * 60 * 1000);
+        
+        const rPost = available[Math.floor(Math.random() * available.length)];
+        const cleanText = rPost.text ? rPost.text.replace(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g, '').trim() : '';
+        const snippet = cleanText.substring(0, 100) + (cleanText.length > 100 ? '...' : '');
+
+        scheduledList.push({
+          title: 'د کښلي مینه دیوه نوي شعر 🌸',
+          body: snippet,
+          id: 100 + i,
+          schedule: { at: triggerTime },
+          extra: { postId: rPost.id },
+          smallIcon: 'res://ic_stat_name',
+          actionTypeId: 'OPEN_POST'
+        });
+      }
+
+      if (scheduledList.length > 0) {
+        await LocalNotifications.schedule({ notifications: scheduledList });
+        console.log('[Dewa Native Notif] Scheduled 5 background surprises successfully on-device!');
+      }
+
+    } catch (err) {
+      console.warn('[Dewa Native Notif] Background scheduling not supported:', err);
+    }
+  }, [notificationsEnabled]);
+
+  // Triggers real HTML5 notifications (or native system notifications via Capacitor if running on Android, or in-app backup floating card)
+  const triggerLocalNotification = React.useCallback(async (post: TelegramPost) => {
     if (!notificationsEnabled) return;
     
     const poetryText = post.text || '';
@@ -1017,30 +1077,58 @@ export default function App() {
       console.log('Audio chime not supported / blocked', e);
     }
 
-    if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        const notif = new Notification(notificationTitle, {
-          body: snippet,
-          icon: '/favicon.ico',
-          tag: 'dewa_poetry_notif_' + post.id,
-          requireInteraction: false
+    // Try Native Local Notifications first for Android system bar notification
+    let nativeSuccess = false;
+    try {
+      const { LocalNotifications } = await import('@capacitor/local-notifications');
+      const checkResult = await LocalNotifications.checkPermissions();
+      if (checkResult.display === 'granted') {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              title: notificationTitle,
+              body: snippet,
+              id: Math.floor(Math.random() * 95000) + 1000,
+              schedule: { at: new Date(Date.now() + 100) }, // Trigger immediately
+              extra: { postId: post.id },
+              smallIcon: 'res://ic_stat_name',
+              actionTypeId: 'OPEN_POST'
+            }
+          ]
         });
-        
-        notif.onclick = () => {
-          window.focus();
-          setSelectedPost(post);
-          setIsReelsOpen(false);
-          setIsPhotoReelsOpen(false);
-          setIsCategoryPageOpen(false);
-          notif.close();
-        };
-      } catch (err) {
-        console.warn('Native notification failed, showing in-app banner instead:', err);
+        nativeSuccess = true;
+        console.log('[Dewa Native Notif] Dispatched immediate native system notification successfully!');
+      }
+    } catch (nativeErr) {
+      console.log('[Dewa Native Notif] Native local notification skipped (Web/Browser fallback):', nativeErr);
+    }
+
+    if (!nativeSuccess) {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+          const notif = new Notification(notificationTitle, {
+            body: snippet,
+            icon: '/favicon.ico',
+            tag: 'dewa_poetry_notif_' + post.id,
+            requireInteraction: false
+          });
+          
+          notif.onclick = () => {
+            window.focus();
+            setSelectedPost(post);
+            setIsReelsOpen(false);
+            setIsPhotoReelsOpen(false);
+            setIsCategoryPageOpen(false);
+            notif.close();
+          };
+        } catch (err) {
+          console.warn('Native notification failed, showing in-app banner instead:', err);
+          setNewPostNotification(post);
+        }
+      } else {
+        // In-app fallback warning or popup banner in case browser does not grant or support perm
         setNewPostNotification(post);
       }
-    } else {
-      // In-app fallback warning or popup banner in case browser does not grant or support perm
-      setNewPostNotification(post);
     }
   }, [notificationsEnabled]);
 
@@ -1066,10 +1154,44 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Automatic Scheduled Reminder Effect (5 Times a Day periodic triggers)
+  // Click Action Listener to handle deep linking when the native notification is clicked
+  useEffect(() => {
+    let sub: any = null;
+    const registerListener = async () => {
+      try {
+        const { LocalNotifications } = await import('@capacitor/local-notifications');
+        sub = await LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+          console.log('[Dewa Native Notif] Click received in background:', action);
+          const postId = action.notification.extra?.postId;
+          if (postId && feedData?.posts) {
+            const found = feedData.posts.find(p => p.id === postId);
+            if (found) {
+              setSelectedPost(found);
+              setIsReelsOpen(false);
+              setIsPhotoReelsOpen(false);
+              setIsCategoryPageOpen(false);
+            }
+          }
+        });
+      } catch (err) {
+        // Web fallthrough
+      }
+    };
+    registerListener();
+    return () => {
+      if (sub) {
+        sub.remove().catch(() => {});
+      }
+    };
+  }, [feedData?.posts]);
+
+  // Automatic Scheduled Reminder Effect (And Background native scheduler registration)
   useEffect(() => {
     if (!notificationsEnabled || !feedData?.posts || feedData.posts.length === 0) return;
     
+    // Register scheduling for when app goes to background / sleep
+    scheduleNativeBackgroundNotifications(feedData.posts);
+
     // Schedule an initial test notification 10 seconds after opening so the user gets fully tested results!
     const testTimer = setTimeout(() => {
       const availablePosts = feedData.posts.filter(p => p && p.text && p.text.length > 20);
@@ -1093,7 +1215,7 @@ export default function App() {
       clearTimeout(testTimer);
       clearInterval(scheduledInterval);
     };
-  }, [notificationsEnabled, feedData?.posts, triggerLocalNotification]);
+  }, [notificationsEnabled, feedData?.posts, triggerLocalNotification, scheduleNativeBackgroundNotifications]);
 
   // Global listener for hashtag clicks to trigger search from any component
   useEffect(() => {
