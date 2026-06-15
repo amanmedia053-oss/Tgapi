@@ -61,3 +61,22 @@
   padding-top: calc(1.5rem + env(safe-area-inset-top, 0px)) !important;
 }
 
+/* Beautiful Animated Gradient Shifts */
+@keyframes gradient-shift {
+  0% {
+    background-position: 100% 50%;
+  }
+  50% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient-shift {
+  background-size: 300% 300%;
+  animation: gradient-shift 12s ease infinite;
+}
+
+
