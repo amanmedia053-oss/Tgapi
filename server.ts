@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import * as cheerio from 'cheerio';
+import https from 'https';
 
 const app = express();
 const PORT = 3000;
@@ -41,22 +42,93 @@ app.get('/api/telegram-feed', async (req, res) => {
   try {
     const scrapedPostIds = new Set<string>();
 
-    // Helper to scrape a single URL
+    // Helper to scrape a single URL utilizing both native fetch (with alternative mirror redirects) and native Node https module
     async function scrapePage(url: string) {
-      try {
-        const resp = await fetch(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-          },
-        });
-        if (!resp.ok) return null;
-        return await resp.text();
-      } catch (e) {
-        console.error('Failed to fetch page URL:', url, e);
-        return null;
+      const urlsToTry = [
+        url,
+        url.replace('t.me', 'telegram.dog')
+      ];
+
+      // Step 1: Try native fetch for each URL
+      for (const targetUrl of urlsToTry) {
+        try {
+          console.log('[Dewa Server Scraper] Trying native fetch for:', targetUrl);
+          const resp = await fetch(targetUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.5',
+            },
+          });
+          if (resp.ok) {
+            const body = await resp.text();
+            if (body && body.includes('tgme_widget_message_wrap')) {
+              console.log('[Dewa Server Scraper] Native fetch succeeded for:', targetUrl);
+              return body;
+            }
+          }
+        } catch (fetchErr: any) {
+          console.warn(`[Dewa Server Scraper] Native fetch failed for: ${targetUrl}`, fetchErr.message || fetchErr);
+        }
       }
+
+      // Helper function for native Node.js https.get
+      function nativeHttpsGet(targetUrl: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+          const parsedUrl = new URL(targetUrl);
+          const options = {
+            hostname: parsedUrl.hostname,
+            path: parsedUrl.pathname + parsedUrl.search,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.5',
+            },
+            timeout: 10000
+          };
+          const req = https.get(options, (res) => {
+            if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              let redirectUrl = res.headers.location;
+              if (redirectUrl.startsWith('/')) {
+                redirectUrl = `https://${parsedUrl.hostname}${redirectUrl}`;
+              }
+              nativeHttpsGet(redirectUrl).then(resolve).catch(reject);
+              return;
+            }
+            if (res.statusCode && res.statusCode !== 200) {
+              reject(new Error(`HTTP status ${res.statusCode}`));
+              return;
+            }
+            const chunks: any[] = [];
+            res.on('data', (chunk) => chunks.push(chunk));
+            res.on('end', () => {
+              resolve(Buffer.concat(chunks).toString('utf8'));
+            });
+          });
+          req.on('error', (err) => reject(err));
+          req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Timeout'));
+          });
+        });
+      }
+
+      // Step 2: Fallback to native Node.js https.get
+      for (const targetUrl of urlsToTry) {
+        try {
+          console.log('[Dewa Server Scraper] Trying native https.get fallback for:', targetUrl);
+          const body = await nativeHttpsGet(targetUrl);
+          if (body && body.includes('tgme_widget_message_wrap')) {
+            console.log('[Dewa Server Scraper] Native https.get fallback succeeded for:', targetUrl);
+            return body;
+          }
+        } catch (httpsErr: any) {
+          console.error(`[Dewa Server Scraper] Native https.get failed for: ${targetUrl}`, httpsErr.message || httpsErr);
+        }
+      }
+
+      // If all fails, throw or fallback to standard fetch response or return null
+      return null;
     }
 
     // Helper to parse parsed HTML text via cheerio
