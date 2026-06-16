@@ -79,4 +79,80 @@
   animation: gradient-shift 12s ease infinite;
 }
 
+/* Deep, vibrant quick action buttons animated flowing from right to left (د ښي لوري څخه چپ لوري ته محرک او پوخ رنګونه) */
+@keyframes flow-right-to-left {
+  0% {
+    background-position: 100% 50%;
+  }
+  50% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.action-btn-flow {
+  background-size: 200% 200%;
+  animation: flow-right-to-left 10s ease-in-out infinite;
+}
+
+/* ۱. ښکلي انځورونه: Deep saturated Emerald & Oceanic Teal */
+.action-btn-photos {
+  background-image: linear-gradient(135deg, #053e31, #047857, #0d9488, #053e31);
+}
+
+/* ۲. شارټ ویډیوګانې: Deep rich Royal Crimson, Velvet Pink-Red & Lavender */
+.action-btn-reels {
+  background-image: linear-gradient(135deg, #700c28, #be123c, #ec4899, #700c28);
+}
+
+/* ۳. موضوعي ډلبندي: Deep Royal Indigo, Blue & Midnight Blue */
+.action-btn-categories {
+  background-image: linear-gradient(135deg, #181140, #3730a3, #2563eb, #181140);
+}
+
+/* ۴. پلټنه: Deep Amber, Spicy Orange, and Vibrant Rust */
+.action-btn-search {
+  background-image: linear-gradient(135deg, #6a2008, #c2410c, #ea580c, #6a2008);
+}
+
+/* ۵ په زړه پورې ښکلي رنګونه د خوښ شوي دړو لپاره د ښي اړخ څخه چپ اړخ ته نرم انیمیشن رنګونو سره (Vibrant animated flow gradients with deep saturated rich tones) */
+.fav-btn-videos {
+  background-image: linear-gradient(135deg, #4c0519, #be123c, #f43f5e, #4c0519);
+}
+.fav-btn-images {
+  background-image: linear-gradient(135deg, #042f2e, #0f766e, #14b8a6, #042f2e);
+}
+.fav-btn-writings {
+  background-image: linear-gradient(135deg, #2e1065, #6d28d9, #a855f7, #2e1065);
+}
+.fav-btn-pdf {
+  background-image: linear-gradient(135deg, #062f1f, #047857, #10b981, #062f1f);
+}
+.fav-btn-audio {
+  background-image: linear-gradient(135deg, #0a192f, #1d4ed8, #3b82f6, #0a192f);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.05) 25%, rgba(148, 163, 184, 0.15) 50%, rgba(148, 163, 184, 0.05) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite linear;
+}
+
+.shimmer-light {
+  background: linear-gradient(90deg, rgba(203, 213, 225, 0.15) 25%, rgba(203, 213, 225, 0.3) 50%, rgba(203, 213, 225, 0.15) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite linear;
+}
+
 

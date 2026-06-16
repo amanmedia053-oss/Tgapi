@@ -237,7 +237,21 @@ const makeHtmlHashtagsClickable = (html: string) => {
 };
 
 // Custom text component to render Telegram formatting beautifully (with line-breaks and stanzas)
-function BeautifulTelegramText({ text, isDark, fs, limitLines = 6, showExpander = true }: { text: string; isDark: boolean; fs: any; limitLines?: number; showExpander?: boolean }) {
+function BeautifulTelegramText({ 
+  text, 
+  isDark, 
+  fs, 
+  limitLines = 6, 
+  showExpander = true,
+  onReadMoreClick 
+}: { 
+  text: string; 
+  isDark: boolean; 
+  fs: any; 
+  limitLines?: number; 
+  showExpander?: boolean;
+  onReadMoreClick?: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   if (!text) return null;
 
@@ -252,14 +266,14 @@ function BeautifulTelegramText({ text, isDark, fs, limitLines = 6, showExpander 
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
 
-  // Enforce exactly 3 lines limit for List View previews (when showExpander is true)
-  const actualLimit = showExpander ? 3 : limitLines;
+  // Enforce exactly 2 lines limit if onReadMoreClick is provided, otherwise standard 3 lines
+  const actualLimit = onReadMoreClick ? 2 : (showExpander ? 3 : limitLines);
 
   // Split by newline to respect visual poetry stanzas and empty line spacing
   let lines = cleanText.split('\n');
   
   // For List View previews, remove any completely empty/whitespace-only lines so they don't consume preview constraints
-  if (showExpander) {
+  if (showExpander || onReadMoreClick) {
     lines = lines.filter(line => line.trim() !== '');
   }
   
@@ -297,15 +311,23 @@ function BeautifulTelegramText({ text, isDark, fs, limitLines = 6, showExpander 
     });
 
     if (isTruncated && !expanded) {
-      elements.push(
-        <span
-          key="more-suffix"
-          className="text-indigo-400 font-bold hover:text-indigo-350 transition select-none mr-2 inline-block whitespace-nowrap align-middle"
-          style={{ direction: 'rtl' }}
-        >
-          ... نور وګورئ
-        </span>
-      );
+      if (onReadMoreClick) {
+        // Render suffix locally or in a button block instead of inside elements
+      } else {
+        elements.push(
+          <span
+            key="more-suffix"
+            className="text-indigo-400 font-bold hover:text-indigo-350 transition select-none mr-2 inline-block whitespace-nowrap align-middle"
+            style={{ direction: 'rtl' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(true);
+            }}
+          >
+            ... نور وګورئ
+          </span>
+        );
+      }
 
       // Extract all hashtags from complete cleanText and find those that are currently hidden
       const allHashtags = Array.from(new Set(cleanText.match(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g) || []));
@@ -348,6 +370,18 @@ function BeautifulTelegramText({ text, isDark, fs, limitLines = 6, showExpander 
       >
         {renderWithHashtags(displayedText, needsTruncation)}
       </div>
+      {needsTruncation && !expanded && onReadMoreClick && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onReadMoreClick();
+          }}
+          className="mt-1 pb-1 text-[11.5px] text-indigo-400 hover:text-indigo-300 font-extrabold flex items-center gap-1 cursor-pointer transition select-none ml-auto"
+        >
+          <span>نور ولولئ</span>
+          <span className="text-[9px]">◀</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -849,6 +883,43 @@ export default function App() {
   // States for navigation flows
   const [selectedPost, setSelectedPost] = useState<TelegramPost | null>(null);
   const [isFullFeedOpen, setIsFullFeedOpen] = useState(false);
+
+  // Custom states for Favorites system & Bottom Text Sheet
+  const [favoritePostIds, setFavoritePostIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('dewa_favorite_post_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isFavoritesMenuOpen, setIsFavoritesMenuOpen] = useState(false);
+  const [activeFavoriteFilter, setActiveFavoriteFilter] = useState<'videos' | 'images' | 'writings' | 'pdf' | 'audio' | null>(null);
+
+  // Toggling favorite post helper and automatic sync to localStorage (د خوښې پوسټ ثبت او لرې والي سیسټم)
+  const toggleFavorite = (postId: string) => {
+    setFavoritePostIds(prev => {
+      const exists = prev.includes(postId);
+      const updated = exists ? prev.filter(id => id !== postId) : [...prev, postId];
+      try {
+        localStorage.setItem('dewa_favorite_post_ids', JSON.stringify(updated));
+      } catch (e) {
+        console.error("Error toggling favorite:", e);
+      }
+      
+      // In-app interactive user feedback toast
+      if (exists) {
+        showToast('پوسټ ستاسو د خوښو شویو څخه لرې شو! 💔', 'info');
+      } else {
+        showToast('پوسټ په بریالیتوب سره ستاسو خوښو شویو کې اضافه شو! ❤️', 'success');
+      }
+      return updated;
+    });
+  };
+
+  const [bottomSheetPost, setBottomSheetPost] = useState<TelegramPost | null>(null);
+  const [visibleHomeCount, setVisibleHomeCount] = useState(30);
+  const [isAutoloadingMore, setIsAutoloadingMore] = useState(false);
   const [featuredIndex, setFeaturedIndex] = useState(0);
 
   // Pagination states for all posts list (starts with 5, loads 5 more automatically)
@@ -934,6 +1005,117 @@ export default function App() {
     showToast(appLanguage === 'en' ? 'App storage and cache cleared successfully!' : 'کاشه په بریالیتوب سره پاکه شوه او غوښتنلیک بیا فعاله شو!', 'success');
     fetchChannelData();
   };
+
+  // ==========================================================
+  // PULL TO REFRESH ENGINE FOR HOME MESSAGE FEED
+  // ==========================================================
+  const [pullDistance, setPullDistance] = useState<number>(0);
+  const [pullState, setPullState] = useState<'idle' | 'pulling' | 'ready' | 'refreshing'>('idle');
+  const pullStartYRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Only bind if we are on the home screen view of the feed (no modal pages, no sub views)
+    const isHomeActive = !selectedPost && 
+                         !isAboutPageOpen && 
+                         !isContactPageOpen && 
+                         !isSettingsPageOpen && 
+                         !isReelsOpen && 
+                         !isPhotoReelsOpen && 
+                         !isCategoryPageOpen;
+
+    if (!isHomeActive) {
+      setPullDistance(0);
+      setPullState('idle');
+      return;
+    }
+
+    const handleTouchStart = (e: TouchEvent) => {
+      // Check if we are scrolled to the absolute top
+      if (window.scrollY <= 2) {
+        pullStartYRef.current = e.touches[0].clientY;
+      } else {
+        pullStartYRef.current = null;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (pullStartYRef.current === null) return;
+
+      const currentY = e.touches[0].clientY;
+      const deltaY = currentY - pullStartYRef.current;
+
+      if (deltaY > 0) {
+        // We are pulling down!
+        // Apply friction to the pull distance
+        const friction = 0.45;
+        const dragDist = deltaY * friction;
+        const limitedDistance = Math.min(130, dragDist);
+
+        if (limitedDistance > 10) {
+          // Prevent browser overscroll/refresh behavior (bounce effects)
+          if (e.cancelable) {
+            e.preventDefault();
+          }
+          setPullDistance(limitedDistance);
+          setPullState(limitedDistance > 75 ? 'ready' : 'pulling');
+        }
+      } else {
+        // Scrolled upwards during a pull
+        pullStartYRef.current = null;
+        setPullDistance(0);
+        setPullState('idle');
+      }
+    };
+
+    const handleTouchEnd = () => {
+      if (pullStartYRef.current === null) return;
+      pullStartYRef.current = null;
+
+      if (pullDistance > 75) {
+        // Trigger refetch
+        setPullState('refreshing');
+        // Smoothly stick indicator to an active refreshing height
+        setPullDistance(55);
+        fetchChannelData().finally(() => {
+          // Once loading finishes, slide it transitionally back to 0
+          setPullDistance(0);
+          setPullState('idle');
+        });
+      } else {
+        // Reset back to normal
+        setPullDistance(0);
+        setPullState('idle');
+      }
+    };
+
+    // Attach non-passive listeners so we can call e.preventDefault()
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [
+    selectedPost,
+    isAboutPageOpen,
+    isContactPageOpen,
+    isSettingsPageOpen,
+    isReelsOpen,
+    isPhotoReelsOpen,
+    isCategoryPageOpen,
+    pullDistance
+  ]);
+
+  // Redundant resilience check to ensure everything resets when isLoading becomes false
+  useEffect(() => {
+    if (!isLoading && pullState === 'refreshing') {
+      setPullDistance(0);
+      setPullState('idle');
+    }
+  }, [isLoading, pullState]);
 
   // Automatically clear toast alerts after a brief visual display duration
   useEffect(() => {
@@ -2011,25 +2193,76 @@ export default function App() {
     return shuffled.slice(0, 10);
   }, [feedData?.posts]);
 
-  // Home Page compact items filtered by category (exactly 30 posts max)
+  // 1. Filtered archive matching selection criteria (either Category or activeFavoriteFilter)
+  const filteredHomePosts = React.useMemo(() => {
+    let list = allPosts;
+
+    if (activeFavoriteFilter) {
+      list = list.filter(p => favoritePostIds.includes(p.id));
+      if (activeFavoriteFilter === 'videos') {
+        list = list.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
+      } else if (activeFavoriteFilter === 'images') {
+        list = list.filter(p => !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0));
+      } else if (activeFavoriteFilter === 'audio') {
+        list = list.filter(p => !!p.hasAudio || !!p.audioUrl);
+      } else if (activeFavoriteFilter === 'pdf') {
+        list = list.filter(p => getIsBook(p));
+      } else if (activeFavoriteFilter === 'writings') {
+        list = list.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
+      }
+    } else {
+      if (selectedCategory === 'videos') {
+        list = list.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
+      } else if (selectedCategory === 'images') {
+        list = list.filter(p => !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0));
+      } else if (selectedCategory === 'audio') {
+        list = list.filter(p => !!p.hasAudio || !!p.audioUrl);
+      } else if (selectedCategory === 'pdf') {
+        list = list.filter(p => getIsBook(p));
+      } else if (selectedCategory === 'writings') {
+        list = list.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
+      }
+    }
+    return list;
+  }, [allPosts, selectedCategory, activeFavoriteFilter, favoritePostIds]);
+
+  // Reset infinite scroll page-size whenever selection filter parameters shift
+  useEffect(() => {
+    setVisibleHomeCount(30);
+  }, [selectedCategory, activeFavoriteFilter, searchQuery]);
+
+  // Home Page compact items filtered by category and sliced by infinite scroll
   const homePosts = React.useMemo(() => {
-    if (selectedCategory === 'videos') {
-      return allPosts.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
-    }
-    if (selectedCategory === 'images') {
-      return allPosts.filter(p => !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0));
-    }
-    if (selectedCategory === 'audio') {
-      return allPosts.filter(p => !!p.hasAudio || !!p.audioUrl);
-    }
-    if (selectedCategory === 'pdf') {
-      return allPosts.filter(p => getIsBook(p));
-    }
-    if (selectedCategory === 'writings') {
-      return allPosts.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
-    }
-    return allPosts;
-  }, [allPosts, selectedCategory]).slice(0, 30);
+    return filteredHomePosts.slice(0, visibleHomeCount);
+  }, [filteredHomePosts, visibleHomeCount]);
+
+  // Automated Infinite Scroll loading effect for Homepage Compact Items with Shimmer delays
+  useEffect(() => {
+    const sentinel = document.getElementById('home-infinite-scroll-sentinel');
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isLoading && !isAutoloadingMore) {
+          // Check if there are actually more posts left to load
+          if (visibleHomeCount < filteredHomePosts.length) {
+            setIsAutoloadingMore(true);
+            setTimeout(() => {
+              setVisibleHomeCount((prev) => {
+                const nextVal = prev + 30;
+                return nextVal;
+              });
+              setIsAutoloadingMore(false);
+            }, 850); // Simulated delay displaying luxurious skeleton shimmer cards
+          }
+        }
+      },
+      { threshold: 0.1, rootMargin: '300px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [isLoading, isAutoloadingMore, filteredHomePosts.length, visibleHomeCount]);
 
   // Full Feed Posts array (all posts loaded dynamically with matching category!)
   const fullFeedPosts = React.useMemo(() => {
@@ -2923,6 +3156,50 @@ export default function App() {
       {/* Main View Area */}
       <main className="flex-1 max-w-[580px] w-full mx-auto px-4 py-6 flex flex-col gap-6">
         
+        {/* Pull to Refresh Dynamic Indicator */}
+        <AnimatePresence>
+          {(pullDistance > 0 || pullState === 'refreshing') && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, y: -20 }}
+              animate={{ 
+                opacity: 1, 
+                height: pullState === 'refreshing' ? 56 : pullDistance,
+                y: 0
+              }}
+              exit={{ opacity: 0, height: 0, y: -20 }}
+              transition={{ type: 'spring', damping: 22, stiffness: 280 }}
+              className="w-full overflow-hidden flex items-center justify-center pointer-events-none"
+            >
+              <div className={`flex items-center gap-2.5 px-4 py-2 rounded-2xl border backdrop-blur-md shadow-md ${
+                isDark 
+                  ? 'bg-slate-900/90 border-slate-800 text-slate-100' 
+                  : 'bg-white/90 border-slate-200 text-slate-800'
+              }`}>
+                {/* Animator Arrow or Spinner */}
+                <span className="flex items-center justify-center">
+                  {pullState === 'refreshing' ? (
+                    <RefreshCw className={`w-4 h-4 animate-spin ${tc.text}`} />
+                  ) : (
+                    <ArrowDown 
+                      className={`w-4 h-4 transition-transform duration-200 ${tc.text}`} 
+                      style={{ 
+                        transform: `rotate(${pullState === 'ready' ? 180 : 0}deg) scale(${Math.min(1.2, pullDistance / 50)})`,
+                      }}
+                    />
+                  )}
+                </span>
+
+                {/* Status Text in Pashto & English */}
+                <span className="text-[11px] font-sans font-bold leading-none">
+                  {pullState === 'pulling' && (appLanguage === 'en' ? 'Pull down to refresh...' : 'د تازه کولو لپاره لاندې کش کړئ...')}
+                  {pullState === 'ready' && (appLanguage === 'en' ? 'Release to refresh...' : 'اوس خوشې کړي (بوش کړئ)...')}
+                  {pullState === 'refreshing' && (appLanguage === 'en' ? 'Refreshing feed...' : 'د معلوماتو تازه کولو په حال کې...')}
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Loader condition */}
         {isLoading && !feedData ? (
           <div className="space-y-5 w-full font-sans">
@@ -3236,20 +3513,36 @@ export default function App() {
                 <CustomLinkPreview url={extractUrl(selectedPost.text || '')!} isDark={isDark} />
               ) : null}
 
-              {/* Copy & Share Action Buttons Row */}
+              {/* Copy, Like & Share Action Buttons Row (د شعر د کاپي، خوښولو او شریکولو ښکلي بټنې) */}
               {selectedPost.text && selectedPost.text.trim() !== '' && (
-                <div className={`flex flex-col sm:flex-row gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-205'} justify-start`}>
+                <div className={`grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-205'}`}>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedPost.text || '');
                       showToast('متن په برياليتوب سره کاپي شو! 📋', 'success');
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`flex-1 py-3 px-4 ${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-750'} border rounded-xl text-xs font-bold transition active:scale-95 flex items-center justify-center gap-2 shadow-xs group`}
+                    className={`py-3 px-4 ${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-750'} border rounded-xl text-[11.5px] font-bold transition active:scale-95 flex items-center justify-center gap-2 shadow-xs group`}
                   >
-                    <Copy className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition" />
-                    <span>متن کاپي کړئ (Copy)</span>
+                    <Copy className="w-4 h-4 text-indigo-450 group-hover:scale-110 transition" />
+                    <span>کاپي کول (Copy)</span>
                   </button>
+
+                  <button
+                    onClick={() => toggleFavorite(selectedPost.id)}
+                    style={{ cursor: 'pointer' }}
+                    className={`py-3 px-4 border rounded-xl text-[11.5px] font-bold transition active:scale-95 flex items-center justify-center gap-2 group shadow-xs ${
+                      favoritePostIds.includes(selectedPost.id)
+                        ? 'bg-rose-500/15 border-rose-500/30 text-rose-500 font-black'
+                        : `${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-750'}`
+                    }`}
+                  >
+                    <Heart className={`w-4 h-4 transition-all duration-300 ${
+                      favoritePostIds.includes(selectedPost.id) ? 'text-rose-500 fill-rose-500 scale-110 animate-pulse' : 'text-slate-400 group-hover:text-rose-500'
+                    }`} />
+                    <span>{favoritePostIds.includes(selectedPost.id) ? 'خوښ شوی (Liked)' : 'خوښول (Like)'}</span>
+                  </button>
+
                   <button
                     onClick={() => {
                       if (navigator.share) {
@@ -3264,10 +3557,10 @@ export default function App() {
                       }
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`flex-1 py-3 px-4 ${tc.bg} ${tc.hoverBg} rounded-xl text-xs font-bold text-white transition active:scale-95 flex items-center justify-center gap-2 shadow-md shadow-indigo-600/10 group`}
+                    className={`py-3 px-4 ${tc.bg} ${tc.hoverBg} rounded-xl text-[11.5px] font-bold text-white transition active:scale-95 flex items-center justify-center gap-2 shadow-md shadow-indigo-600/10 group`}
                   >
                     <Share2 className="w-4 h-4 text-indigo-100 group-hover:scale-110 transition" />
-                    <span>پیغام شریک کړئ (Share)</span>
+                    <span>شریک کړئ (Share)</span>
                   </button>
                 </div>
               )}
@@ -3457,6 +3750,32 @@ export default function App() {
                       className="absolute bottom-24 right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {/* Like / Heart Button (د ويډيو خوښول) */}
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(activeReel.post.id);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className="flex flex-col items-center group active:scale-90 transition"
+                        title="خوښ بټن"
+                      >
+                        <div className={`w-11.5 h-11.5 rounded-full border flex items-center justify-center backdrop-blur-md transition-all shadow-xl ${
+                          favoritePostIds.includes(activeReel.post.id)
+                            ? 'bg-rose-600/80 border-rose-500 scale-105'
+                            : 'bg-black/60 border-white/10 hover:border-rose-500 hover:scale-105 hover:bg-black/80'
+                        }`}>
+                          <Heart className={`w-5 h-5 transition duration-250 ${
+                            favoritePostIds.includes(activeReel.post.id) 
+                              ? 'text-white fill-white scale-110' 
+                              : 'text-slate-100 group-hover:text-rose-500 group-hover:scale-110'
+                          }`} />
+                        </div>
+                        <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
+                          {favoritePostIds.includes(activeReel.post.id) ? 'خوښ شو' : 'خوښول'}
+                        </span>
+                      </button>
+
                       {/* Share button */}
                       <button 
                         onClick={handleShareReel}
@@ -3685,6 +4004,32 @@ export default function App() {
                       className="absolute bottom-24 right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {/* Like / Heart Button (د انځور خوښول) */}
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(activePhotoReel.post.id);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className="flex flex-col items-center group active:scale-90 transition"
+                        title="خوښ بټن"
+                      >
+                        <div className={`w-11.5 h-11.5 rounded-full border flex items-center justify-center backdrop-blur-md transition-all shadow-xl ${
+                          favoritePostIds.includes(activePhotoReel.post.id)
+                            ? 'bg-rose-600/80 border-rose-500 scale-105'
+                            : 'bg-black/60 border-white/10 hover:border-rose-500 hover:scale-105 hover:bg-black/80'
+                        }`}>
+                          <Heart className={`w-5 h-5 transition duration-250 ${
+                            favoritePostIds.includes(activePhotoReel.post.id) 
+                              ? 'text-white fill-white scale-110' 
+                              : 'text-slate-100 group-hover:text-rose-500 group-hover:scale-110'
+                          }`} />
+                        </div>
+                        <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
+                          {favoritePostIds.includes(activePhotoReel.post.id) ? 'خوښ شو' : 'خوښول'}
+                        </span>
+                      </button>
+
                       {/* Share button */}
                       <button 
                         onClick={handleSharePhotoReel}
@@ -3984,65 +4329,19 @@ export default function App() {
                     <Calendar className="w-4 h-4" />
                   </div>
                   <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
-                    مطالعه، لیکوالي، د نوو مهارتونو زده کړه، د ګټورو پروژو جوړول او د وخت اغېزمنه ګټه اخیستنه زما له خوښیو څخه دي. باور لرم چې اخلاص، دوامداره زده کړه او نېک نیت د هر بریالي کار بنسټ جوړوي.
+                    مطالعه، لیکوالي، د نوو مهارتونو زده کړه، د ګټورو پروژو جوړول او د وخت اغېزمنه ګټه اخیستنه زما له خوښیو څخه دي.
                   </p>
                 </div>
-
-                <div className={`p-4 rounded-xl border-2 border-emerald-500/20 bg-emerald-500/5 space-y-2`}>
-                  <div className="flex items-center gap-1.5 text-emerald-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
-                    <span className="text-xs">زما شعار</span>
-                    <span className="text-base">🌿📖</span>
-                  </div>
-                  <p className={`text-xs ${isDark ? 'text-emerald-300' : 'text-emerald-850'} leading-relaxed font-black text-center py-1`}>
-                    "غوره انسان هغه دی چې خلکو ته ډېر ګټور وي." 🌿📖
-                  </p>
-                </div>
-
-                <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
-                  <div className="flex items-center gap-1.5 text-teal-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
-                    <span className="text-xs">د اپلیکیشن کلتوري اسانتیاوې</span>
-                    <Check className="w-4 h-4" />
-                  </div>
-                  <ul className="space-y-2 text-[11px] text-slate-400 font-sans mt-2 pr-1 leading-relaxed">
-                    <li className="flex items-start gap-2 justify-start">
-                      <Check className={`w-3.5 h-3.5 ${tc.text} mt-0.5 shrink-0`} />
-                      <span>د انټرنیټ غوښتنو پرمختللی شیمر لوډر اغېزه د چټک غبرګون لپاره.</span>
-                    </li>
-                    <li className="flex items-start gap-2 justify-start">
-                      <Check className={`w-3.5 h-3.5 ${tc.text} mt-0.5 shrink-0`} />
-                      <span>د کورپاڼې د غوره فیچر سلایډر کنټرول د غاړې تڼیو او پرمختللي لاس اشارې وسيلې (Swipe) په واسطه.</span>
-                    </li>
-                    <li className="flex items-start gap-2 justify-start">
-                      <Check className={`w-3.5 h-3.5 ${tc.text} mt-0.5 shrink-0`} />
-                      <span>بشپړ کنټرول مینو او د روښانه او تیاره بڼو پرمختللی تطبیق په پښتني رنګونو کې.</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* Bottom Developer Credits Card */}
-              <div className={`mt-6 p-4 rounded-2xl ${subCardBg} border border-slate-500/5 flex flex-col gap-2.5 text-right font-sans`}>
-                <span className={`text-[9.5px] ${tc.text} font-black uppercase tracking-wider block`}>د اړیکو بله پاڼه او کلتوري ډالۍ</span>
-                <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-655'} leading-relaxed`}>
-                  تاسو کولی شئ د هر ډول رغنده وړاندیز, نوښت او خپلو شعرونو د کتنې او اضافه کولو د بډاینې لپاره لاندې رسمي لینک سره اړیکه ونیسئ.
-                </p>
-                <a
-                  href="mailto:poetry.pashto@dewa-design.one"
-                  className={`inline-flex items-center gap-1.5 self-start text-[10px] font-black ${tc.text} hover:underline mt-1`}
-                >
-                  <span>poetry.pashto@dewa-design.one</span>
-                  <Mail className="w-3.5 h-3.5" />
-                </a>
               </div>
             </div>
           </div>
         ) : isContactPageOpen ? (
           /* ==========================================================
-             D2. CONTACT ME SCREEN (د اړیکې بېله او ځانګړې نوې صفحه الوتکې سره)
+             E. CONTACT US SCREEN (اړیکه او د پیغامونو لیږل)
              ========================================================== */
           <div className="space-y-5 animate-fade-in text-right">
             <div className={`p-5 sm:p-6 rounded-3xl ${cardBg} border border-slate-500/10 dark:border-slate-800 overflow-hidden shadow-xl text-right`}>
-              <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/20' : 'bg-slate-100/90 border-slate-200'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5`}>
+              <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/20' : 'bg-slate-100/90 border-slate-205'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5`}>
                 <button
                   onClick={() => setIsContactPageOpen(false)}
                   style={{ cursor: 'pointer' }}
@@ -4055,7 +4354,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <Mail className={`w-4 h-4 ${tc.text}`} />
                   <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
-                    رابطه او د ټلیګرام روباټ له لارې پیغام لیږل
+                    رابطه او د پیغام لیږل
                   </span>
                 </div>
               </div>
@@ -4090,81 +4389,55 @@ export default function App() {
                   </p>
 
                   {contactError && (
-                    <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 text-xs text-rose-400 leading-relaxed font-sans space-y-2">
-                      <p className="font-bold flex items-center gap-1.5 justify-start">
-                        <span>⚠️ د پیوستون ستونزه:</span>
-                      </p>
+                    <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 text-xs text-rose-400 leading-relaxed font-sans">
                       <p>{contactError}</p>
-                      {(contactError.includes('TELEGRAM_BOT_TOKEN') || contactError.includes('configuration_missing')) && (
-                        <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800/10 dark:border-slate-800/40 text-[10.5px] text-slate-400 space-y-1.5 mt-2">
-                          <p className="font-bold text-slate-300">💡 د تنظیماتو ساده لارښود:</p>
-                          <p>۱. په **Google AI Studio** کې د خپلو Secrets یا پاڼې د تنظیماتو برخې ته لاړ شئ.</p>
-                          <p>۲. د اوپن سورس بوټ پرمخ بیولو لپاره دا دوه چاپیریالي متغییرونه (Secrets) زیات کړئ:</p>
-                          <p className="font-mono bg-slate-900 px-1.5 py-0.5 rounded text-indigo-405 font-semibold text-center block">TELEGRAM_BOT_TOKEN</p>
-                          <p className="font-mono bg-slate-900 px-1.5 py-0.5 rounded text-indigo-405 font-semibold text-center block">TELEGRAM_ADMIN_CHAT_ID</p>
-                          <p>۳. د ارزښتونو تر ثبتولو وروسته اپلیکیشن تنظیم کړئ ترڅو پیغامونه واستول شي.</p>
-                        </div>
-                      )}
                     </div>
                   )}
 
-                  <div className="space-y-1.5">
-                    <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-black block`}>
-                      ستاسو نوم یا پېژندنه:
-                    </label>
+                  <div className="space-y-3 font-sans">
                     <input
                       type="text"
+                      placeholder="ستاسو محترم نوم"
                       value={contactName}
-                      disabled={contactSending}
                       onChange={(e) => setContactName(e.target.value)}
-                      placeholder="دلته د ځان پېژندنه ولیکئ..."
-                      className={`w-full focus:ring-1 focus:ring-indigo-500 rounded-xl px-4 py-3 text-xs font-semibold outline-none transition text-right font-sans ${isDark ? 'bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-650' : 'bg-slate-100 border border-slate-205 text-slate-900 placeholder-slate-500'}`}
+                      className={`w-full ${isDark ? 'bg-slate-950/60 border-slate-800 text-slate-100' : 'bg-white border-slate-205 text-slate-900'} border rounded-xl px-4 py-3 text-xs text-right outline-none`}
                     />
-                  </div>
 
-                  <div className="space-y-1.5">
-                    <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-black block`}>
-                      ستاسو د پيغام متن:
-                    </label>
                     <textarea
+                      placeholder="خپل پیغام یا رغنده نیوکه دلته ولیکئ..."
                       value={contactMsg}
-                      disabled={contactSending}
                       onChange={(e) => setContactMsg(e.target.value)}
-                      placeholder="خپل پیغام یا وړاندیز دلته ولیکئ..."
-                      rows={6}
-                      className={`w-full focus:ring-1 focus:ring-indigo-500 rounded-xl px-4 py-3 text-xs font-semibold outline-none transition text-right font-sans resize-none ${isDark ? 'bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-650' : 'bg-slate-100 border border-slate-205 text-slate-900 placeholder-slate-500'}`}
+                      rows={5}
+                      className={`w-full ${isDark ? 'bg-slate-950/60 border-slate-800 text-slate-100' : 'bg-white border-slate-205 text-slate-900'} border rounded-2xl px-4 py-3 text-xs text-right outline-none`}
                     />
-                  </div>
 
-                  <button
-                    onClick={handleSendTelegramContact}
-                    disabled={contactSending}
-                    style={{ cursor: contactSending ? 'not-allowed' : 'pointer' }}
-                    className={`w-full py-3.5 ${tc.bg} ${tc.hoverBg} text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50`}
-                  >
-                    {contactSending ? (
-                      <>
-                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>د لېږلو په حال کې دی...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-4 h-4 -rotate-12" />
-                        <span>پیغام واستوه په مستقیم ډول</span>
-                      </>
-                    )}
-                  </button>
+                    <button
+                      onClick={handleSendTelegramContact}
+                      disabled={contactSending}
+                      style={{ cursor: 'pointer' }}
+                      className={`w-full py-3 ${tc.bg} ${tc.hoverBg} text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md active:scale-95 disabled:opacity-50`}
+                    >
+                      {contactSending ? (
+                        <span>د لیږلو په حال کې...</span>
+                      ) : (
+                        <>
+                          <span>پیغام لیږل</span>
+                          <Send className="w-3.5 h-3.5 rotate-180" />
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
         ) : isSettingsPageOpen ? (
           /* ==========================================================
-             E. SETTINGS SCREEN (د ترتیباتو او تنظیماتو بېله صفحه)
+             D3. SETTINGS SCREEN (د اپلیکیشن تنظیمات)
              ========================================================== */
           <div className="space-y-5 animate-fade-in text-right">
-            <div className={`p-5 sm:p-6 rounded-3xl ${cardBg} border border-slate-800/10 dark:border-slate-800 overflow-hidden shadow-xl text-right`}>
-              <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/20' : 'bg-slate-100/90 border-slate-200'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5`}>
+            <div className={`p-5 sm:p-6 rounded-3xl ${cardBg} border border-slate-500/10 dark:border-slate-800 overflow-hidden shadow-xl text-right`}>
+              <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/20' : 'bg-slate-100/90 border-slate-205'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5`}>
                 <button
                   onClick={() => setIsSettingsPageOpen(false)}
                   style={{ cursor: 'pointer' }}
@@ -4175,7 +4448,10 @@ export default function App() {
                   <span>کورپاڼه</span>
                 </button>
                 <div className="flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-indigo-400" />
+                  <Settings className={`w-4 h-4 ${tc.text}`} />
+                  <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
+                    تنظیمات او اسانتیاوې
+                  </span>
                 </div>
               </div>
 
@@ -4184,7 +4460,7 @@ export default function App() {
                 
                 {/* 1. HOME LAYOUTS */}
                 <div className="space-y-2.5">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-bold flex items-center justify-start gap-1 px-1`}>
+                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-707'} font-bold flex items-center justify-start gap-1 px-1`}>
                     <Layers className={`w-3.5 h-3.5 ${tc.text}`} />
                     <span>{tr.homeLayout}</span>
                   </label>
@@ -4197,7 +4473,7 @@ export default function App() {
                         className={`py-2.5 px-2 rounded-xl border text-[11px] font-semibold transition flex items-center justify-start gap-1.5 ${
                           homeLayout === layout
                             ? `${tc.bg} ${tc.border} text-white shadow-xs`
-                            : `${isDark ? 'bg-slate-950/60 border-slate-850 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 border-slate-205 text-slate-700 hover:bg-slate-150'}`
+                            : `${isDark ? 'bg-slate-950/60 border-slate-850 text-slate-300 hover:bg-slate-805' : 'bg-slate-100 border-slate-205 text-slate-707 hover:bg-slate-150'}`
                         }`}
                       >
                         <span className="shrink-0">{homeLayout === layout ? '●' : '○'}</span>
@@ -4209,7 +4485,7 @@ export default function App() {
 
                 {/* 2. THEME MODE */}
                 <div className="space-y-2.5 border-t border-slate-500/10 pt-4">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-bold flex items-center justify-start gap-1 px-1`}>
+                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-707'} font-bold flex items-center justify-start gap-1 px-1`}>
                     {isDark ? <Moon className={`w-3.5 h-3.5 ${tc.text}`} /> : <Sun className={`w-3.5 h-3.5 ${tc.text}`} />}
                     <span>{tr.themeMode}</span>
                   </label>
@@ -4220,7 +4496,7 @@ export default function App() {
                       className={`py-2.5 px-3 rounded-xl border text-[11px] font-bold transition flex items-center justify-center gap-2 ${
                         isDark
                           ? `${tc.bg} ${tc.border} text-white shadow-md`
-                          : 'bg-slate-100 border-slate-205 text-slate-700 hover:bg-slate-150'
+                          : 'bg-slate-100 border-slate-205 text-slate-707 hover:bg-slate-150'
                       }`}
                     >
                       <Moon className="w-3.5 h-3.5" />
@@ -4243,7 +4519,7 @@ export default function App() {
 
                 {/* 3. COLOR THEME PRESETS */}
                 <div className="space-y-2.5 border-t border-slate-500/10 pt-4">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-bold flex items-center justify-start gap-1 px-1`}>
+                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-707'} font-bold flex items-center justify-start gap-1 px-1`}>
                     <Palette className={`w-3.5 h-3.5 ${tc.text}`} />
                     <span>{tr.colorThemes}</span>
                   </label>
@@ -4275,7 +4551,7 @@ export default function App() {
                         >
                           <span
                             style={{ backgroundColor: config.hex }}
-                            className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-90 shadow-md ${
+                            className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 shadow-md ${
                               isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 border border-black/45' : 'opacity-85 hover:opacity-100 border border-slate-500/25'
                             }`}
                           >
@@ -4291,8 +4567,8 @@ export default function App() {
                 </div>
 
                 {/* 4. TEXT SIZE CONTROLS */}
-                <div className="space-y-2.5 border-t border-slate-500/10 pt-4">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-bold flex items-center justify-start gap-1 px-1`}>
+                <div className="space-y-2 border-t border-slate-500/10 pt-3">
+                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-707'} font-bold flex items-center justify-start gap-1 px-1`}>
                     <Type className={`w-3.5 h-3.5 ${tc.text}`} />
                     <span>{tr.textColor}</span>
                   </label>
@@ -4302,10 +4578,10 @@ export default function App() {
                         key={sz}
                         onClick={() => setTextSizeClass(sz)}
                         style={{ cursor: 'pointer' }}
-                        className={`py-2.5 px-1 rounded-xl border text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                        className={`py-2 px-1 rounded-xl border text-[10.5px] font-bold transition flex items-center justify-center gap-1 ${
                           textSizeClass === sz
                             ? `${tc.bg} ${tc.border} text-white shadow-md`
-                            : `${isDark ? 'bg-slate-950/60 border-slate-850 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 border-slate-205 text-slate-700 hover:bg-slate-150'}`
+                            : `${isDark ? 'bg-slate-950/60 border-slate-855 text-slate-305 hover:bg-slate-850' : 'bg-slate-100 border-slate-205 text-slate-707 hover:bg-slate-150'}`
                         }`}
                       >
                         {textSizeClass === sz && <Check className="w-3 h-3 text-white shrink-0" />}
@@ -4320,473 +4596,228 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 6. NOTIFICATIONS TOGGLE */}
-                <div className="flex items-center justify-between p-3.5 bg-slate-500/5 rounded-xl border border-slate-500/10 text-right font-sans pt-1 mt-1">
-                  <div className="flex items-center gap-1.5 text-right">
-                    {notificationsEnabled ? <Bell className={`w-4 h-4 ${tc.text}`} /> : <BellOff className="w-4 h-4 text-slate-500" />}
-                    <span className={`text-[11px] ${isDark ? 'text-slate-200' : 'text-slate-850'} font-bold`}>{tr.notifications}:</span>
-                  </div>
-                  <button
-                    onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-                    style={{ cursor: 'pointer' }}
-                    className={`py-1.5 px-3 rounded-lg text-[10px] font-black tracking-wide uppercase transition ${
-                      notificationsEnabled ? 'bg-emerald-500/15 border border-emerald-500/25 text-emerald-450 dark:text-emerald-400' : 'bg-slate-500/10 border border-slate-500/20 text-slate-500'
-                    }`}
-                  >
-                    {notificationsEnabled ? tr.enabled : tr.disabled}
-                  </button>
-                </div>
-
-                {notificationsEnabled && (
-                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-indigo-950/20 border-indigo-900/30 text-neutral-300' : 'bg-indigo-50/50 border-indigo-100 text-neutral-600'} flex items-center justify-between gap-2.5 text-right font-sans mt-1.5`}>
-                    <p className="text-[9.5px] leading-relaxed flex-1">
-                      🔔 **په ورځ کې ۵ پیغامونه** په نښه شوي دي ترڅو کاروونکی د اپلیکیشن کارولو لپاره وهڅوي. د سمدستي ازموینې لپاره ښي خوا ته تڼۍ کېکاږئ:
-                    </p>
-                    <button
-                      onClick={() => {
-                        const available = feedData?.posts?.filter(p => p && p.text && p.text.length > 20) || [];
-                        if (available.length > 0) {
-                          const rnd = Math.floor(Math.random() * available.length);
-                          triggerLocalNotification(available[rnd]);
-                        } else {
-                          showToast('لا تر اوسه د شعرونو لیست ندی ترلاسه شوی.', 'error');
-                        }
-                      }}
-                      style={{ cursor: 'pointer' }}
-                      className="shrink-0 py-1.5 px-2.5 bg-indigo-600 hover:bg-indigo-550 text-white text-[9.5px] font-bold rounded-lg transition-all"
-                    >
-                      د نوټیفیکیشن ازمویل
-                    </button>
-                  </div>
-                )}
-
-
-
-                {/* 8. RESET STORAGE / CLEAR CACHE */}
-                <div className="space-y-2 border-t border-slate-500/10 pt-4">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} font-bold flex items-center justify-start gap-1 px-1`}>
-                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                    <span>{tr.clearCache}</span>
-                  </label>
-                  <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-rose-500/5 border-rose-500/15' : 'bg-rose-50 border-rose-250'} flex flex-col gap-2.5`}>
-                    <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-600'} leading-relaxed`}>{tr.clearCacheHelp}</p>
-                    <button
-                      onClick={() => {
-                        setShowClearCacheConfirm(true);
-                      }}
-                      style={{ cursor: 'pointer' }}
-                      className="bg-rose-600 hover:bg-rose-550 active:scale-95 text-white py-2.5 px-3.5 rounded-xl text-[10.5px] font-bold transition flex items-center justify-center gap-1.5 self-start"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>{tr.clearCacheBtn}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setIsSettingsPageOpen(false)}
-                  style={{ cursor: 'pointer' }}
-                  className={`w-full py-3 ${tc.bg} ${tc.hoverBg} text-white rounded-xl text-xs font-bold transition mt-2`}
-                >
-                  {appLanguage === 'en' ? 'Home' : 'کورپاڼه'}
-                </button>
               </div>
-            </div>
-          </div>
-        ) : isSearchOpen ? (
-          /* ==========================================================
-             D. SEARCH PAGE (د پلټنې بېله او ځانګړې صفحه)
-             ========================================================== */
-          <div className="space-y-5 animate-fade-in text-right">
-            <div className={`border rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-xl ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-              <span className={`text-xs font-bold ${isDark ? 'text-slate-350' : 'text-slate-700'}`}>په ټولو پوسټونو کې موضوع یا کلیمه وپلټئ:</span>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="دلته د پوسټونو موضوع یا کلمه وپلټئ..."
-                  className={`w-full focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl py-3 pr-10 pl-4 text-xs font-medium outline-none transition duration-200 text-right font-sans ${isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-102 border-slate-300 text-slate-900'}`}
-                  autoFocus
-                />
-                <Search className="absolute right-3.5 top-3.5 w-4 h-4 text-slate-500 pointer-events-none" />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    style={{ cursor: 'pointer' }}
-                    className={`absolute left-3 top-2.5 text-[10px] font-bold px-2.5 py-1 rounded transition ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-200 hover:bg-slate-300 text-slate-800'}`}
-                  >
-                    بیا پیل
-                  </button>
-                )}
-              </div>
-              {searchQuery && (
-                <p className="text-[10px] text-indigo-400 text-right font-semibold">
-                  موندل شوي پوسټونه: {allPosts.length} د غوښتنې مطابق
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-3 pt-2">
-              {allPosts.length > 0 ? (
-                allPosts.map((post) => (
-                  <div
-                    key={post.id}
-                    onClick={() => setSelectedPost(post)}
-                    style={{ cursor: 'pointer' }}
-                    className={`${isDark ? 'bg-slate-900/95 hover:bg-slate-850/90 border-slate-800/20 text-slate-100' : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-900'} border p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md`}
-                  >
-                    {post.photoUrl && (!post.photoUrls || post.photoUrls.length <= 1) ? (
-                      <div className="w-16 h-16 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                        <img
-                          src={post.photoUrl || null}
-                          referrerPolicy="no-referrer"
-                          alt="thumb"
-                          className="w-full h-full object-cover cursor-zoom-in"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setZoomPhotoUrl(post.photoUrl!);
-                            setZoomScale(1);
-                          }}
-                        />
-                      </div>
-                    ) : null}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 text-[10px] text-slate-500 mb-1 font-mono">
-                        <span className={`${isDark ? 'bg-slate-950' : 'bg-slate-100'} px-2 py-0.5 rounded text-[9.5px] font-mono text-indigo-400 font-bold`}>#{post.id}</span>
-                        <span>{post.timeLabel || 'وروستی'}</span>
-                      </div>
-                      <BeautifulTelegramText 
-                        text={getPostTextWithFallback(post)}
-                        isDark={isDark}
-                        fs={{ body: 'text-[13.5px]' }}
-                        limitLines={6}
-                      />
-                      {post.photoUrls && post.photoUrls.length > 1 && (
-                        <div 
-                          onClick={(e) => e.stopPropagation()} 
-                          className="flex gap-2 overflow-x-auto pb-1.5 pt-1 scrollbar-thin scrollbar-thumb-slate-705 mt-2 rtl"
-                          style={{ direction: 'rtl' }}
-                        >
-                          {post.photoUrls.map((url, imgIdx) => (
-                            <div 
-                              key={imgIdx} 
-                              className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden shrink-0 bg-slate-950/40 border border-slate-855/10 relative group"
-                            >
-                              <img
-                                src={url}
-                                referrerPolicy="no-referrer"
-                                alt="post gallery"
-                                className="w-full h-full object-cover hover:scale-105 transition duration-200 cursor-zoom-in"
-                                onClick={() => {
-                                  setZoomPhotoUrl(url);
-                                  setZoomScale(1);
-                                }}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {post.audioList && post.audioList.length > 0 ? (
-                        <div className="mt-2.5 space-y-2.5">
-                          {post.audioList.map((audioItem, idx) => (
-                            <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                          ))}
-                        </div>
-                      ) : post.hasAudio && post.audioUrl ? (
-                        <div className="mt-2.5">
-                          <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ))
-               ) : (
-                <div className="py-16 text-center text-slate-500 text-xs font-sans">
-                  هيڅ کلمه ورته پیدا نه شوه، مهرباني وکړئ بله موضوع وپلټئ.
-                </div>
-               )}
             </div>
           </div>
         ) : !isFullFeedOpen ? (
           /* ==========================================================
-             A. HOME SCREEN (لومړی د کور صفحه غوره ډیزاین)
+             F. HOME MAIN SCREEN (کورپاڼه)
              ========================================================== */
-          <div className="space-y-6 animate-fade-in">
-
-            {/* FEATURED SLIDER HERO HEADER (انډیکيټر سره لس انځور لرونکي پوسټونه - ساده او ښکلی) */}
+          <div className="space-y-5 animate-fade-in">
+{/* 1. FEATURED POSTS SLIDER (ښکلی او متحرک سلائیډر د شعرونو) */}
             {featuredPosts.length > 0 && (
-              <section className={`${isDark ? 'bg-slate-900 border-slate-800/80' : 'bg-white border-slate-200 shadow-md'} rounded-2xl p-3.5 border flex flex-col gap-2.5 transition-colors duration-300`}>
-                {/* Main Slider Screen */}
-                <div 
-                  onClick={() => setSelectedPost(featuredPosts[featuredIndex])}
-                  onTouchStart={onTouchStart}
-                  onTouchMove={onTouchMove}
-                  onTouchEnd={onTouchEnd}
-                  style={{ cursor: 'pointer' }}
-                  className="relative h-44 sm:h-48 rounded-xl overflow-hidden bg-slate-950 border border-slate-800/60 flex items-center justify-center group"
-                >
-                  {(featuredPosts[featuredIndex].photoUrl || featuredPosts[featuredIndex].videoThumbUrl) ? (
-                    <img
-                      src={(featuredPosts[featuredIndex].photoUrl || featuredPosts[featuredIndex].videoThumbUrl) || null}
-                      referrerPolicy="no-referrer"
-                      alt="Featured node"
-                      className="w-full h-full object-cover select-none transition duration-500 group-hover:scale-105"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (() => {
-                    const featText = featuredPosts[featuredIndex].text || '';
-                    const cleanFeatText = featText.replace(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g, '').trim();
-                    const featLines = cleanFeatText.split('\n').map(l => l.trim()).filter(l => l !== '');
-                    const visibleFeatLines = featLines.slice(0, 4).join('\n');
-                    const featuredGradients = [
-                      "from-sky-500 via-indigo-600 to-purple-700",
-                      "from-rose-500 via-pink-600 to-indigo-700",
-                      "from-emerald-500 via-teal-600 to-cyan-700",
-                      "from-amber-500 via-red-600 to-rose-700",
-                      "from-violet-500 via-purple-600 to-pink-700",
-                      "from-cyan-500 via-blue-600 to-indigo-700",
-                      "from-fuchsia-500 via-rose-600 to-orange-700",
-                      "from-teal-500 via-emerald-600 to-lime-700"
-                    ];
-                    const selectedGradient = featuredGradients[featuredIndex % featuredGradients.length];
-                    return (
-                      <div className={`w-full h-full bg-gradient-to-tr ${selectedGradient} p-5 flex flex-col items-center justify-center text-center text-white relative select-none`}>
-                        {/* Beautiful quotation mark background */}
-                        <span className="absolute top-2 right-4 text-white/10 text-8xl font-serif leading-none select-none">”</span>
-                        <p className="text-white text-xs sm:text-sm font-black font-sans leading-relaxed max-w-[85%] pr-1 text-center whitespace-pre-line line-clamp-4" style={{ direction: 'rtl' }}>
-                          {visibleFeatLines || 'پښتو غزل او شعر د لوستلو لپاره ...'}
-                        </p>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Left Arrow Button Overlay */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      prevFeatured();
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 bg-black/55 hover:bg-black/85 text-white rounded-full p-1.5 transition active:scale-90 shadow-lg border border-white/10 backdrop-blur-xs z-10"
-                    title="مخکینی"
-                  >
-                    <ChevronLeft className="w-4 h-4 text-white" />
-                  </button>
-
-                  {/* Right Arrow Button Overlay */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      nextFeatured();
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-black/55 hover:bg-black/85 text-white rounded-full p-1.5 transition active:scale-90 shadow-lg border border-white/10 backdrop-blur-xs z-10"
-                    title="بل پوسټ"
-                  >
-                    <ChevronRight className="w-4 h-4 text-white" />
-                  </button>
-
-                  {/* Subtle Indicator Badge */}
-                  <div className={`absolute top-3 left-3 ${tc.bg} text-white font-mono font-black text-xs px-2.5 py-1 rounded-xl shadow-md select-none z-10`}>
-                    {featuredIndex + 1}/{featuredPosts.length}
-                  </div>
+              <div 
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                className="relative h-44 sm:h-52 rounded-2xl xs:rounded-3xl overflow-hidden shadow-lg border border-slate-500/10 group flex flex-col justify-end p-4 sm:p-5 text-white/95"
+              >
+                {/* Background image layer */}
+                {(() => {
+                  const fPost = featuredPosts[featuredIndex];
+                  if (!fPost) return null;
                   
-                  {featuredPosts[featuredIndex].hasVideo && (
-                    <span className="absolute inset-0 flex items-center justify-center bg-black/35 pointer-events-none">
-                      <PlayCircle className="w-10 h-10 text-indigo-400 drop-shadow" />
-                    </span>
-                  )}
-                </div>
+                  // Priority check for image
+                  const imgUrl = fPost.photoUrl || (fPost.photoUrls && fPost.photoUrls[0]);
+                  
+                  return (
+                    <div className="absolute inset-0 z-0">
+                      {imgUrl ? (
+                        <img 
+                          src={imgUrl} 
+                          alt="featured" 
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover brightness-[0.45] group-hover:scale-105 transition-all duration-700 ease-out"
+                        />
+                      ) : (
+                        <div className={`w-full h-full bg-gradient-to-br ${tc.gradient} opacity-85 group-hover:brightness-105 transition duration-500`} />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/95 via-slate-950/30 to-transparent" />
+                      
+                      {/* Swipe / Navigation buttons */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          prevFeatured();
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className="absolute left-4 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition border border-white/10 opacity-0 group-hover:opacity-100 font-bold"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          nextFeatured();
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition border border-white/10 opacity-0 group-hover:opacity-100 font-bold"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
 
-                {/* Title outline */}
-                <p className={`text-xs ${isDark ? 'text-slate-300' : 'text-slate-700 font-bold'} mt-0.5 truncate text-right leading-relaxed px-1`}>
-                  {featuredPosts[featuredIndex].text || 'د لوستلو لپاره کلیک کړئ...'}
-                </p>
-
-                {/* Dot slider indicator with fully visible dots (added non-active width classes w-1.5) */}
-                <div className="flex justify-center items-center gap-1.5 mt-0.5">
-                  {featuredPosts.map((_, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setFeaturedIndex(idx)}
-                      style={{ cursor: 'pointer' }}
-                      className={`h-1.5 rounded-full transition-all duration-300 ${
-                        idx === featuredIndex 
-                          ? `w-5.5 ${tc.bg}` 
-                          : `w-1.5 ${isDark ? 'bg-slate-600 hover:bg-slate-500' : 'bg-slate-300 hover:bg-slate-400'}`
-                      }`}
-                      title={`Slide ${idx + 1}`}
-                    />
-                  ))}
-                </div>
-              </section>
+                      {/* Content Info */}
+                      <div 
+                        onClick={() => setSelectedPost(fPost)}
+                        style={{ cursor: 'pointer' }}
+                        className="absolute inset-x-0 bottom-0 z-5 flex flex-col justify-end p-4 text-right space-y-1"
+                      >
+                        <div className="flex items-center gap-2 self-end justify-end text-[10px] text-slate-300 font-sans">
+                          <span>{fPost.timeLabel || 'وروستی'}</span>
+                          <span className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-bold text-white ${tc.bg}`}>#{fPost.id}</span>
+                        </div>
+                        <h4 className="text-sm sm:text-base font-black font-sans leading-snug line-clamp-2 text-right">
+                          {getPostTextWithFallback(fPost)}
+                        </h4>
+                        
+                        {/* Pagination Dots */}
+                        <div className="flex gap-1 justify-center pt-2">
+                          {featuredPosts.map((_, i) => (
+                            <span 
+                              key={i} 
+                              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === featuredIndex ? 'bg-indigo-400 w-3.5' : 'bg-white/45'}`} 
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             )}
 
-            {/* THREE HERO BANNER BUTTONS (د شارټس، انځورونو، او کټګوریو ځانګړې تڼۍ) */}
-            <div className="space-y-3 sm:space-y-4 select-none">
+            {/* 2. EXQUISITE QUICK ACTIONS DYNAMIC GRID (چټک مینو بټنې: انځورونه، ویډیوګانې، کټګورۍ او پلټنه) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5" style={{ direction: 'rtl' }}>
               
-              {/* TWO ADJACENT GORGEOUS HERO BANNER BUTTONS (د شارټس او ښکلو انځورونو دوه تڼۍ اړخ پر اړخ) */}
-              <div className="grid grid-cols-2 gap-2.5 sm:gap-4 select-none">
+              {/* ۱. ښکلي انځورونه */}
+              <div 
+                onClick={() => {
+                  setIsPhotoReelsOpen(true);
+                  setActivePhotoReelIndex(0);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                style={{ cursor: 'pointer' }}
+                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-2 sm:p-2.5 flex flex-row items-center justify-between gap-1.5 h-13 sm:h-15 transition-all duration-350 transform hover:scale-[1.015] active:scale-[0.98] border border-white/15 shadow-[0_4px_15px_rgba(16,185,129,0.15)] hover:shadow-[0_8px_25px_rgba(5,150,105,0.3)] group action-btn-flow action-btn-photos text-white select-none cursor-pointer"
+              >
+                <div className="absolute inset-x-0 top-0 h-[40%] bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+                <Images className="absolute -left-4 -bottom-4 w-14 h-14 text-white/5 pointer-events-none transform rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
                 
-                {/* 1. SHORT VIDEO REELS BANNER BUTTON (ويډيوګانې) */}
-                <div 
-                  onClick={() => {
-                    setIsReelsOpen(true);
-                    setActiveReelIndex(0);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                  className="relative overflow-hidden rounded-2xl xs:rounded-3xl p-2.5 sm:p-4.5 flex flex-row items-center justify-between gap-1.5 h-20 sm:h-24 transition-all duration-300 transform hover:scale-[1.015] active:scale-[0.98] border border-white/25 shadow-[0_12px_35px_rgba(124,58,237,0.25)] hover:shadow-[0_20px_50px_rgba(244,63,94,0.45)] group bg-gradient-to-r from-rose-600 via-indigo-650 via-violet-750 via-amber-550 to-rose-600 animate-gradient-shift text-white select-none cursor-pointer"
-                >
-                  {/* Premium shining overlay reflection effect */}
-                  <div className="absolute inset-x-0 top-0 h-[45%] bg-gradient-to-b from-white/15 to-transparent pointer-events-none" />
-                  <div className="absolute -inset-24 bg-radial-gradient from-white/30 via-transparent to-transparent pointer-events-none opacity-40 group-hover:animate-pulse" />
-                  
-                  {/* Large background play watermark */}
-                  <Play className="absolute -left-6 -bottom-6 w-24 h-24 sm:w-28 sm:h-28 text-white/5 pointer-events-none fill-white/5 transform -rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
-                  
-                  <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
-                    <div className="flex items-center gap-1.5 self-end mb-0.5">
-                      <span className="text-[7.5px] xs:text-[8.5px] sm:text-[9.5px] bg-linear-to-r from-red-500 to-amber-500 text-white font-sans font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full shadow-xs select-none flex items-center gap-0.5 border border-white/10 animate-bounce">
-                        🔥 نوی
-                      </span>
-                    </div>
-                    <h3 className="text-white text-[10.5px] xs:text-xs sm:text-sm font-black font-sans leading-none flex items-center gap-0.5 justify-end drop-shadow">
-                      <span>ويډيوګانې</span>
-                      <span className="text-xs sm:text-sm">✨</span>
-                    </h3>
-                    <p className="text-slate-150/90 text-[8px] xs:text-[9px] sm:text-[10px] font-sans mt-0.5 leading-none pr-0.5 line-clamp-1">
-                      د ویډيويي شعرونو برخه
-                    </p>
-                  </div>
-
-                  <div className="bg-white/20 backdrop-blur-md p-1.5 sm:p-2.5 rounded-full flex items-center justify-center border border-white/25 shadow-md shrink-0 z-10 transform group-hover:scale-110 group-hover:rotate-12 transition duration-300">
-                    <div className="relative">
-                      <Play className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5 text-white fill-white" />
-                      <span className="absolute -top-1 -left-1 flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                      </span>
-                    </div>
-                  </div>
+                <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
+                  <span className="text-[10px] sm:text-xs font-black tracking-tight font-sans">
+                    ښکلي انځورونه
+                  </span>
+                  <span className="text-[7.5px] xs:text-[8px] text-emerald-100/90 font-bold font-sans">
+                    البوم (Photo Slides)
+                  </span>
                 </div>
-
-                {/* 2. EXQUISITE IMAGE REELS / PHOTOS SWIPE BUTTON (انځورونه) */}
-                <div 
-                  onClick={() => {
-                    setIsPhotoReelsOpen(true);
-                    setActivePhotoReelIndex(0);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                  className="relative overflow-hidden rounded-2xl xs:rounded-3xl p-2.5 sm:p-4.5 flex flex-row items-center justify-between gap-1.5 h-20 sm:h-24 transition-all duration-300 transform hover:scale-[1.015] active:scale-[0.98] border border-white/25 shadow-[0_12px_35px_rgba(16,185,129,0.25)] hover:shadow-[0_20px_50px_rgba(5,150,105,0.45)] group bg-gradient-to-r from-emerald-600 via-teal-650 via-indigo-650 via-cyan-600 to-emerald-600 animate-gradient-shift text-white select-none cursor-pointer"
-                >
-                  {/* Premium shining overlay reflection effect */}
-                  <div className="absolute inset-x-0 top-0 h-[45%] bg-gradient-to-b from-white/15 to-transparent pointer-events-none" />
-                  <div className="absolute -inset-24 bg-radial-gradient from-white/30 via-transparent to-transparent pointer-events-none opacity-40 group-hover:animate-pulse" />
-                  
-                  {/* Large background images watermark */}
-                  <Images className="absolute -left-6 -bottom-6 w-24 h-24 sm:w-28 sm:h-28 text-white/5 pointer-events-none transform rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
-                  
-                  <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
-                    <div className="flex items-center gap-1.5 self-end mb-0.5">
-                       <span className="text-[7.5px] xs:text-[8.5px] sm:text-[9.5px] bg-linear-to-r from-teal-500 to-indigo-500 text-white font-sans font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full shadow-xs select-none flex items-center gap-0.5 border border-white/10">
-                        🌟 انځور
-                      </span>
-                    </div>
-                    <h3 className="text-white text-[10.5px] xs:text-xs sm:text-sm font-black font-sans leading-none flex items-center gap-0.5 justify-end drop-shadow">
-                      <span>انځورونه</span>
-                      <span className="text-xs sm:text-sm">🖼️</span>
-                    </h3>
-                    <p className="text-slate-150/90 text-[8px] xs:text-[9px] sm:text-[10px] font-sans mt-0.5 leading-none pr-0.5 line-clamp-1">
-                      د انځوریزو شعرونو برخه
-                    </p>
-                  </div>
-
-                  <div className="bg-white/20 backdrop-blur-md p-1.5 sm:p-2.5 rounded-full flex items-center justify-center border border-white/25 shadow-xl shrink-0 z-10 transform group-hover:scale-110 group-hover:-rotate-12 transition duration-300">
-                    <div className="relative">
-                      <Images className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5 text-white" />
-                      <span className="absolute -top-1 -left-1 flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                      </span>
-                    </div>
-                  </div>
+                <div className="shrink-0 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-xs group-hover:bg-white/25 transition duration-300 z-10">
+                  <ImageIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse" />
                 </div>
-
               </div>
 
-              {/* 3. NEW BOLD CATEGORIES TRIGGERING BUTTON BELOW THEM (د پیوندونو او کټګوریو ځانګړې تڼۍ) */}
+              {/* ۲. شارټ ویډیوګانې (Reels) */}
+              <div 
+                onClick={() => {
+                  setIsReelsOpen(true);
+                  setActiveReelIndex(0);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                style={{ cursor: 'pointer' }}
+                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-2 sm:p-2.5 flex flex-row items-center justify-between gap-1.5 h-13 sm:h-15 transition-all duration-350 transform hover:scale-[1.015] active:scale-[0.98] border border-white/15 shadow-[0_4px_15px_rgba(244,63,94,0.15)] hover:shadow-[0_8px_25px_rgba(225,29,72,0.3)] group action-btn-flow action-btn-reels text-white select-none cursor-pointer"
+              >
+                <div className="absolute inset-x-0 top-0 h-[40%] bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+                <Video className="absolute -left-4 -bottom-4 w-14 h-14 text-white/5 pointer-events-none transform rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
+                
+                <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
+                  <span className="text-[10px] sm:text-xs font-black tracking-tight font-sans">
+                    شارټ ویډیوګانې
+                  </span>
+                  <span className="text-[7.5px] xs:text-[8px] text-rose-100/90 font-bold font-sans">
+                    ریلیزونه (Reels)
+                  </span>
+                </div>
+                <div className="shrink-0 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-xs group-hover:bg-white/25 transition duration-300 z-10">
+                  <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse ml-0.5" />
+                </div>
+              </div>
+
+              {/* ۳. د شعرونو ډلبندي */}
               <div 
                 onClick={() => {
                   setIsCategoryPageOpen(true);
-                  setCategorySearchQuery('');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 style={{ cursor: 'pointer' }}
-                className="relative overflow-hidden rounded-2xl xs:rounded-3xl p-4 sm:p-5 flex items-center justify-between gap-4 transition-all duration-300 transform hover:scale-[1.012] active:scale-[0.985] border border-white/25 shadow-[0_12px_35px_rgba(139,92,246,0.25)] hover:shadow-[0_20px_50px_rgba(168,85,247,0.45)] group bg-gradient-to-r from-fuchsia-600 via-purple-650 via-violet-700 via-indigo-650 to-fuchsia-600 animate-gradient-shift text-white select-none cursor-pointer"
+                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-2 sm:p-2.5 flex flex-row items-center justify-between gap-1.5 h-13 sm:h-15 transition-all duration-350 transform hover:scale-[1.015] active:scale-[0.98] border border-white/15 shadow-[0_4px_15px_rgba(79,70,229,0.15)] hover:shadow-[0_8px_25px_rgba(67,56,202,0.3)] group action-btn-flow action-btn-categories text-white select-none cursor-pointer"
               >
-                {/* Premium shining reflection */}
-                <div className="absolute inset-x-0 top-0 h-[45%] bg-gradient-to-b from-white/15 to-transparent pointer-events-none" />
-                <div className="absolute -inset-24 bg-radial-gradient from-white/25 via-transparent to-transparent pointer-events-none opacity-30 group-hover:animate-pulse" />
-                
-                {/* Large folder watermark */}
-                <Grid className="absolute -left-6 -bottom-6 w-24 h-24 sm:w-28 sm:h-28 text-white/5 pointer-events-none transform -rotate-12 group-hover:scale-110 transition duration-500" />
+                <div className="absolute inset-x-0 top-0 h-[40%] bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+                <Layers className="absolute -left-4 -bottom-4 w-14 h-14 text-white/5 pointer-events-none transform rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
                 
                 <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
-                  <div className="flex items-center gap-1.5 self-end mb-1">
-                    <span className="text-[8px] xs:text-[9.5px] sm:text-[10px] bg-linear-to-r from-purple-500 to-pink-500 text-white font-sans font-extrabold px-2.5 py-0.5 rounded-full shadow-md select-none flex items-center gap-1 border border-white/10">
-                      🔖 موضوعګانې
-                    </span>
-                  </div>
-                  <h3 className="text-white text-xs sm:text-base font-black font-sans leading-snug tracking-tight flex items-center gap-1.5 sm:gap-2 justify-end drop-shadow">
-                    <span>کټګوري</span>
-                    <span className="text-sm">🏷️</span>
-                  </h3>
-                  <p className="text-slate-100/95 text-[9px] xs:text-[10px] sm:text-xs font-sans mt-0.5 leading-tight sm:leading-relaxed font-semibold pr-0.5">
-                    د شعرونو ډلبندي کول
-                  </p>
+                  <span className="text-[10px] sm:text-xs font-black tracking-tight font-sans">
+                    موضوعي ډلبندي
+                  </span>
+                  <span className="text-[7.5px] xs:text-[8px] text-blue-100/90 font-bold font-sans">
+                    کټګورۍ (Category)
+                  </span>
                 </div>
+                <div className="shrink-0 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-xs group-hover:bg-white/25 transition duration-300 z-10">
+                  <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse" />
+                </div>
+              </div>
 
-                <div className="bg-white/20 backdrop-blur-md p-3 sm:p-4 rounded-full flex items-center justify-center border border-white/25 shadow-xl shrink-0 z-10 transform group-hover:scale-110 transition duration-300">
-                  <div className="relative">
-                    <Grid className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 text-white" />
-                  </div>
+              {/* ۴. پلټنه */}
+              <div 
+                onClick={() => {
+                  setIsSearchOpen(true);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                style={{ cursor: 'pointer' }}
+                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-2 sm:p-2.5 flex flex-row items-center justify-between gap-1.5 h-13 sm:h-15 transition-all duration-350 transform hover:scale-[1.015] active:scale-[0.98] border border-white/15 shadow-[0_4px_15px_rgba(245,158,11,0.15)] hover:shadow-[0_8px_25px_rgba(217,119,6,0.3)] group action-btn-flow action-btn-search text-white select-none cursor-pointer"
+              >
+                <div className="absolute inset-x-0 top-0 h-[40%] bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+                <Search className="absolute -left-4 -bottom-4 w-14 h-14 text-white/5 pointer-events-none transform rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
+                
+                <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
+                  <span className="text-[10px] sm:text-xs font-black tracking-tight font-sans">
+                    په پوسټونو پلټنه
+                  </span>
+                  <span className="text-[7.5px] xs:text-[8px] text-amber-100/90 font-bold font-sans">
+                    لټون (Fast Search)
+                  </span>
+                </div>
+                <div className="shrink-0 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-xs group-hover:bg-white/25 transition duration-300 z-10">
+                  <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse" />
                 </div>
               </div>
 
             </div>
 
-            {/* CATEGORIES GRID TABS (د پوسټونو بېلا بېلې کټګورۍ) */}
-            <div className="w-full mt-4 mb-2">
-              <div className="flex items-center mb-2 px-1 text-right">
-                <span className={`text-[11px] font-black ${isDark ? 'text-slate-300' : 'text-slate-700'} font-sans`}>
-                  د پورته شويو پوسټونو موضوعي کټګورۍ:
-                </span>
-              </div>
-              <div 
-                className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none text-right"
-                style={{ direction: 'rtl' }}
-              >
+            {/* 3. CATEGORY FILTER TABS (د موضوع کټګوري ښکلي ټابونه) */}
+            <div className="relative overflow-hidden rounded-2xl p-1 shadow-sm border border-slate-500/10" style={{ direction: 'rtl' }}>
+              <div className="flex gap-2 overflow-x-auto pb-1.5 pt-1 scrollbar-none items-center">
                 {[
                   { id: 'all', label: 'ټول', icon: Layers },
-                  { id: 'videos', label: 'ويډيوګانې', icon: Video },
+                  { id: 'writings', label: 'شعرونه', icon: FileText },
+                  { id: 'audio', label: 'غږیزې', icon: Music },
+                  { id: 'videos', label: 'ویډیوګانې', icon: Video },
                   { id: 'images', label: 'انځورونه', icon: ImageIcon },
-                  { id: 'audio', label: 'غږيز فايلونه', icon: Music },
-                  { id: 'pdf', label: 'کتابونه pdf', icon: BookOpen },
-                  { id: 'writings', label: 'ليکنې', icon: FileText },
+                  { id: 'pdf', label: 'کتابونه', icon: BookOpen },
                 ].map((cat) => {
                   const CatIcon = cat.icon;
                   const isActive = selectedCategory === cat.id;
                   return (
                     <button
                       key={cat.id}
-                      onClick={() => setSelectedCategory(cat.id)}
+                      onClick={() => {
+                        setSelectedCategory(cat.id);
+                        setActiveFavoriteFilter(null);
+                      }}
                       style={{ cursor: 'pointer' }}
-                      className={`px-3.5 py-2 rounded-xl text-[10.5px] font-black font-sans transition flex items-center gap-1.5 shrink-0 select-none shadow-sm ${
-                        isActive
-                          ? `${tc.bg} text-white`
-                          : `${isDark ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'} border`
+                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition duration-200 select-none border whitespace-nowrap active:scale-95 ${
+                        isActive 
+                          ? `bg-linear-to-b ${tc.gradient} text-white border-transparent shadow relative z-10`
+                          : `${isDark ? 'bg-slate-900/60 hover:bg-slate-800 border-slate-800 text-slate-305' : 'bg-slate-50 hover:bg-slate-100 border-slate-205 text-slate-707'}`
                       }`}
                     >
                       <CatIcon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : tc.text}`} />
@@ -4797,6 +4828,147 @@ export default function App() {
               </div>
             </div>
 
+            {/* 4. FAVORITES DASHBOARD (ښایسته خوښ شوي کټګورۍ) */}
+            <div className="space-y-3">
+              {/* د خوښو شویو لیکنو یو بټن چي تل په کورپاڼه کې ښکاره وي */}
+              <button
+                onClick={() => setIsFavoritesMenuOpen(!isFavoritesMenuOpen)}
+                style={{ cursor: 'pointer' }}
+                className={`w-full overflow-hidden rounded-2xl p-3.5 sm:p-4 flex flex-row items-center justify-between gap-3 transition-all duration-350 transform hover:scale-[1.01] active:scale-[0.99] border relative group select-none cursor-pointer ${
+                  isFavoritesMenuOpen 
+                    ? 'bg-rose-955/20 border-rose-500/40 text-rose-500 shadow-[0_4px_18px_rgba(244,63,94,0.18)]' 
+                    : `${isDark ? 'bg-slate-900/60 hover:bg-slate-850 border-slate-800 text-slate-100' : 'bg-slate-100 hover:bg-slate-150 border-slate-205 text-slate-800'}`
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-xl transition-all duration-300 ${isFavoritesMenuOpen ? 'bg-rose-500/20 text-rose-500' : 'bg-slate-500/10 text-slate-500 group-hover:text-rose-500'}`}>
+                    <Heart className={`w-5 h-5 ${isFavoritesMenuOpen ? 'fill-rose-500 animate-pulse' : ''}`} />
+                  </div>
+                  <div className="text-right">
+                    <span className="block text-xs sm:text-sm font-black font-sans leading-tight">
+                      ستاسو خوښ شوي او غوره اثار
+                    </span>
+                    <span className="block text-[8.5px] sm:text-[9.5px] text-slate-400 mt-1">
+                      {favoritePostIds.length > 0 
+                        ? `ټول ${favoritePostIds.length} توکي په دې مینو کې خوندي دي (مینو وازول)`
+                        : 'خپل د خوښې پوسټونه پدې ځای کې د زړه تڼۍ په وازه کولو سره موندلی شئ'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                    favoritePostIds.length > 0 
+                      ? 'bg-rose-500 text-white font-bold' 
+                      : 'bg-slate-500/10 text-slate-400'
+                  }`}>
+                    {favoritePostIds.length}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-350 ${isFavoritesMenuOpen ? 'transform rotate-180 text-rose-500' : ''}`} />
+                </div>
+              </button>
+
+              {/* پنځه په زړه پورې ښایسته بټنې چې په کلسک کولو خلاصېږي */}
+              <AnimatePresence>
+                {isFavoritesMenuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                    exit={{ opacity: 0, height: 0, scale: 0.96 }}
+                    transition={{ duration: 0.35, ease: 'easeInOut' }}
+                    className="overflow-hidden"
+                  >
+                    <div className={`p-3 rounded-2xl border ${isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-105 shadow-sm'} space-y-2.5`}>
+                      <div className="text-right pb-1 border-b border-dashed border-slate-550/10">
+                        <span className="text-[9.5px] text-slate-400 font-sans font-bold">لاندې په هره کټګورۍ کې خپل خوښ پيغامونه ولولئ (محرک او پاخه رنګونه د ښي څخه چپ لوري ته):</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 xs:grid-cols-5 gap-1.5 sm:gap-2" style={{ direction: 'rtl' }}>
+                        {[
+                          { id: 'videos', label: 'خوښې شوې ويډيوګاني', icon: Video, colorClass: 'fav-btn-videos' },
+                          { id: 'images', label: 'خوښ شوي انځورونه', icon: ImageIcon, colorClass: 'fav-btn-images' },
+                          { id: 'writings', label: 'خوښې شوې ليکنی', icon: FileText, colorClass: 'fav-btn-writings' },
+                          { id: 'pdf', label: 'خوښ شوي کتابونه', icon: BookOpen, colorClass: 'fav-btn-pdf' },
+                          { id: 'audio', label: 'خوښي شوي غږيزې', icon: Music, colorClass: 'fav-btn-audio' },
+                        ].map((fav) => {
+                          const FavIcon = fav.icon;
+                          const isActive = activeFavoriteFilter === fav.id;
+                          const count = allPosts.filter(p => {
+                            if (!favoritePostIds.includes(p.id)) return false;
+                            if (fav.id === 'videos') return !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl;
+                            if (fav.id === 'images') return !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0);
+                            if (fav.id === 'audio') return !!p.hasAudio || !!p.audioUrl;
+                            if (fav.id === 'pdf') return getIsBook(p);
+                            if (fav.id === 'writings') return !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p);
+                            return false;
+                          }).length;
+
+                          return (
+                            <button
+                              key={fav.id}
+                              onClick={() => {
+                                const newFilter = isActive ? null : fav.id as any;
+                                setActiveFavoriteFilter(newFilter);
+                                if (newFilter) {
+                                  setSelectedCategory('all'); // Clear category selection so favorite filter is in primary display
+                                }
+                              }}
+                              style={{ cursor: 'pointer' }}
+                              className={`action-btn-flow ${fav.colorClass} relative overflow-hidden flex flex-col items-center justify-between p-2 rounded-xl transition text-center select-none duration-250 border active:scale-95 shadow-md min-h-[74px] sm:min-h-[82px] text-white ${
+                                isActive ? 'ring-2 ring-white/75 border-white scale-[1.02]' : 'border-white/10 opacity-90 hover:opacity-100'
+                              }`}
+                            >
+                              {/* Overlay for glass look */}
+                              <div className="absolute inset-0 bg-black/15 group-hover:bg-black/5 transition pointer-events-none" />
+                              <div className="absolute inset-x-0 top-0 h-[35%] bg-gradient-to-b from-white/15 to-transparent pointer-events-none" />
+
+                              <div className="p-1 rounded-lg mb-0.5 flex items-center justify-center bg-white/20 border border-white/25 shadow-inner z-10 shrink-0">
+                                <FavIcon className="w-3.5 h-3.5 text-white animate-pulse" />
+                              </div>
+                              <span className="text-[9.5px] sm:text-[10px] font-black font-sans leading-tight block truncate-2-lines max-w-full drop-shadow-md z-10 text-white leading-normal">
+                                {fav.label}
+                              </span>
+                              <div className="flex items-center gap-1 mt-0.5 font-mono text-[8px] sm:text-[8.5px] bg-black/35 px-1.5 py-0.25 rounded-md text-white border border-white/10 shadow-inner z-10 shrink-0">
+                                <span className="font-bold">{count}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Active Favorites filter banner indicator */}
+            {activeFavoriteFilter && (
+              <div 
+                className={`p-3 rounded-xl flex items-center justify-between border ${
+                  isDark ? 'bg-indigo-950/40 border-indigo-900/40 text-indigo-200' : 'bg-indigo-50 border-indigo-100 text-indigo-850'
+                } text-right`}
+                style={{ direction: 'rtl' }}
+              >
+                <div className="flex items-center gap-1.5 font-bold font-sans text-xs">
+                  <Heart className="w-4 h-4 text-rose-500 fill-rose-500 animate-pulse" />
+                  <span>ښودل کیږي: {
+                    activeFavoriteFilter === 'videos' ? 'خوښې شوې ويډيوګاني' :
+                    activeFavoriteFilter === 'images' ? 'خوښ شوي انځورونه' :
+                    activeFavoriteFilter === 'writings' ? 'خوښې شوې ليکنی' :
+                    activeFavoriteFilter === 'pdf' ? 'خوښ شوي کتابونه' :
+                    'خوښي شوي غږيزې'
+                  }</span>
+                </div>
+                <button 
+                  onClick={() => setActiveFavoriteFilter(null)} 
+                  style={{ cursor: 'pointer' }}
+                  className="px-2.5 py-1 text-[10px] font-black bg-rose-500 hover:bg-rose-600 text-white rounded-lg transition active:scale-[0.95]"
+                >
+                  پورې کول / لغوه
+                </button>
+              </div>
+            )}
+
             {/* RECENT COMPACT LISTS (د هر پوسټ لږ متن او څنګ ته د عکسونو ښکلی ډیزاین) */}
             <div className="space-y-3">
               {homePosts.length === 0 ? (
@@ -4806,7 +4978,30 @@ export default function App() {
                     ${homeLayout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5'}
                   `}>
                     {homePosts.map((post) => {
-                      const handleClick = () => setSelectedPost(post);
+                      const handleClick = () => {
+                        const hasVideo = post.hasVideo || post.videoUrl || (post.videoList && post.videoList.length > 0);
+                        const hasImage = post.photoUrl || (post.photoUrls && post.photoUrls.length > 0);
+                        
+                        if (hasVideo) {
+                          const idx = reelsList.findIndex(r => r.post.id === post.id);
+                          if (idx !== -1) {
+                            setActiveReelIndex(idx);
+                            setIsReelsOpen(true);
+                          } else {
+                            setSelectedPost(post);
+                          }
+                        } else if (hasImage) {
+                          const idx = photoReelsList.findIndex(p => p.post.id === post.id);
+                          if (idx !== -1) {
+                            setActivePhotoReelIndex(idx);
+                            setIsPhotoReelsOpen(true);
+                          } else {
+                            setSelectedPost(post);
+                          }
+                        } else {
+                          setSelectedPost(post);
+                        }
+                      };
                       
                       // 1. STANDARD LIST VIEW OR FALLBACK
                       if (homeLayout === 'standard' || !homeLayout) {
@@ -4859,12 +5054,30 @@ export default function App() {
 
                             <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5 h-full">
                               <div>
-                                <div className="flex items-center gap-2 text-[10px] text-slate-400 mb-1.5 font-sans">
-                                  <span className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-bold text-white ${tc.bg}`}>#{post.id}</span>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-slate-550" />
-                                    {post.timeLabel || 'وروستی'}
-                                  </span>
+                                <div className="flex items-center justify-between w-full mb-1.5 text-[10px] text-slate-400 font-sans" style={{ direction: 'rtl' }}>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-bold text-white ${tc.bg}`}>#{post.id}</span>
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-slate-550" />
+                                      {post.timeLabel || 'وروستی'}
+                                    </span>
+                                  </div>
+                                  
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleFavorite(post.id);
+                                    }}
+                                    className={`focus:outline-hidden p-1.5 rounded-lg transition-all transform hover:scale-105 active:scale-95 ${
+                                      favoritePostIds.includes(post.id)
+                                        ? 'text-rose-500 bg-rose-500/10'
+                                        : 'text-slate-400 hover:text-rose-400 hover:bg-slate-500/10'
+                                    }`}
+                                    style={{ cursor: 'pointer' }}
+                                    title="خوښ کړل"
+                                  >
+                                    <Heart className={`w-3.5 h-3.5 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
+                                  </button>
                                 </div>
                                 <BeautifulTelegramText 
                                   text={getPostTextWithFallback(post)}
@@ -5005,10 +5218,27 @@ export default function App() {
                             </div>
                             <div className="p-3 flex-1 flex flex-col justify-between gap-1.5">
                               <div>
-                                <span className="text-[9px] text-slate-500 flex items-center gap-1">
-                                  <Clock className="w-2.5 h-2.5" />
-                                  {post.timeLabel || 'Recent'}
-                                </span>
+                                <div className="flex items-center justify-between w-full mb-1">
+                                  <span className="text-[9px] text-slate-500 flex items-center gap-1">
+                                    <Clock className="w-2.5 h-2.5" />
+                                    {post.timeLabel || 'Recent'}
+                                  </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleFavorite(post.id);
+                                    }}
+                                    className={`focus:outline-hidden p-1 rounded transition-all transform hover:scale-105 active:scale-95 ${
+                                      favoritePostIds.includes(post.id)
+                                        ? 'text-rose-500 bg-rose-500/10'
+                                        : 'text-slate-400 hover:text-rose-400 hover:bg-slate-500/10'
+                                    }`}
+                                    style={{ cursor: 'pointer' }}
+                                    title="خوښ کړل"
+                                  >
+                                    <Heart className={`w-3 h-3 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
+                                  </button>
+                                </div>
                                 <BeautifulTelegramText 
                                   text={getPostTextWithFallback(post)}
                                   isDark={isDark}
@@ -5252,21 +5482,43 @@ export default function App() {
               )}
             </div>
 
-            {/* VIEW MORE BUTTON TO LAND IN FULL FEED (نور وګورئ بټن) */}
-            {fullFeedPosts.length > 30 && (
-              <div className="py-6 flex justify-center">
-                <button
-                  onClick={() => {
-                    setIsFullFeedOpen(true);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  style={{ cursor: 'pointer' }}
-                  className={`w-full max-w-sm py-3.5 px-6 ${tc.bg} ${tc.hoverBg} text-white font-bold text-sm rounded-xl shadow-lg hover:shadow-indigo-500/20 active:scale-95 transition flex items-center justify-center gap-2`}
-                >
-                  <span>نور وګورئ</span>
-                  <ArrowLeft className="w-4 h-4 text-white animate-pulse" />
-                </button>
+            {/* SHIMMER EFFECT WHEN LOADING MORE POSTS (متحرک ښکلي شیمر پوستونه د غوښتنې پر مهال) */}
+            {isAutoloadingMore && (
+              <div className={`mt-3 ${homeLayout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5'}`}>
+                {[1, 2, 3, 4].map((item) => (
+                  homeLayout === 'grid' ? (
+                    <div
+                      key={item}
+                      className={`${cardBg} rounded-xl overflow-hidden flex flex-col border border-slate-500/5 animate-pulse text-right`}
+                    >
+                      <div className="relative aspect-video w-full bg-slate-400/10 dark:bg-slate-800/40" />
+                      <div className="p-3 flex-1 space-y-2">
+                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-1/3" />
+                        <div className="h-4 bg-slate-400/25 dark:bg-slate-800/45 rounded w-11/12" />
+                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-2/3" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      key={item}
+                      className={`${cardBg} p-4 rounded-xl flex items-center gap-4 border border-slate-500/5 animate-pulse text-right`}
+                    >
+                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-400/15 dark:bg-slate-800/40 shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-1/4" />
+                        <div className="h-4 bg-slate-400/25 dark:bg-slate-800/45 rounded w-3/4" />
+                        <div className="h-3 bg-slate-400/15 dark:bg-slate-800/25 rounded w-5/6" />
+                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-1/2" />
+                      </div>
+                    </div>
+                  )
+                ))}
               </div>
+            )}
+
+            {/* INFINITE SCROLL SENTINEL (د غبرکون سینټینل تڼۍ) */}
+            {visibleHomeCount < filteredHomePosts.length && (
+              <div id="home-infinite-scroll-sentinel" className="h-10 w-full flex items-center justify-center opacity-0 pointer-events-none" />
             )}
           </div>
         ) : (
@@ -6335,6 +6587,92 @@ export default function App() {
               
               <div className="absolute bottom-6 text-center text-xs text-slate-400 bg-slate-900/50 py-1.5 px-4 rounded-full backdrop-blur-xs">
                 بېرته وتلو لپاره په شا او خوا تور پړاو کلیک وکړئ
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 5. GLASSMORPHIC BOTTOM SHEET (د بشپړ متن د لیدلو او شاته تګ ښکلی بار کښته شیټ) */}
+      <AnimatePresence>
+        {bottomSheetPost && (
+          <>
+            {/* Backdrop layer */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/65 z-[1001] backdrop-blur-xs"
+              onClick={() => setBottomSheetPost(null)}
+            />
+            {/* Slide up sheet */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 max-w-[580px] w-full mx-auto md:max-w-xl bg-slate-900/85 backdrop-blur-xl border-t border-white/15 rounded-t-3xl z-[1002] shadow-[0_-15px_40px_rgba(0,0,0,0.5)] flex flex-col max-h-[82vh]"
+              style={{ direction: 'rtl' }}
+            >
+              {/* Drag handle block */}
+              <div className="w-full flex justify-center py-3 select-none cursor-pointer" onClick={() => setBottomSheetPost(null)}>
+                <div className="w-12 h-1.5 bg-slate-400/35 rounded-full" />
+              </div>
+
+              {/* Title Header */}
+              <div className="px-5 pb-3 border-b border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-1.5 self-end">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black text-white ${tc.bg}`}>
+                    #{bottomSheetPost.id}
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-sans font-bold">بشپړ لیدنه</span>
+                </div>
+                
+                {/* Back / Close button */}
+                <button
+                  onClick={() => setBottomSheetPost(null)}
+                  style={{ cursor: 'pointer' }}
+                  className="p-1 px-3 bg-slate-800/80 hover:bg-rose-500/10 hover:text-rose-400 border border-slate-700/60 rounded-lg text-[10.5px] font-black text-slate-300 transition active:scale-95 flex items-center gap-1 self-start"
+                >
+                  ◀ شاته / بندول
+                </button>
+              </div>
+
+              {/* Scrollable text content */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+                {/* Progress bar */}
+                <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden relative mb-1">
+                  <div className={`h-full ${tc.bg} rounded-full`} style={{ width: '100%' }} />
+                </div>
+
+                <div className="telegram-styles pr-1 leading-relaxed">
+                  <BeautifulTelegramText
+                    text={getPostTextWithFallback(bottomSheetPost)}
+                    isDark={isDark}
+                    fs={{ body: 'text-sm sm:text-base font-medium' }}
+                    showExpander={false}
+                  />
+                </div>
+
+                {/* Optional items such as audios within bottom sheet */}
+                {bottomSheetPost.audioList && bottomSheetPost.audioList.length > 0 && (
+                  <div className="space-y-2.5 pt-3 border-t border-white/5">
+                    {bottomSheetPost.audioList.map((audioItem, idx) => (
+                      <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer safe area padding */}
+              <div className="p-4 bg-slate-950/20 border-t border-white/15 flex justify-center safe-padding-bottom">
+                <button
+                  onClick={() => setBottomSheetPost(null)}
+                  style={{ cursor: 'pointer' }}
+                  className="w-full py-3 bg-indigo-650 hover:bg-indigo-600 text-white font-heavy rounded-2xl text-xs font-black shadow-lg shadow-indigo-600/20 transition active:scale-[0.98]"
+                >
+                  لوستل پای ته ورسېدل
+                </button>
               </div>
             </motion.div>
           </>
