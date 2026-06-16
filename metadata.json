@@ -1,6 +1,8 @@
 {
-  "name": "پښتو شعرونه",
-  "description": "د پښتو ژبې د خوږو شعرونو، غزلونو او کيسو ښکلی کاريال (Pashto Poetry app)",
+  "name": "Remix: د مینې ډېوه",
+  "description": "A responsive mobile mockup and integrator for displaying Telegram channel message feeds inside a Capacitor application, featuring direct Bot API sandboxes.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
