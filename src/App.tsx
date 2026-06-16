@@ -918,6 +918,35 @@ export default function App() {
   };
 
   const [bottomSheetPost, setBottomSheetPost] = useState<TelegramPost | null>(null);
+  const [readPostIds, setReadPostIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('dewa_read_posts_ids');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const markPostAsRead = (postId: string) => {
+    if (!postId) return;
+    setReadPostIds((prev) => {
+      if (prev.includes(postId)) return prev;
+      const updated = [...prev, postId];
+      try {
+        localStorage.setItem('dewa_read_posts_ids', JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to save read posts', err);
+      }
+      return updated;
+    });
+  };
+
+  useEffect(() => {
+    if (selectedPost && selectedPost.id) {
+      markPostAsRead(selectedPost.id);
+    }
+  }, [selectedPost]);
+  const [overlayActiveText, setOverlayActiveText] = useState<string | null>(null);
   const [visibleHomeCount, setVisibleHomeCount] = useState(30);
   const [isAutoloadingMore, setIsAutoloadingMore] = useState(false);
   const [featuredIndex, setFeaturedIndex] = useState(0);
@@ -2087,7 +2116,9 @@ export default function App() {
 
     import('@capacitor/app').then(({ App: CapApp }) => {
       CapApp.addListener('backButton', ({ canGoBack }) => {
-        if (zoomPhotoUrl) {
+        if (overlayActiveText) {
+          setOverlayActiveText(null);
+        } else if (zoomPhotoUrl) {
           setZoomPhotoUrl(null);
         } else if (activeModal) {
           setActiveModal(null);
@@ -2131,7 +2162,7 @@ export default function App() {
         appListener.remove();
       }
     };
-  }, [zoomPhotoUrl, activeModal, isSettingsPageOpen, isAboutPageOpen, isContactPageOpen, isSidebarOpen, selectedPost, isFullFeedOpen, isSearchOpen, showExitConfirmation, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen]);
+  }, [zoomPhotoUrl, activeModal, isSettingsPageOpen, isAboutPageOpen, isContactPageOpen, isSidebarOpen, selectedPost, isFullFeedOpen, isSearchOpen, showExitConfirmation, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen, overlayActiveText]);
 
   // Dynamic status bar styling implementation matching current primary/theme modes
   useEffect(() => {
@@ -2254,6 +2285,14 @@ export default function App() {
               });
               setIsAutoloadingMore(false);
             }, 850); // Simulated delay displaying luxurious skeleton shimmer cards
+          } else if (!isScrapingMore) {
+            // No more local cache posts, scrape/load more older posts from Telegram 30 by 30!
+            setIsAutoloadingMore(true);
+            loadMoreOlderPosts().then(() => {
+              setVisibleHomeCount((prev) => prev + 30);
+            }).finally(() => {
+              setIsAutoloadingMore(false);
+            });
           }
         }
       },
@@ -2262,7 +2301,7 @@ export default function App() {
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [isLoading, isAutoloadingMore, filteredHomePosts.length, visibleHomeCount]);
+  }, [isLoading, isAutoloadingMore, isScrapingMore, filteredHomePosts.length, visibleHomeCount]);
 
   // Full Feed Posts array (all posts loaded dynamically with matching category!)
   const fullFeedPosts = React.useMemo(() => {
@@ -3874,10 +3913,22 @@ export default function App() {
                       </div>
 
                       {/* Poetry text message body */}
-                      <div className="pointer-events-auto mt-1 cursor-text select-text pr-1 max-h-24 overflow-y-auto scrollbar-none">
-                        <p className="text-white text-[12.5px] sm:text-[13.5px] leading-relaxed drop-shadow font-sans font-semibold break-words text-right whitespace-pre-line">
+                      <div className="pointer-events-auto mt-1 pr-1 text-right flex flex-col gap-0.5" style={{ direction: 'rtl' }}>
+                        <p className="text-white text-[12.5px] sm:text-[13.5px] leading-relaxed drop-shadow font-sans font-semibold break-words text-right line-clamp-2 select-text whitespace-pre-line">
                           {activeReel.post.text || 'پښتو شعر د کتنې لپاره...'}
                         </p>
+                        {(activeReel.post.text && (activeReel.post.text.length > 50 || activeReel.post.text.includes('\n'))) ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOverlayActiveText(activeReel.post.text);
+                              markPostAsRead(activeReel.post.id);
+                            }}
+                            className="bg-black/45 hover:bg-black/65 px-2.5 py-0.5 rounded-lg text-[10.5px] font-black text-indigo-300 hover:text-indigo-200 text-right cursor-pointer self-start select-none w-max border border-white/10 shadow-md mt-1 transition pointer-events-auto"
+                          >
+                            نور ولولئ
+                          </button>
+                        ) : null}
                       </div>
 
                       {/* Views count and date indicator */}
@@ -4104,10 +4155,22 @@ export default function App() {
                       </div>
 
                       {/* Poetry text message body */}
-                      <div className="pointer-events-auto mt-1 cursor-text select-text pr-1 max-h-24 overflow-y-auto scrollbar-none">
-                        <p className="text-white text-[12.5px] sm:text-[13.5px] leading-relaxed drop-shadow font-sans font-semibold break-words text-right whitespace-pre-line">
+                      <div className="pointer-events-auto mt-1 pr-1 text-right flex flex-col gap-0.5" style={{ direction: 'rtl' }}>
+                        <p className="text-white text-[12.5px] sm:text-[13.5px] leading-relaxed drop-shadow font-sans font-semibold break-words text-right line-clamp-2 select-text whitespace-pre-line">
                           {activePhotoReel.post.text || 'پښتو شعر د کتنې لپاره...'}
                         </p>
+                        {(activePhotoReel.post.text && (activePhotoReel.post.text.length > 50 || activePhotoReel.post.text.includes('\n'))) ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOverlayActiveText(activePhotoReel.post.text);
+                              markPostAsRead(activePhotoReel.post.id);
+                            }}
+                            className="bg-black/45 hover:bg-black/65 px-2.5 py-0.5 rounded-lg text-[10.5px] font-black text-indigo-300 hover:text-indigo-200 text-right cursor-pointer self-start select-none w-max border border-white/10 shadow-md mt-1 transition pointer-events-auto"
+                          >
+                            نور ولولئ
+                          </button>
+                        ) : null}
                       </div>
 
                       {/* Views count and date indicator */}
@@ -4127,6 +4190,186 @@ export default function App() {
                 </div>
               );
             })()}
+          </div>
+        ) : isSearchOpen ? (
+          /* ==========================================================
+             G. INTEGRATED DEWA SEARCH SCREEN (د شعرونو د پلټنې ځانګړې صفحه)
+             ========================================================== */
+          <div className="space-y-5 animate-fade-in text-right">
+            <div className={`p-5 sm:p-6 rounded-3xl ${cardBg} border border-slate-500/10 dark:border-slate-800 overflow-hidden shadow-xl text-right`}>
+              
+              {/* Header inside card */}
+              <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/20' : 'bg-slate-100/90 border-slate-200'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5`}>
+                <button
+                  onClick={() => {
+                    setIsSearchOpen(false);
+                    setSearchQuery('');
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  className={`px-3 py-1.5 rounded-lg transition text-xs font-bold ${isDark ? 'text-slate-400 bg-slate-800 hover:text-white' : 'text-slate-700 bg-slate-200 hover:bg-slate-300'} flex items-center gap-1 shrink-0`}
+                  title="شاته"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  <span>کورپاڼه</span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <Search className={`w-4 h-4 ${tc.text}`} />
+                  <span className={`text-[12px] sm:text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
+                    په شعرونو او پوسټونو کې پلټنه
+                  </span>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="mb-5 text-right">
+                <h4 className={`text-sm font-black mb-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  د شعرونو او پيغامونو چټک لټون
+                </h4>
+                <p className={`text-xs ${textMuted} leading-relaxed`}>
+                  خپله خوښه کلمه، شاعر، موضوع یا برخه دلته ولیکئ تر څو اړونده ټول شعرونه او پیغامونه په اوتومات ډول وموندل شي.
+                </p>
+              </div>
+
+              {/* Main Search Input field inside the dedicated search page */}
+              <div className="relative mb-6">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="د لټون لپاره څه ولیکئ (مثلا: هیواد، مینه، باران)..."
+                  autoFocus
+                  className={`w-full focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl py-3.5 pr-10 pl-4 text-xs font-bold outline-none transition duration-200 text-right font-sans ${isDark ? 'bg-slate-950 border-slate-800 text-slate-100 placeholder:text-slate-600' : 'bg-slate-100 border-slate-300 text-slate-900 placeholder:text-slate-400'}`}
+                />
+                <Search className="absolute right-3.5 top-4 w-4 h-4 text-slate-500 pointer-events-none animate-pulse" />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    style={{ cursor: 'pointer' }}
+                    className={`absolute left-3 top-2.5 text-[10px] font-bold px-2.5 py-1.5 rounded transition ${isDark ? 'bg-slate-800 hover:bg-slate-755 text-slate-300' : 'bg-slate-200 hover:bg-slate-300'}`}
+                  >
+                    پاکول
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Hashtag Suggestions */}
+              {!searchQuery && (
+                <div className="space-y-3 mb-6 animate-fade-in text-right">
+                  <span className="text-[11px] font-black text-slate-450 block font-sans">عام لټونونه او په زړه پورې هشټاګونه:</span>
+                  <div className="flex flex-wrap gap-2 justify-start md:justify-end" style={{ direction: 'rtl' }}>
+                    {hashtagsWithCount.slice(0, 10).map((item, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setSearchQuery(item.tag)}
+                        style={{ cursor: 'pointer' }}
+                        className={`text-[11.5px] px-3.5 py-2 rounded-xl transition font-bold select-none border whitespace-nowrap active:scale-95 ${
+                          isDark 
+                            ? 'bg-slate-900/40 border-slate-850 hover:bg-indigo-950/40 hover:border-indigo-500/40 text-slate-300 hover:text-indigo-300' 
+                            : 'bg-slate-50 border-slate-200 hover:bg-white hover:border-indigo-400 hover:shadow-xs text-slate-700'
+                        }`}
+                      >
+                        {item.tag} <span className="text-[9.5px] opacity-60">({item.count})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Display list of search results */}
+              {searchQuery && (
+                <div className="space-y-4 animate-fade-in text-right">
+                  <div className={`p-3 rounded-xl flex items-center justify-between text-xs font-bold leading-normal ${isDark ? 'bg-indigo-950/20 text-indigo-300 border border-indigo-900/20' : 'bg-indigo-50 text-indigo-700 border border-indigo-100/50'}`} style={{ direction: 'rtl' }}>
+                    <span>د "{searchQuery}" لپاره پايلې:</span>
+                    <span>{filteredHomePosts.length} پېغامونه وموندل شول</span>
+                  </div>
+
+                  {filteredHomePosts.length === 0 ? (
+                    <div className="text-center py-16 px-4 rounded-3xl bg-slate-500/5 border border-dashed border-slate-500/10">
+                      <Search className="w-12 h-12 text-slate-400 mx-auto opacity-30 mb-3" />
+                      <p className={`text-xs ${textMuted} font-black`}>
+                        بښنه غواړو، ستاسو د لټون اړوند هیڅ پوسټ پیدا نه شو.
+                      </p>
+                      <p className={`text-[11px] ${textMuted} mt-1`}>
+                        بله بېله کلمه واستوئ یا نور هشټاګونه امتحان کړئ.
+                      </p>
+                    </div>
+                  ) : (
+                    /* Search results posts */
+                    <div className="flex flex-col gap-3">
+                      {filteredHomePosts.slice(0, 40).map((post) => {
+                        const isRead = readPostIds.includes(post.id);
+                        return (
+                          <div
+                            key={post.id}
+                            onClick={() => setSelectedPost(post)}
+                            style={{ cursor: 'pointer' }}
+                            className={`${isDark ? 'bg-slate-950/40 border-slate-900 hover:bg-slate-900/60' : 'bg-white border-slate-201 hover:bg-slate-50 shadow-xs'} border p-3.5 rounded-xl flex items-center gap-3.5 transition group select-none text-right ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45 hover:opacity-100 dark:hover:opacity-100 transition-opacity duration-300' : ''}`}
+                          >
+                          {/* Right: thumbnail image */}
+                          {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
+                            post.photoUrl && (!post.photoUrls || post.photoUrls.length <= 1) ? (
+                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
+                                <img
+                                  src={post.photoUrl || null}
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                                {post.hasVideo && (
+                                  <span className="absolute inset-0 flex items-center justify-center bg-black/35">
+                                    <PlayCircle className="w-5 h-5 text-indigo-400" />
+                                  </span>
+                                )}
+                              </div>
+                            ) : post.videoThumbUrl ? (
+                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
+                                <img
+                                  src={post.videoThumbUrl || null}
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                                <span className="absolute inset-0 flex items-center justify-center bg-black/35">
+                                  <PlayCircle className="w-5 h-5 text-indigo-400" />
+                                </span>
+                              </div>
+                            ) : post.hasVideo ? (
+                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950/60 flex items-center justify-center shrink-0">
+                                <Video className="w-6 h-6 text-indigo-400" />
+                              </div>
+                            ) : null
+                          )}
+
+                          {/* Snippet text */}
+                          <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5">
+                            <div>
+                              <div className="flex items-center gap-1.5 text-[9px] text-slate-500 mb-1 font-sans">
+                                <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold text-white ${tc.bg}`}>#{post.id}</span>
+                                {isRead && (
+                                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8px] font-bold flex items-center gap-0.5 border border-emerald-500/10 whitespace-nowrap scale-[0.85] origin-right">
+                                    <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                    <span>لوستل شوی</span>
+                                  </span>
+                                )}
+                                <span>{post.timeLabel || 'Recent'}</span>
+                              </div>
+                              <BeautifulTelegramText 
+                                text={getPostTextWithFallback(post)}
+                                isDark={isDark}
+                                fs={{ body: 'text-[11.5px] sm:text-xs font-semibold' }}
+                                limitLines={3}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
           </div>
         ) : isCategoryPageOpen ? (
           /* ==========================================================
@@ -5005,12 +5248,13 @@ export default function App() {
                       
                       // 1. STANDARD LIST VIEW OR FALLBACK
                       if (homeLayout === 'standard' || !homeLayout) {
+                        const isRead = readPostIds.includes(post.id);
                         return (
                           <div
                             key={post.id}
                             onClick={handleClick}
                             style={{ cursor: 'pointer' }}
-                            className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5`}
+                            className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5 ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45 hover:opacity-100 dark:hover:opacity-100 transition-opacity duration-300' : ''}`}
                           >
                             {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
                               post.photoUrl ? (
@@ -5057,6 +5301,12 @@ export default function App() {
                                 <div className="flex items-center justify-between w-full mb-1.5 text-[10px] text-slate-400 font-sans" style={{ direction: 'rtl' }}>
                                   <div className="flex items-center gap-2">
                                     <span className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-bold text-white ${tc.bg}`}>#{post.id}</span>
+                                    {isRead && (
+                                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8.5px] font-bold flex items-center gap-0.5 border border-emerald-500/10 whitespace-nowrap">
+                                        <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                        <span>لوستل شوی</span>
+                                      </span>
+                                    )}
                                     <span className="flex items-center gap-1">
                                       <Clock className="w-3 h-3 text-slate-550" />
                                       {post.timeLabel || 'وروستی'}
@@ -5174,12 +5424,13 @@ export default function App() {
 
                       // 2. CARD GRID DESIGN (2 columns)
                       if (homeLayout === 'grid') {
+                        const isRead = readPostIds.includes(post.id);
                         return (
                           <div
                             key={post.id}
                             onClick={handleClick}
                             style={{ cursor: 'pointer' }}
-                            className={`${cardBg} rounded-xl overflow-hidden flex flex-col transition group active:scale-[0.98] select-none text-right shadow-sm border border-slate-500/5`}
+                            className={`${cardBg} rounded-xl overflow-hidden flex flex-col transition group active:scale-[0.98] select-none text-right shadow-sm border border-slate-500/5 ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45 hover:opacity-100 dark:hover:opacity-100 transition-opacity duration-300' : ''}`}
                           >
                             <div className="relative aspect-video w-full bg-slate-950 overflow-hidden flex items-center justify-center">
                               {post.photoUrl ? (
@@ -5223,6 +5474,12 @@ export default function App() {
                                     <Clock className="w-2.5 h-2.5" />
                                     {post.timeLabel || 'Recent'}
                                   </span>
+                                  {isRead && (
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8px] font-bold flex items-center gap-0.5 border border-emerald-500/10 whitespace-nowrap leading-none scale-[0.85]">
+                                      <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                      <span>لوستل شوی</span>
+                                    </span>
+                                  )}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -6672,6 +6929,74 @@ export default function App() {
                   className="w-full py-3 bg-indigo-650 hover:bg-indigo-600 text-white font-heavy rounded-2xl text-xs font-black shadow-lg shadow-indigo-600/20 transition active:scale-[0.98]"
                 >
                   لوستل پای ته ورسېدل
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* G. IMMERSIVE REAL CAPTION GLASSY BOTTOM SHEET (د ویډیو او انځور د پوره متن لوستلو شیشه یي bottom sheet) */}
+      <AnimatePresence>
+        {overlayActiveText && (
+          <>
+            {/* Backdrop filter */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.7 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/75 z-[10001] backdrop-blur-sm"
+              onClick={() => setOverlayActiveText(null)}
+            />
+            {/* Slide up bottom-sheet with drag-handle and back button */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 max-w-[580px] w-full mx-auto md:max-w-xl bg-slate-950/80 backdrop-blur-2xl border-t border-white/15 rounded-t-3xl z-[10002] shadow-[0_-15px_45px_rgba(0,0,0,0.6)] flex flex-col max-h-[80vh]"
+              style={{ direction: 'rtl' }}
+            >
+              {/* Drag handle header bar */}
+              <div 
+                className="w-full flex justify-center py-3.5 select-none cursor-pointer" 
+                onClick={() => setOverlayActiveText(null)}
+              >
+                <div className="w-12 h-1.5 bg-white/20 rounded-full" />
+              </div>
+
+              {/* Title and Close toolbar */}
+              <div className="px-5 pb-3 border-b border-white/5 flex items-center justify-between">
+                <span className="text-[12px] text-indigo-300 font-bold font-sans">
+                  د شعر پوره متن
+                </span>
+                
+                {/* Back / Close button */}
+                <button
+                  onClick={() => setOverlayActiveText(null)}
+                  style={{ cursor: 'pointer' }}
+                  className="p-1 px-3 bg-white/10 hover:bg-rose-500/20 hover:text-rose-350 border border-white/10 rounded-lg text-xs font-black text-slate-100 transition active:scale-95 flex items-center gap-1.5"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  <span>◀ تړنې / شاته</span>
+                </button>
+              </div>
+
+              {/* Scrollable text body */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 leading-relaxed text-right font-sans">
+                <p className="text-white text-sm sm:text-base whitespace-pre-line font-medium leading-relaxed select-text">
+                  {overlayActiveText}
+                </p>
+              </div>
+
+              {/* Bottom dismissal button */}
+              <div className="p-4 bg-black/30 border-t border-white/10 flex justify-center safe-padding-bottom">
+                <button
+                  onClick={() => setOverlayActiveText(null)}
+                  style={{ cursor: 'pointer' }}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-heavy rounded-2xl text-xs font-black shadow-lg shadow-indigo-600/20 transition active:scale-[0.98]"
+                >
+                  بیا کتنې ته ورګرځېدل
                 </button>
               </div>
             </motion.div>
