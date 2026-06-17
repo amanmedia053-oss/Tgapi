@@ -229,6 +229,64 @@ function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: 
   );
 }
 
+function toPashtoNumber(num: number): string {
+  const pashtoDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  return num.toString().replace(/\d/g, (d) => pashtoDigits[parseInt(d)]);
+}
+
+function getRelativeTimeInPashto(dateStr: string | undefined | null, fallbackLabel: string): string {
+  if (!dateStr) return fallbackLabel || 'وروستی';
+  try {
+    const postDate = new Date(dateStr);
+    if (isNaN(postDate.getTime())) return fallbackLabel || 'وروستی';
+
+    const now = new Date();
+    const diffMs = now.getTime() - postDate.getTime();
+    
+    if (diffMs < 0) {
+      return 'همدا اوس';
+    }
+
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) {
+      return 'همدا اوس';
+    }
+    if (diffMins < 60) {
+      if (diffMins === 1) return '۱ دقيقه مخکې';
+      if (diffMins === 2) return '۲ دقيقې مخکې';
+      return `${toPashtoNumber(diffMins)} دقيقې مخکې`;
+    }
+    if (diffHours < 24) {
+      if (diffHours === 1) return '۱ ساعت مخکې';
+      if (diffHours === 2) return '۲ ساعته مخکې';
+      return `${toPashtoNumber(diffHours)} ساعته مخکې`;
+    }
+    if (diffDays < 30) {
+      if (diffDays === 1) return '۱ ورځ مخکې';
+      if (diffDays === 2) return '۲ ورځې مخکې';
+      return `${toPashtoNumber(diffDays)} ورځې مخکې`;
+    }
+
+    const diffMonths = Math.floor(diffDays / 30);
+    if (diffMonths < 12) {
+      if (diffMonths === 1) return '۱ میاشت مخکې';
+      if (diffMonths === 2) return '۲ میاشتې مخکې';
+      return `${toPashtoNumber(diffMonths)} میاشتې مخکې`;
+    }
+
+    const diffYears = Math.floor(diffDays / 365);
+    if (diffYears === 1) return '۱ کال مخکې';
+    if (diffYears === 2) return '۲ کاله مخکې';
+    return `${toPashtoNumber(diffYears)} کاله مخکې`;
+
+  } catch (error) {
+    return fallbackLabel || 'وروستی';
+  }
+}
+
 const makeHtmlHashtagsClickable = (html: string) => {
   if (!html) return '';
   return html.replace(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g, (match) => {
@@ -386,87 +444,285 @@ function BeautifulTelegramText({
   );
 }
 
-// Custom elegant audio player with progress bar tracking
+// -------------------------------------------------------------
+// GLOBAL BACKGROUND AUDIO SERVICE (شالید/بیکګراونډ کې د بې غږه غږولو سیسټم)
+// -------------------------------------------------------------
+interface GlobalAudioState {
+  url: string;
+  title: string;
+  duration?: string;
+  progress: number;
+  currentTime: string;
+  totalDuration: string;
+  isPlaying: boolean;
+}
+
+let globalAudioElement: HTMLAudioElement | null = null;
+let globalAudioState: GlobalAudioState = {
+  url: '',
+  title: '',
+  duration: '',
+  progress: 0,
+  currentTime: '0:00',
+  totalDuration: '0:00',
+  isPlaying: false,
+};
+
+const audioSubscribers = new Set<(state: GlobalAudioState) => void>();
+
+function updateGlobalAudio(patch: Partial<GlobalAudioState>) {
+  globalAudioState = { ...globalAudioState, ...patch };
+  audioSubscribers.forEach((sub) => sub(globalAudioState));
+}
+
+function subscribeToGlobalAudio(sub: (state: GlobalAudioState) => void) {
+  audioSubscribers.add(sub);
+  sub(globalAudioState);
+  return () => {
+    audioSubscribers.delete(sub);
+  };
+}
+
+function playGlobalAudio(url: string, title: string, duration?: string) {
+  if (!globalAudioElement) {
+    globalAudioElement = new Audio();
+    
+    globalAudioElement.addEventListener('play', () => {
+      updateGlobalAudio({ isPlaying: true });
+    });
+    globalAudioElement.addEventListener('pause', () => {
+      updateGlobalAudio({ isPlaying: false });
+    });
+    globalAudioElement.addEventListener('timeupdate', () => {
+      if (!globalAudioElement) return;
+      const cur = globalAudioElement.currentTime;
+      const dur = globalAudioElement.duration || 0;
+      const progress = dur > 0 ? (cur / dur) * 100 : 0;
+      
+      const formatTime = (secs: number) => {
+        if (isNaN(secs)) return '0:00';
+        const m = Math.floor(secs / 60);
+        const s = Math.floor(secs % 60);
+        return `${m}:${s < 10 ? '0' : ''}${s}`;
+      };
+
+      updateGlobalAudio({
+        progress,
+        currentTime: formatTime(cur),
+        totalDuration: dur > 0 ? formatTime(dur) : (globalAudioState.duration || '0:00')
+      });
+    });
+    globalAudioElement.addEventListener('loadedmetadata', () => {
+      if (!globalAudioElement) return;
+      const formatTime = (secs: number) => {
+        if (isNaN(secs)) return '0:00';
+        const m = Math.floor(secs / 60);
+        const s = Math.floor(secs % 60);
+        return `${m}:${s < 10 ? '0' : ''}${s}`;
+      };
+      updateGlobalAudio({
+        totalDuration: formatTime(globalAudioElement.duration)
+      });
+    });
+    globalAudioElement.addEventListener('ended', () => {
+      updateGlobalAudio({ isPlaying: false, progress: 0, currentTime: '0:00' });
+    });
+  }
+
+  // Stop other standard videos before starting globally
+  const allVideos = document.querySelectorAll('video');
+  allVideos.forEach(v => v.pause());
+
+  if (globalAudioState.url === url) {
+    globalAudioElement.play().catch(err => console.warn(err));
+  } else {
+    globalAudioElement.src = url;
+    globalAudioElement.preload = 'auto';
+    updateGlobalAudio({
+      url,
+      title,
+      duration: duration || '0:00',
+      progress: 0,
+      currentTime: '0:00',
+      totalDuration: duration || '0:00',
+      isPlaying: true
+    });
+    globalAudioElement.play().catch(err => {
+      console.warn("Background audio play failed:", err);
+    });
+  }
+}
+
+function pauseGlobalAudio() {
+  if (globalAudioElement) {
+    globalAudioElement.pause();
+  }
+}
+
+function seekGlobalAudio(percent: number) {
+  if (globalAudioElement) {
+    const dur = globalAudioElement.duration || 0;
+    if (dur > 0) {
+      globalAudioElement.currentTime = (percent / 100) * dur;
+      updateGlobalAudio({ progress: percent });
+    }
+  }
+}
+
+function stopAndCloseGlobalAudio() {
+  if (globalAudioElement) {
+    globalAudioElement.pause();
+    globalAudioElement.src = '';
+  }
+  updateGlobalAudio({
+    url: '',
+    title: '',
+    duration: '',
+    progress: 0,
+    currentTime: '0:00',
+    totalDuration: '0:00',
+    isPlaying: false
+  });
+}
+
+function useGlobalAudio() {
+  const [state, setState] = useState<GlobalAudioState>(globalAudioState);
+  useEffect(() => {
+    return subscribeToGlobalAudio((newState) => {
+      setState(newState);
+    });
+  }, []);
+  return state;
+}
+
+// -------------------------------------------------------------
+// BEAUTIFUL WAVEFORM VISUALIZER COMPONENT
+// -------------------------------------------------------------
+function BeautifulWaveform({ 
+  progress, 
+  isPlaying, 
+  onSeek, 
+  seed = "dewa",
+  isDark,
+  tc 
+}: { 
+  progress: number; 
+  isPlaying: boolean; 
+  onSeek: (percent: number) => void; 
+  seed?: string;
+  isDark: boolean;
+  tc: any;
+}) {
+  const bars = React.useMemo(() => {
+    const count = 38;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    const result: { height: number; delay: string }[] = [];
+    for (let i = 0; i < count; i++) {
+      const pseudoRandom = Math.sin(hash + i * 1.6) * 0.5 + 0.5;
+      const height = Math.floor(18 + pseudoRandom * 72); // 18% to 90%
+      const delay = (i * 0.04).toFixed(3) + 's';
+      result.push({ height, delay });
+    }
+    return result;
+  }, [seed]);
+
+  const handleWaveformClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percent = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+    onSeek(percent);
+  };
+
+  return (
+    <div 
+      onClick={handleWaveformClick}
+      className="relative flex items-end justify-between h-12 w-full cursor-pointer select-none group px-1 py-1 rounded-xl"
+    >
+      <style>{`
+        @keyframes dewa-waveform-bounce {
+          0%, 100% { transform: scaleY(1); }
+          50% { transform: scaleY(1.45); }
+        }
+        .dewa-wave-active-animated {
+          animation: dewa-waveform-bounce 1s ease-in-out infinite;
+          transform-origin: bottom;
+        }
+      `}</style>
+      {bars.map((bar, idx) => {
+        const barPercent = (idx / bars.length) * 100;
+        const isActive = progress >= barPercent;
+        
+        let barColorClass = '';
+        if (isActive) {
+          barColorClass = tc.bg || 'bg-indigo-600';
+        } else {
+          barColorClass = isDark ? 'bg-slate-800' : 'bg-slate-200';
+        }
+
+        return (
+          <div
+            key={idx}
+            style={{ 
+              height: `${bar.height}%`, 
+              animationDelay: isPlaying && isActive ? bar.delay : undefined,
+              transition: 'background-color 0.25s, height 0.1s'
+            }}
+            className={`w-[2px] sm:w-[3px] rounded-full ${barColorClass} ${isPlaying && isActive ? 'dewa-wave-active-animated' : ''} hover:scale-y-110`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// Custom elegant audio player with prominent progress tracker and visual waveform matching the video player's style
 function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { key?: any; url: string; title: string; duration?: string; isDark: boolean; tc: any }) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState('0:00');
-  const [totalDuration, setTotalDuration] = useState(duration || '0:00');
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const globalAudio = useGlobalAudio();
+  const isThisActive = globalAudio.url === url;
+
+  const isPlaying = isThisActive ? globalAudio.isPlaying : false;
+  const progress = isThisActive ? globalAudio.progress : 0;
+  const currentTime = isThisActive ? globalAudio.currentTime : '0:00';
+  const totalDuration = isThisActive ? globalAudio.totalDuration : (duration || '0:00');
 
   const togglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!audioRef.current) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      // Pause any other playing audios on the page
-      const allAudioElements = document.querySelectorAll('audio');
-      allAudioElements.forEach(el => {
-        if (el !== audioRef.current) el.pause();
-      });
-      const playPromise = audioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(err => {
-          if (err.name !== 'AbortError') {
-            console.warn("Audio playback failed:", err);
-          }
-        });
+    if (isThisActive) {
+      if (isPlaying) {
+        pauseGlobalAudio();
+      } else {
+        playGlobalAudio(url, title, duration);
       }
+    } else {
+      playGlobalAudio(url, title, duration);
     }
   };
 
-  const handleTimeUpdate = () => {
-    if (!audioRef.current) return;
-    const cur = audioRef.current.currentTime;
-    const dur = audioRef.current.duration || 0;
-    if (dur > 0) {
-      setProgress((cur / dur) * 100);
+  const handleSeek = (percent: number) => {
+    if (isThisActive) {
+      seekGlobalAudio(percent);
+    } else {
+      playGlobalAudio(url, title, duration);
+      setTimeout(() => {
+        seekGlobalAudio(percent);
+      }, 150);
     }
-    setCurrentTime(formatTime(cur));
-  };
-
-  const handleLoadedMetadata = () => {
-    if (!audioRef.current) return;
-    setTotalDuration(formatTime(audioRef.current.duration));
-  };
-
-  const formatTime = (secs: number) => {
-    if (isNaN(secs)) return '0:00';
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
-
-  const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.stopPropagation();
-    if (!audioRef.current) return;
-    const dur = audioRef.current.duration || 0;
-    const newTime = (parseFloat(e.target.value) / 100) * dur;
-    audioRef.current.currentTime = newTime;
-    setProgress(parseFloat(e.target.value));
   };
 
   return (
     <div 
       onClick={(e) => e.stopPropagation()}
-      className={`p-4 rounded-2xl ${isDark ? 'bg-slate-950/70 border-slate-800/80' : 'bg-slate-100 border-slate-200'} border flex flex-col gap-2.5 font-sans mt-3 shadow-inner text-right w-full`}
+      className={`p-4 rounded-2xl ${isDark ? 'bg-slate-900/60 border-slate-850/80 shadow-[0_4px_20px_rgba(0,0,0,0.25)]' : 'bg-slate-100/90 border-slate-200 shadow-[0_4px_16px_rgba(0,0,0,0.03)]'} border flex flex-col gap-3 font-sans mt-3 text-right w-full`}
     >
-      <audio 
-        ref={audioRef} 
-        src={url} 
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onEnded={() => setIsPlaying(false)}
-        preload="none"
-      />
       <div className="flex items-center justify-between gap-3 min-w-0">
         <button
           onClick={togglePlay}
           style={{ cursor: 'pointer' }}
-          className={`w-9 h-9 rounded-full ${tc.bg} ${tc.hoverBg} hover:scale-105 active:scale-95 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-600/25 transition`}
+          className={`w-11 h-11 rounded-full ${tc.bg} ${tc.hoverBg} hover:scale-105 active:scale-95 text-white flex items-center justify-center shrink-0 shadow-md transition`}
         >
           {isPlaying ? (
             <svg className="w-4 h-4 fill-current text-white" viewBox="0 0 24 24">
@@ -480,31 +736,37 @@ function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { key?: any;
           )}
         </button>
         <div className="flex-1 min-w-0 text-right">
-          <span className={`text-[11px] font-bold block truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{title}</span>
-          <span className="text-[9.5px] text-slate-400 font-mono">ډېوه غږیز پلیر</span>
+          <span className={`text-[12.5px] sm:text-[13px] font-bold block truncate pr-0.5 ${isDark ? 'text-white' : 'text-slate-900'}`}>{title}</span>
+          <div className="flex items-center gap-1.5 justify-end mt-0.5">
+            <span className="text-[10px] text-slate-400 font-mono">ډېوه غږیز پلیر</span>
+            {isPlaying && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />}
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="text-[9.5px] text-slate-500 font-mono tracking-tight shrink-0">{currentTime}</span>
-        <div className="flex-grow relative flex items-center">
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={progress}
-            onChange={handleProgressChange}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none"
-          />
+
+      <div className="mt-1">
+        {/* Waveform Visualization Progress Tracker */}
+        <BeautifulWaveform 
+          progress={progress} 
+          isPlaying={isPlaying} 
+          onSeek={handleSeek} 
+          seed={url || title}
+          isDark={isDark}
+          tc={tc}
+        />
+        <div className="flex items-center justify-between mt-1 px-1">
+          <span className="text-[9.5px] text-slate-500 font-mono tracking-tight shrink-0">{currentTime}</span>
+          <span className="text-[9.5px] text-slate-500 font-mono tracking-tight shrink-0">{totalDuration}</span>
         </div>
-        <span className="text-[9.5px] text-slate-500 font-mono tracking-tight shrink-0">{totalDuration}</span>
       </div>
     </div>
   );
 }
 
 // Custom elegant video player with progress seek bar tracking and overlay play buttons
-function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride }: { url: string; poster?: string; isDark: boolean; tc: any; onClickOverride?: () => void }) {
+function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride, autoPlay }: { url: string; poster?: string; isDark: boolean; tc: any; onClickOverride?: () => void; autoPlay?: boolean }) {
+  const cachedUrl = useCachedUrl(url);
+  const cachedPoster = useCachedUrl(poster);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState('0:00');
@@ -529,6 +791,9 @@ function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride }: { ur
       });
       const allAudios = document.querySelectorAll('audio');
       allAudios.forEach(a => a.pause());
+      
+      // Stop or pause global background audio
+      pauseGlobalAudio();
       
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
@@ -623,6 +888,39 @@ function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride }: { ur
     };
   }, [isPlaying]);
 
+  // Handle Autoplay safely
+  useEffect(() => {
+    if (autoPlay && videoRef.current) {
+      // Pause other playing videos or audios
+      const allVideos = document.querySelectorAll('video');
+      allVideos.forEach(v => {
+        if (v !== videoRef.current) v.pause();
+      });
+      const allAudios = document.querySelectorAll('audio');
+      allAudios.forEach(a => a.pause());
+
+      pauseGlobalAudio();
+
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          setIsPlaying(true);
+        }).catch(err => {
+          console.warn("Autoplay unmuted blocked by browser, trying muted:", err);
+          if (videoRef.current) {
+            videoRef.current.muted = true;
+            setIsMuted(true);
+            videoRef.current.play().then(() => {
+              setIsPlaying(true);
+            }).catch(e => {
+              console.warn("Muted autoplay blocked too:", e);
+            });
+          }
+        });
+      }
+    }
+  }, [autoPlay, url]);
+
   return (
     <div 
       ref={containerRef}
@@ -639,15 +937,15 @@ function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride }: { ur
     >
       <video 
         ref={videoRef}
-        src={url}
-        poster={poster || undefined}
+        src={cachedUrl || url}
+        poster={cachedPoster || poster || undefined}
         className="w-full h-full max-h-[360px] object-contain cursor-pointer"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={() => setIsPlaying(false)}
-        preload="metadata"
+        preload="auto"
         playsInline
       />
       
@@ -757,6 +1055,57 @@ const getIsBook = (post: TelegramPost | null): boolean => {
          !!(post.text && (post.text.toLowerCase().includes('.pdf') || post.text.includes('.epub') || post.text.includes('کتاب کښته') || post.text.includes('کتاب ډانلوډ')));
 };
 
+const getIsPoem = (post: TelegramPost | null): boolean => {
+  if (!post) return false;
+  const isPlain = !post.hasVideo && !post.photoUrl && !(post.photoUrls && post.photoUrls.length > 0) && !post.hasAudio && !getIsBook(post);
+  if (!isPlain) return false;
+
+  const text = post.text || '';
+  // Check for poetry hashtags (including Pashto & Arabic letter variations)
+  const poemHashtags = ['#شعر', '#شعرونه', '#غزل', '#غزلونه', '#نظم', '#بیت', '#شاعر', '#ټپه', '#ترانه'];
+  const hasPoemHashtag = poemHashtags.some(tag => text.includes(tag));
+  if (hasPoemHashtag) return true;
+
+  // Check if writing hashtags are present (exclusive priority)
+  const writingHashtags = ['#ليکنه', '#لیکنه', '#ليکنې', '#لیکنی', '#ليکنه', '#مقاله', '#لیکنه'];
+  const hasWritingHashtag = writingHashtags.some(tag => text.includes(tag));
+  if (hasWritingHashtag) return false;
+
+  // Fallback to text analysis if no hashtags are present
+  const textLower = text.toLowerCase();
+  const poetryTerms = [
+    'شعر', 'غزل', 'نظم', 'بیت', 'شاعر', 'ټپه', 'چاربيته', 'لنډۍ', 'دروېش', 'کاروان', 'خم نا اشنا', 
+    'ساحل', 'ترانه', 'ترانې', 'غزلونه', 'شعرونه', 'بيتونه', 'ټپيزه', 'ټپيزې', 'مصرع', 'مصرعې', 
+    'پښتو شعر', 'اشعار', 'مليار', 'خم', 'شراب'
+  ];
+  const hasPoetryKeyword = poetryTerms.some(term => textLower.includes(term));
+
+  const lines = text.trim().split('\n').filter(l => l.trim().length > 0);
+  const isPoeticStructure = lines.length >= 4 && lines.every(line => line.length < 60);
+
+  return hasPoetryKeyword || isPoeticStructure;
+};
+
+const getIsWriting = (post: TelegramPost | null): boolean => {
+  if (!post) return false;
+  const isPlain = !post.hasVideo && !post.photoUrl && !(post.photoUrls && post.photoUrls.length > 0) && !post.hasAudio && !getIsBook(post);
+  if (!isPlain) return false;
+
+  const text = post.text || '';
+  // Check for writing hashtags (including Pashto & Arabic letter variations)
+  const writingHashtags = ['#ليکنه', '#لیکنه', '#ليکنې', '#لیکنی', '#ليکنه', '#مقاله', '#لیکنه'];
+  const hasWritingHashtag = writingHashtags.some(tag => text.includes(tag));
+  if (hasWritingHashtag) return true;
+
+  // Check if poem hashtags are present (exclusive priority)
+  const poemHashtags = ['#شعر', '#شعرونه', '#غزل', '#غزلونه', '#نظم', '#بیت', '#شاعر', '#ټپه', '#ترانه'];
+  const hasPoemHashtag = poemHashtags.some(tag => text.includes(tag));
+  if (hasPoemHashtag) return false;
+
+  // Fallback to non-poem plain posts
+  return !getIsPoem(post);
+};
+
 const getPostTextWithFallback = (post: TelegramPost | null): string => {
   if (!post) return '';
 
@@ -838,6 +1187,118 @@ function CustomLinkPreview({ url, isDark }: { url: string; isDark: boolean }) {
   );
 }
 
+const preloadedUrls = new Set<string>();
+const blobUrlMap = new Map<string, string>();
+const DEWA_MEDIA_CACHE_NAME = 'dewa-telegram-media-v3';
+
+// Direct background Cache Storage helper that converts file URLs to local blobs gracefully
+async function cacheAndGetBlobUrl(url: string): Promise<string> {
+  if (!url) return '';
+  if (blobUrlMap.has(url)) {
+    return blobUrlMap.get(url)!;
+  }
+  if (!('caches' in window)) return url;
+
+  try {
+    const cache = await caches.open(DEWA_MEDIA_CACHE_NAME);
+    const matched = await cache.match(url);
+    if (matched) {
+      const blob = await matched.blob();
+      const bUrl = URL.createObjectURL(blob);
+      blobUrlMap.set(url, bUrl);
+      return bUrl;
+    }
+
+    // Pull from network and store in cache asynchronously
+    // Using fetch with cors mode, fallback to original if blocked by CORS
+    const res = await fetch(url).catch(() => null);
+    if (res && res.ok) {
+      await cache.put(url, res.clone());
+      const blob = await res.blob();
+      const bUrl = URL.createObjectURL(blob);
+      blobUrlMap.set(url, bUrl);
+      return bUrl;
+    }
+  } catch (err) {
+    console.warn("Background caching error:", err);
+  }
+  return url;
+}
+
+function preloadImg(url: string) {
+  if (!url || preloadedUrls.has(url)) return;
+  preloadedUrls.add(url);
+  cacheAndGetBlobUrl(url);
+}
+
+function preloadVid(url: string) {
+  if (!url || preloadedUrls.has(url)) return;
+  preloadedUrls.add(url);
+  cacheAndGetBlobUrl(url);
+}
+
+function useCachedUrl(url: string | undefined | null): string {
+  const [cachedUrl, setCachedUrl] = useState<string>(url || '');
+
+  useEffect(() => {
+    if (!url) {
+      setCachedUrl('');
+      return;
+    }
+
+    if (blobUrlMap.has(url)) {
+      setCachedUrl(blobUrlMap.get(url)!);
+      return;
+    }
+
+    setCachedUrl(url);
+    let isMounted = true;
+
+    cacheAndGetBlobUrl(url).then((resolved) => {
+      if (isMounted) {
+        setCachedUrl(resolved);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [url]);
+
+  return cachedUrl;
+}
+
+interface CachedImageProps {
+  src: string;
+  [key: string]: any;
+}
+
+function CachedImage({ src, ...props }: CachedImageProps) {
+  const cachedSrc = useCachedUrl(src);
+  return <img src={cachedSrc || src} {...props} referrerPolicy="no-referrer" />;
+}
+
+function preloadPostMedia(post: any) {
+  if (!post) return;
+  if (post.photoUrl) {
+    preloadImg(post.photoUrl);
+  }
+  if (post.photoUrls && Array.isArray(post.photoUrls)) {
+    post.photoUrls.forEach((url: any) => {
+      if (typeof url === 'string') preloadImg(url);
+    });
+  }
+  if (post.videoUrl) {
+    preloadVid(post.videoUrl);
+  }
+  if (post.videoList && Array.isArray(post.videoList)) {
+    post.videoList.forEach((v: any) => {
+      const url = typeof v === 'string' ? v : (v && v.url);
+      if (url) preloadVid(url);
+    });
+  }
+}
+
 export default function App() {
   const [feedData, setFeedData] = useState<FeedResponse | null>(() => {
     const cached = localStorage.getItem('dewa_cached_feed_data');
@@ -917,6 +1378,24 @@ export default function App() {
     });
   };
 
+  // Share post text directly to WhatsApp with prefilled invite back to channel (واټساپ سره د د شعر د شریکولو بټنه)
+  const handleWhatsAppShare = (post: TelegramPost) => {
+    if (!post) return;
+    const cleanText = getPostTextWithFallback(post) || '';
+    
+    // Channel Join Link
+    const channelUsername = feedData?.channelInfo?.username || 'da_mine_dewa';
+    const channelLink = `https://t.me/${channelUsername}`;
+    
+    // Construct pre-filled message with post body and viral backlink
+    const messageTemplate = `${cleanText}\n\n🍀 د پښتو خوږو شعرونو او رسمي ادب پاڼه:\n👉 join: ${channelLink}`;
+    
+    const encoded = encodeURIComponent(messageTemplate);
+    const whatsappUrl = `https://api.whatsapp.com/send?text=${encoded}`;
+    
+    window.open(whatsappUrl, '_blank');
+    showToast('واټساپ ته د شریکولو دوسیه خلاصه شوه! 🟢', 'success');
+  };
   const [bottomSheetPost, setBottomSheetPost] = useState<TelegramPost | null>(null);
   const [readPostIds, setReadPostIds] = useState<string[]>(() => {
     try {
@@ -959,8 +1438,10 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isReelsOpen, setIsReelsOpen] = useState(false);
   const [activeReelIndex, setActiveReelIndex] = useState(0);
+  const [swipeDirection, setSwipeDirection] = useState<'next' | 'prev'>('next');
   const [isPhotoReelsOpen, setIsPhotoReelsOpen] = useState(false);
   const [activePhotoReelIndex, setActivePhotoReelIndex] = useState(0);
+  const [photoSwipeDirection, setPhotoSwipeDirection] = useState<'next' | 'prev'>('next');
   const [isCategoryPageOpen, setIsCategoryPageOpen] = useState(false);
 
   // Optical Zoom states for image lightbox
@@ -1155,24 +1636,72 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Genius Scroll Restoration Auto-Tracker & Restorer Hook
-  const listScrollPosRef = useRef<number>(0);
+  // Advanced Dual-Session Scroll Restoration Tracker
+  const homeScrollPosRef = useRef<number>(0); // Keeps track of main home page scroll position
+  const detailScrollPosRef = useRef<number>(0); // Keeps track of scroll position of the list we came from before opening selectedPost
   const prevInSubpageRef = useRef<boolean>(false);
-  const isInSubpage = !!(selectedPost || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen);
+  const prevSelectedPostRef = useRef<any>(null);
+  const prevInPanelRef = useRef<boolean>(false);
 
+  // 1. Background Scroll Tracker (captures main home feed scroll whenever we are not in any subpage or panel)
   useEffect(() => {
-    if (isInSubpage && !prevInSubpageRef.current) {
-      // Entering subpage detail view: store original scroll position of main lists
-      listScrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
-    } else if (!isInSubpage && prevInSubpageRef.current) {
-      // Returning to main listing: restore scroll position
-      const savedPos = listScrollPosRef.current;
-      setTimeout(() => {
-        window.scrollTo({ top: savedPos, behavior: 'instant' });
-      }, 70);
+    const handleScroll = () => {
+      const isInAnySubpage = !!(selectedPost || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen);
+      if (!isInAnySubpage) {
+        const currentScroll = window.scrollY || document.documentElement.scrollTop;
+        if (currentScroll > 0) {
+          homeScrollPosRef.current = currentScroll;
+        }
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [selectedPost, isAboutPageOpen, isContactPageOpen, isSettingsPageOpen, isFullFeedOpen, isSearchOpen, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen]);
+
+  // 2. SelectedPost Transitions Tracker (opening and closing detailed post reading page)
+  useEffect(() => {
+    const isOpening = selectedPost && !prevSelectedPostRef.current;
+    const isClosing = !selectedPost && prevSelectedPostRef.current;
+
+    if (isOpening) {
+      // Synchronously capture lists scroll position
+      const currentScroll = window.scrollY || document.documentElement.scrollTop;
+      if (currentScroll > 0) {
+        detailScrollPosRef.current = currentScroll;
+      }
+    } else if (isClosing) {
+      // Returning from post reading back to the list: restore scroll position across staggered intervals
+      const savedPos = detailScrollPosRef.current;
+      if (savedPos > 0) {
+        window.scrollTo(0, savedPos);
+        setTimeout(() => window.scrollTo(0, savedPos), 30);
+        setTimeout(() => window.scrollTo(0, savedPos), 90);
+        setTimeout(() => window.scrollTo(0, savedPos), 180);
+        setTimeout(() => window.scrollTo(0, savedPos), 350);
+      }
     }
-    prevInSubpageRef.current = isInSubpage;
-  }, [isInSubpage]);
+    prevSelectedPostRef.current = selectedPost;
+  }, [selectedPost]);
+
+  // 3. Other Panels Transitions Tracker (returning back to home view from settings/category/search etc.)
+  useEffect(() => {
+    const isInPanel = !!(isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen);
+    const isReturningToHome = !isInPanel && prevInPanelRef.current && !selectedPost;
+
+    if (isReturningToHome) {
+      const savedPos = homeScrollPosRef.current;
+      if (savedPos > 0) {
+        window.scrollTo(0, savedPos);
+        setTimeout(() => window.scrollTo(0, savedPos), 30);
+        setTimeout(() => window.scrollTo(0, savedPos), 90);
+        setTimeout(() => window.scrollTo(0, savedPos), 180);
+        setTimeout(() => window.scrollTo(0, savedPos), 350);
+      }
+    }
+    prevInPanelRef.current = isInPanel;
+  }, [selectedPost, isAboutPageOpen, isContactPageOpen, isSettingsPageOpen, isFullFeedOpen, isSearchOpen, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen]);
 
   // Persists changes to local storage
   useEffect(() => {
@@ -2250,6 +2779,10 @@ export default function App() {
         list = list.filter(p => !!p.hasAudio || !!p.audioUrl);
       } else if (selectedCategory === 'pdf') {
         list = list.filter(p => getIsBook(p));
+      } else if (selectedCategory === 'writings_plain') {
+        list = list.filter(p => getIsWriting(p));
+      } else if (selectedCategory === 'poems') {
+        list = list.filter(p => getIsPoem(p));
       } else if (selectedCategory === 'writings') {
         list = list.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
       }
@@ -2317,6 +2850,12 @@ export default function App() {
     if (selectedCategory === 'pdf') {
       return allPosts.filter(p => getIsBook(p));
     }
+    if (selectedCategory === 'writings_plain') {
+      return allPosts.filter(p => getIsWriting(p));
+    }
+    if (selectedCategory === 'poems') {
+      return allPosts.filter(p => getIsPoem(p));
+    }
     if (selectedCategory === 'writings') {
       return allPosts.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
     }
@@ -2365,6 +2904,14 @@ export default function App() {
     return list;
   }, [allPosts]);
 
+  // Hook resolutions for immersive active screen layers (Installs Offline Video Caching)
+  const activeReelObj = reelsList && reelsList.length > 0 ? reelsList[activeReelIndex] : null;
+  const cachedActiveReelVideoUrl = useCachedUrl(isReelsOpen ? activeReelObj?.videoUrl : null);
+  const cachedActiveReelPosterUrl = useCachedUrl(isReelsOpen ? activeReelObj?.poster : null);
+
+  const activePhotoReelObj = photoReelsList && photoReelsList.length > 0 ? photoReelsList[activePhotoReelIndex] : null;
+  const cachedActivePhotoReelUrl = useCachedUrl(isPhotoReelsOpen ? activePhotoReelObj?.photoUrl : null);
+
   // Extract unique hashtags with counts from the original feed posts
   const hashtagsWithCount = React.useMemo(() => {
     if (!feedData?.posts) return [];
@@ -2384,6 +2931,58 @@ export default function App() {
       .map(([tag, count]) => ({ tag, count }))
       .sort((a, b) => b.count - a.count);
   }, [feedData?.posts]);
+
+  // Background Snappy Media Preloading Engine (Videos and Images)
+  React.useEffect(() => {
+    // 1. If a Post detail view is open, preload its own media (if multi-media) AND preload adjacent posts
+    if (selectedPost) {
+      preloadPostMedia(selectedPost);
+
+      // Find selected post in homePosts list to preload next items
+      const idx = homePosts.findIndex((p) => p.id === selectedPost.id);
+      if (idx !== -1) {
+        // Preload next 2 posts
+        for (let i = 1; i <= 2; i++) {
+          const nextPost = homePosts[idx + i];
+          if (nextPost) preloadPostMedia(nextPost);
+        }
+        // Preload previous post
+        const prevPost = homePosts[idx - 1];
+        if (prevPost) preloadPostMedia(prevPost);
+      }
+    }
+
+    // 2. If Reels is open, preload subsequent video reels
+    if (isReelsOpen && reelsList && reelsList.length > 0) {
+      const currentReel = reelsList[activeReelIndex];
+      const nextReel1 = reelsList[(activeReelIndex + 1) % reelsList.length];
+      const nextReel2 = reelsList[(activeReelIndex + 2) % reelsList.length];
+
+      if (currentReel) {
+        if (currentReel.videoUrl) preloadVid(currentReel.videoUrl);
+        if (currentReel.poster) preloadImg(currentReel.poster);
+      }
+      if (nextReel1) {
+        if (nextReel1.videoUrl) preloadVid(nextReel1.videoUrl);
+        if (nextReel1.poster) preloadImg(nextReel1.poster);
+      }
+      if (nextReel2) {
+        if (nextReel2.videoUrl) preloadVid(nextReel2.videoUrl);
+        if (nextReel2.poster) preloadImg(nextReel2.poster);
+      }
+    }
+
+    // 3. If Photo Reels is open, preload next image reels
+    if (isPhotoReelsOpen && photoReelsList && photoReelsList.length > 0) {
+      const currentPR = photoReelsList[activePhotoReelIndex];
+      const nextPR1 = photoReelsList[(activePhotoReelIndex + 1) % photoReelsList.length];
+      const nextPR2 = photoReelsList[(activePhotoReelIndex + 2) % photoReelsList.length];
+
+      if (currentPR && currentPR.photoUrl) preloadImg(currentPR.photoUrl);
+      if (nextPR1 && nextPR1.photoUrl) preloadImg(nextPR1.photoUrl);
+      if (nextPR2 && nextPR2.photoUrl) preloadImg(nextPR2.photoUrl);
+    }
+  }, [selectedPost, activeReelIndex, isReelsOpen, reelsList, activePhotoReelIndex, isPhotoReelsOpen, photoReelsList, homePosts]);
 
   // Open Reels player specifically targeting a requested video URL
   const openReelWithVideoUrl = React.useCallback((videoUrl: string) => {
@@ -2466,11 +3065,13 @@ export default function App() {
 
   const handleNextReel = () => {
     if (reelsList.length === 0) return;
+    setSwipeDirection('next');
     setActiveReelIndex((prev) => (prev + 1) % reelsList.length);
   };
 
   const handlePrevReel = () => {
     if (reelsList.length === 0) return;
+    setSwipeDirection('prev');
     setActiveReelIndex((prev) => (prev - 1 + reelsList.length) % reelsList.length);
   };
 
@@ -2504,7 +3105,7 @@ export default function App() {
   const onReelTouchEnd = () => {
     if (!reelTouchStartY || !reelTouchEndY) return;
     const distance = reelTouchStartY - reelTouchEndY;
-    const minSwipeDistance = 45;
+    const minSwipeDistance = 35;
     if (distance > minSwipeDistance) {
       handleNextReel();
     } else if (distance < -minSwipeDistance) {
@@ -2531,6 +3132,9 @@ export default function App() {
       });
       const allAudios = document.querySelectorAll('audio');
       allAudios.forEach(a => a.pause());
+
+      // Stop or pause global background audio
+      pauseGlobalAudio();
 
       video.play().then(() => {
         setReelLoading(false);
@@ -2559,6 +3163,9 @@ export default function App() {
             reelVideoRef.current.pause();
             setReelPlaying(false);
           } else {
+            // Stop or pause global background audio
+            pauseGlobalAudio();
+            
             const playPromise = reelVideoRef.current.play();
             if (playPromise !== undefined) {
               playPromise.catch(err => {
@@ -2581,11 +3188,13 @@ export default function App() {
   // ==========================================================
   const handleNextPhotoReel = () => {
     if (photoReelsList.length === 0) return;
+    setPhotoSwipeDirection('next');
     setActivePhotoReelIndex((prev) => (prev + 1) % photoReelsList.length);
   };
 
   const handlePrevPhotoReel = () => {
     if (photoReelsList.length === 0) return;
+    setPhotoSwipeDirection('prev');
     setActivePhotoReelIndex((prev) => (prev - 1 + photoReelsList.length) % photoReelsList.length);
   };
 
@@ -2619,7 +3228,7 @@ export default function App() {
   const onPhotoReelTouchEnd = () => {
     if (!photoReelTouchStartY || !photoReelTouchEndY) return;
     const distance = photoReelTouchStartY - photoReelTouchEndY;
-    const minSwipeDistance = 45;
+    const minSwipeDistance = 35;
     if (distance > minSwipeDistance) {
       handleNextPhotoReel();
     } else if (distance < -minSwipeDistance) {
@@ -2935,7 +3544,6 @@ export default function App() {
                   setSearchQuery('');
                   setContactSuccess(false);
                   setContactError(null);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 style={{ cursor: 'pointer' }}
                 className={`px-3 py-1.5 ${tc.bg} ${tc.hoverBg} active:scale-95 rounded-lg text-xs font-bold text-white transition flex items-center gap-1.5 shrink-0`}
@@ -3375,7 +3983,10 @@ export default function App() {
                 <ArrowRight className="w-3.5 h-3.5" />
                 <span>شاته کورپاڼې ته</span>
               </button>
-              <span className={`text-[10px] font-mono ${isDark ? 'text-slate-500' : 'text-slate-600'} font-semibold`}>پوسټ #{selectedPost.id}</span>
+              <span className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-600'} font-bold flex items-center gap-1.5`}>
+                <Clock className="w-3 h-3 text-indigo-400" />
+                <span>{getRelativeTimeInPashto(selectedPost.date, selectedPost.timeLabel || 'وروستی')}</span>
+              </span>
             </div>
 
             {/* Media on Top (عکس یا ویډیو وي) */}
@@ -3389,6 +4000,7 @@ export default function App() {
                       isDark={isDark}
                       tc={tc}
                       onClickOverride={() => openReelWithVideoUrl(videoItem.url)}
+                      autoPlay={true}
                     />
                     {selectedPost.videoList!.length > 1 && (
                       <span className="text-[10px] text-slate-400 mt-1.5 font-mono select-none">د ويډيو فایل #{idx + 1}</span>
@@ -3404,6 +4016,7 @@ export default function App() {
                   isDark={isDark}
                   tc={tc}
                   onClickOverride={() => openReelWithVideoUrl(selectedPost.videoUrl!)}
+                  autoPlay={true}
                 />
               </div>
             ) : (selectedPost.photoUrls && selectedPost.photoUrls.length > 1) ? (
@@ -3415,9 +4028,8 @@ export default function App() {
                 }`}>
                   {selectedPost.photoUrls.map((url, idx) => (
                     <div key={idx} className={`relative group overflow-hidden rounded-xl aspect-square border ${isDark ? 'bg-slate-900 border-slate-850' : 'bg-white border-slate-200'}`}>
-                      <img
+                      <CachedImage
                         src={url}
-                        referrerPolicy="no-referrer"
                         alt={`Photo ${idx + 1}`}
                         className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition duration-300"
                         onClick={() => {
@@ -3444,9 +4056,8 @@ export default function App() {
               </div>
             ) : selectedPost.photoUrl ? (
               <div className={`relative ${isDark ? 'bg-slate-950 border-slate-850' : 'bg-slate-50 border-slate-205'} flex flex-col items-center border-b`}>
-                <img
-                  src={selectedPost.photoUrl || null}
-                  referrerPolicy="no-referrer"
+                <CachedImage
+                  src={selectedPost.photoUrl || ''}
                   alt="Reading visual"
                   className="w-full max-h-[380px] object-contain cursor-zoom-in hover:opacity-90 transition duration-200"
                   onClick={() => {
@@ -3552,34 +4163,45 @@ export default function App() {
                 <CustomLinkPreview url={extractUrl(selectedPost.text || '')!} isDark={isDark} />
               ) : null}
 
-              {/* Copy, Like & Share Action Buttons Row (د شعر د کاپي، خوښولو او شریکولو ښکلي بټنې) */}
+              {/* Copy, Like, WhatsApp & Share Action Buttons Row (د شعر د کاپي، خوښولو، واټساپ او شریکولو ښکلي بټنې) */}
               {selectedPost.text && selectedPost.text.trim() !== '' && (
-                <div className={`grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-205'}`}>
+                <div className={`grid grid-cols-2 md:grid-cols-4 gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-205'}`}>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedPost.text || '');
                       showToast('متن په برياليتوب سره کاپي شو! 📋', 'success');
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`py-3 px-4 ${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-750'} border rounded-xl text-[11.5px] font-bold transition active:scale-95 flex items-center justify-center gap-2 shadow-xs group`}
+                    className={`py-3 px-3.5 ${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-755'} border rounded-xl text-[11px] sm:text-[11.5px] font-bold transition active:scale-95 flex items-center justify-center gap-2 shadow-xs group`}
                   >
                     <Copy className="w-4 h-4 text-indigo-450 group-hover:scale-110 transition" />
-                    <span>کاپي کول (Copy)</span>
+                    <span>کاپي کول</span>
                   </button>
 
                   <button
                     onClick={() => toggleFavorite(selectedPost.id)}
                     style={{ cursor: 'pointer' }}
-                    className={`py-3 px-4 border rounded-xl text-[11.5px] font-bold transition active:scale-95 flex items-center justify-center gap-2 group shadow-xs ${
+                    className={`py-3 px-3.5 border rounded-xl text-[11px] sm:text-[11.5px] font-bold transition active:scale-95 flex items-center justify-center gap-2 group shadow-xs ${
                       favoritePostIds.includes(selectedPost.id)
                         ? 'bg-rose-500/15 border-rose-500/30 text-rose-500 font-black'
-                        : `${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-750'}`
+                        : `${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-755'}`
                     }`}
                   >
                     <Heart className={`w-4 h-4 transition-all duration-300 ${
                       favoritePostIds.includes(selectedPost.id) ? 'text-rose-500 fill-rose-500 scale-110 animate-pulse' : 'text-slate-400 group-hover:text-rose-500'
                     }`} />
-                    <span>{favoritePostIds.includes(selectedPost.id) ? 'خوښ شوی (Liked)' : 'خوښول (Like)'}</span>
+                    <span>{favoritePostIds.includes(selectedPost.id) ? 'خوښ شوی' : 'خوښول'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleWhatsAppShare(selectedPost)}
+                    style={{ cursor: 'pointer' }}
+                    className="py-3 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] sm:text-[11.5px] font-bold transition active:scale-95 flex items-center justify-center gap-2 shadow-md shadow-emerald-500/10 group"
+                  >
+                    <svg className="w-4 h-4 text-emerald-100 group-hover:scale-110 transition fill-current" viewBox="0 0 24 24">
+                      <path d="M12.012 3c-4.96-.005-9.005 4.02-9.01 8.977a8.94 8.94 0 0 0 1.202 4.492L3 21l4.7-.1.353-.1.332.352c1.082.52 2.274.8 3.518.8h.01c4.965.004 9.01-4.015 9.013-8.977A8.97 8.97 0 0 0 12.012 3zm4.5 12c-.2.5-.9.9-1.4 1-1 .2-2.3-.2-3.8-1.5-1.5-1.3-2.5-2.8-2.8-3.4-.3-.5-.4-.9-.4-1.3 0-.6.3-.9.4-1.1.1-.2.2-.2.3-.2l.7.1c.2 0 .4.1.5.3.3.6.7 1.4.8 1.5.1.2.1.4 0 .6-.1.2-.2.3-.3.4l-.4.3c-.1.1-.1.2 0 .4.4.8 1 1.4 1.8 1.8.2.1.3.1.4 0 .2-.2.4-.5.6-.7l.4-.2c.2 0 .4.1.7.3.7.4 1.2.7 1.3.8.3.1.3.3.2.4-.1.4-.4.8-.8 1z"/>
+                    </svg>
+                    <span>واټساپ</span>
                   </button>
 
                   <button
@@ -3596,10 +4218,10 @@ export default function App() {
                       }
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`py-3 px-4 ${tc.bg} ${tc.hoverBg} rounded-xl text-[11.5px] font-bold text-white transition active:scale-95 flex items-center justify-center gap-2 shadow-md shadow-indigo-600/10 group`}
+                    className={`py-3 px-3.5 ${tc.bg} ${tc.hoverBg} rounded-xl text-[11px] sm:text-[11.5px] font-bold text-white transition active:scale-95 flex items-center justify-center gap-2 shadow-md shadow-indigo-600/10 group`}
                   >
                     <Share2 className="w-4 h-4 text-indigo-100 group-hover:scale-110 transition" />
-                    <span>شریک کړئ (Share)</span>
+                    <span>نور شریکول</span>
                   </button>
                 </div>
               )}
@@ -3683,7 +4305,6 @@ export default function App() {
                   onTouchMove={onReelTouchMove}
                   onTouchEnd={onReelTouchEnd}
                 >
-                  {/* Floating Action Circle Close/Exit Button in top right corner */}
                   {/* Floating Action Glass Back navigation button, positioned top-right for high ergonomics */}
                   <button
                     onClick={() => setIsReelsOpen(false)}
@@ -3697,260 +4318,291 @@ export default function App() {
 
                   {/* Complete black background beautiful fullscreen theater overlay */}
                   <div className="w-full h-full relative bg-black flex items-center justify-center overflow-hidden">
-                    
-                    {/* 1. IMMERSIVE VIDEO ELEMENT */}
-                    <div className="absolute inset-0 flex items-center justify-center bg-black">
-                      <video
-                        ref={reelVideoRef}
-                        src={activeReel.videoUrl}
-                        poster={activeReel.poster}
-                        loop
-                        playsInline
-                        onClick={() => {
-                          if (reelVideoRef.current) {
-                            if (reelPlaying) {
-                              reelVideoRef.current.pause();
-                              setReelPlaying(false);
-                            } else {
-                              const playPromise = reelVideoRef.current.play();
-                              if (playPromise !== undefined) {
-                                playPromise.catch((err) => {
-                                  if (err.name !== 'AbortError') {
-                                    console.warn("Reel play failed on click:", err);
-                                  }
-                                });
-                              }
-                              setReelPlaying(true);
-                            }
-                          }
+                    <AnimatePresence initial={false} custom={swipeDirection}>
+                      <motion.div
+                        key={activeReelIndex}
+                        custom={swipeDirection}
+                        variants={{
+                          enter: (dir) => ({
+                            y: dir === 'next' ? '100%' : '-100%',
+                            opacity: 0,
+                            scale: 0.96
+                          }),
+                          center: {
+                            y: 0,
+                            opacity: 1,
+                            scale: 1
+                          },
+                          exit: (dir) => ({
+                            y: dir === 'next' ? '-100%' : '100%',
+                            opacity: 0,
+                            scale: 0.96
+                          })
                         }}
-                        onTimeUpdate={() => {
-                          if (reelVideoRef.current) {
-                            const cur = reelVideoRef.current.currentTime;
-                            const dur = reelVideoRef.current.duration || 1;
-                            setReelProgress((cur / dur) * 100);
-                          }
+                        initial="enter"
+                        animate="center"
+                        exit="exit"
+                        transition={{
+                          type: "spring",
+                          stiffness: 240,
+                          damping: 26,
+                          mass: 0.8
                         }}
-                        className="w-full h-full object-contain cursor-pointer"
-                      />
-                    </div>
-
-                    {/* 2. LOADING SPIN OVERLAY */}
-                    {reelLoading && (
-                      <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-25 pointer-events-none">
-                        <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                      </div>
-                    )}
-
-                    {/* 3. BIG PLAY ICON OVERLAY WHEN PAUSED */}
-                    {!reelPlaying && !reelLoading && (
-                      <div 
-                        onClick={() => {
-                          if (reelVideoRef.current) {
-                            const playPromise = reelVideoRef.current.play();
-                            if (playPromise !== undefined) {
-                              playPromise.catch((err) => {
-                                if (err.name !== 'AbortError') {
-                                  console.warn("Reel play failed on overlay click:", err);
+                        className="w-full h-full absolute inset-0 flex items-center justify-center overflow-hidden bg-black"
+                      >
+                        {/* 1. IMMERSIVE VIDEO ELEMENT */}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black">
+                          <video
+                            ref={reelVideoRef}
+                            src={cachedActiveReelVideoUrl || activeReel.videoUrl}
+                            poster={cachedActiveReelPosterUrl || activeReel.poster}
+                            loop
+                            playsInline
+                            preload="auto"
+                            onClick={() => {
+                              if (reelVideoRef.current) {
+                                pauseGlobalAudio();
+                                const playPromise = reelVideoRef.current.play();
+                                if (playPromise !== undefined) {
+                                  playPromise.catch((err) => {
+                                    if (err.name !== 'AbortError') {
+                                      console.warn("Reel play failed on click:", err);
+                                    }
+                                  });
                                 }
-                              });
-                            }
-                            setReelPlaying(true);
-                          }
-                        }}
-                        className="absolute inset-0 bg-black/35 flex items-center justify-center z-15 cursor-pointer animate-fade-in"
-                      >
-                        <div className="bg-white/10 hover:bg-white/25 backdrop-blur-md p-5 rounded-full border border-white/20 transform hover:scale-110 active:scale-95 transition text-white shadow-lg">
-                          <Play className="w-9 h-9 text-white fill-white translate-x-0.5" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 4. LIGHTNING GRADIENT OVERLAYS */}
-                    <div className="absolute top-0 left-0 right-0 h-28 bg-gradient-to-b from-black/85 via-black/35 to-transparent pointer-events-none z-10" />
-                    <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
-
-                    {/* 5. TOP FLOATING REELS STATS BAR */}
-                    <div className="absolute top-6 left-6 right-6 flex items-center justify-between z-20 text-white">
-                      {/* Left: Indicator of reel progress */}
-                      <span className="text-[11px] font-mono font-black bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
-                        {activeReelIndex + 1} / {reelsList.length}
-                      </span>
-                      
-                      {/* Right heading */}
-                      <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
-                        <div className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
-                        <span className="text-[11.5px] font-black text-rose-300 font-sans">لنډه ويډيو (Shorts)</span>
-                      </div>
-                    </div>
-
-                    {/* 6. CONTROL BUTTONS IN THE BOTTOM RIGHT CORNER (د ويډیو لپاره کاپي، غږ او نور عمده تڼۍ په لاندې ښي اړخ کې) */}
-                    <div 
-                      className="absolute bottom-24 right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {/* Like / Heart Button (د ويډيو خوښول) */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleFavorite(activeReel.post.id);
-                        }}
-                        style={{ cursor: 'pointer' }}
-                        className="flex flex-col items-center group active:scale-90 transition"
-                        title="خوښ بټن"
-                      >
-                        <div className={`w-11.5 h-11.5 rounded-full border flex items-center justify-center backdrop-blur-md transition-all shadow-xl ${
-                          favoritePostIds.includes(activeReel.post.id)
-                            ? 'bg-rose-600/80 border-rose-500 scale-105'
-                            : 'bg-black/60 border-white/10 hover:border-rose-500 hover:scale-105 hover:bg-black/80'
-                        }`}>
-                          <Heart className={`w-5 h-5 transition duration-250 ${
-                            favoritePostIds.includes(activeReel.post.id) 
-                              ? 'text-white fill-white scale-110' 
-                              : 'text-slate-100 group-hover:text-rose-500 group-hover:scale-110'
-                          }`} />
-                        </div>
-                        <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
-                          {favoritePostIds.includes(activeReel.post.id) ? 'خوښ شو' : 'خوښول'}
-                        </span>
-                      </button>
-
-                      {/* Share button */}
-                      <button 
-                        onClick={handleShareReel}
-                        style={{ cursor: 'pointer' }}
-                        className="flex flex-col items-center group active:scale-90 transition"
-                        title="شریکول"
-                      >
-                        <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-indigo-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
-                          <Share2 className="w-5 h-5 text-slate-100 group-hover:text-indigo-400 group-hover:scale-110 transition duration-250" />
-                        </div>
-                        <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">شریک کړئ</span>
-                      </button>
-
-                      {/* Copy poetry text button */}
-                      <button 
-                        onClick={handleCopyReelText}
-                        style={{ cursor: 'pointer' }}
-                        className="flex flex-col items-center group active:scale-90 transition"
-                        title="شعر کاپي کړه"
-                      >
-                        <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-pink-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
-                          <Copy className="w-5 h-5 text-slate-100 group-hover:text-pink-400 group-hover:scale-110 transition duration-250" />
-                        </div>
-                        <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">کاپي کول</span>
-                      </button>
-
-                      {/* Mute/Volume Toggle */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (reelVideoRef.current) {
-                            const isM = !reelMuted;
-                            reelVideoRef.current.muted = isM;
-                            setReelMuted(isM);
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                        className="flex flex-col items-center group active:scale-95 transition"
-                        title={reelMuted ? "غږ فعال کړه" : "غږ پټ کړه"}
-                      >
-                        <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-indigo-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
-                          {reelMuted ? (
-                            <VolumeX className="w-5 h-5 text-rose-450 group-hover:scale-110 transition duration-250" />
-                          ) : (
-                            <Volume2 className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition duration-250" />
-                          )}
-                        </div>
-                        <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">{reelMuted ? "غږ فعالول" : "غږ پټول"}</span>
-                      </button>
-
-                      {/* Desktop Up Indicator (Previous video) */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePrevReel();
-                        }}
-                        style={{ cursor: 'pointer' }}
-                        className="hidden sm:flex flex-col items-center group active:scale-95 transition"
-                        title="مخکینی ویډیو"
-                      >
-                        <div className="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md hover:bg-white/10 transition shadow">
-                          <ChevronUp className="w-4.5 h-4.5 text-white animate-pulse" />
-                        </div>
-                      </button>
-
-                      {/* Desktop Down Indicator (Next video) */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleNextReel();
-                        }}
-                        style={{ cursor: 'pointer' }}
-                        className="hidden sm:flex flex-col items-center group active:scale-95 transition"
-                        title="بل ویډیو"
-                      >
-                        <div className="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md hover:bg-white/10 transition shadow">
-                          <ChevronDown className="w-4.5 h-4.5 text-white animate-pulse" />
-                        </div>
-                      </button>
-                    </div>
-
-                    {/* 7. BOTTOM POETRY OVERLAY CAPTION BLOCK */}
-                    <div className="absolute bottom-6 right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2">
-                      <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
-                        <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
-                          {feedData?.channelInfo?.title || 'پښتو شعرونه'}
-                        </span>
-                        <div className="w-6.5 h-6.5 rounded-full overflow-hidden border border-white/20 shadow-md">
-                          <img 
-                            src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
-                            alt="avatar" 
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
+                                setReelPlaying(true);
+                              }
+                            }}
+                            onTimeUpdate={() => {
+                              if (reelVideoRef.current) {
+                                const cur = reelVideoRef.current.currentTime;
+                                const dur = reelVideoRef.current.duration || 1;
+                                setReelProgress((cur / dur) * 100);
+                              }
+                            }}
+                            className="w-full h-full object-contain cursor-pointer"
                           />
                         </div>
-                      </div>
 
-                      {/* Poetry text message body */}
-                      <div className="pointer-events-auto mt-1 pr-1 text-right flex flex-col gap-0.5" style={{ direction: 'rtl' }}>
-                        <p className="text-white text-[12.5px] sm:text-[13.5px] leading-relaxed drop-shadow font-sans font-semibold break-words text-right line-clamp-2 select-text whitespace-pre-line">
-                          {activeReel.post.text || 'پښتو شعر د کتنې لپاره...'}
-                        </p>
-                        {(activeReel.post.text && (activeReel.post.text.length > 50 || activeReel.post.text.includes('\n'))) ? (
-                          <button
+                        {/* 2. LOADING SPIN OVERLAY */}
+                        {reelLoading && (
+                          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-25 pointer-events-none">
+                            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        )}
+
+                        {/* 3. BIG PLAY ICON OVERLAY WHEN PAUSED */}
+                        {!reelPlaying && !reelLoading && (
+                          <div 
+                            onClick={() => {
+                              if (reelVideoRef.current) {
+                                pauseGlobalAudio();
+                                const playPromise = reelVideoRef.current.play();
+                                if (playPromise !== undefined) {
+                                  playPromise.catch((err) => {
+                                    if (err.name !== 'AbortError') {
+                                      console.warn("Reel play failed on overlay click:", err);
+                                    }
+                                  });
+                                }
+                                setReelPlaying(true);
+                              }
+                            }}
+                            className="absolute inset-0 bg-black/35 flex items-center justify-center z-15 cursor-pointer animate-fade-in"
+                          >
+                            <div className="bg-white/10 hover:bg-white/25 backdrop-blur-md p-5 rounded-full border border-white/20 transform hover:scale-110 active:scale-95 transition text-white shadow-lg">
+                              <Play className="w-9 h-9 text-white fill-white translate-x-0.5" />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 4. LIGHTNING GRADIENT OVERLAYS */}
+                        <div className="absolute top-0 left-0 right-0 h-28 bg-gradient-to-b from-black/85 via-black/35 to-transparent pointer-events-none z-10" />
+                        <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
+
+                        {/* 5. TOP FLOATING REELS STATS BAR */}
+                        <div className="absolute top-6 left-6 right-6 flex items-center justify-between z-20 text-white">
+                          {/* Left: Indicator of reel progress */}
+                          <span className="text-[11px] font-mono font-black bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
+                            {activeReelIndex + 1} / {reelsList.length}
+                          </span>
+                          
+                          {/* Right heading */}
+                          <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
+                            <div className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+                            <span className="text-[11.5px] font-black text-rose-300 font-sans">لنډه ويډيو (Shorts)</span>
+                          </div>
+                        </div>
+
+                        {/* 6. CONTROL BUTTONS IN THE BOTTOM RIGHT CORNER (د ويډیو لپاره کاپي، غږ او نور عمده تڼۍ په لاندې ښي اړخ کې) */}
+                        <div 
+                          className="absolute bottom-24 right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {/* Like / Heart Button (د ويډيو خوښول) */}
+                          <button 
                             onClick={(e) => {
                               e.stopPropagation();
-                              setOverlayActiveText(activeReel.post.text);
-                              markPostAsRead(activeReel.post.id);
+                              toggleFavorite(activeReel.post.id);
                             }}
-                            className="bg-black/45 hover:bg-black/65 px-2.5 py-0.5 rounded-lg text-[10.5px] font-black text-indigo-300 hover:text-indigo-200 text-right cursor-pointer self-start select-none w-max border border-white/10 shadow-md mt-1 transition pointer-events-auto"
+                            style={{ cursor: 'pointer' }}
+                            className="flex flex-col items-center group active:scale-90 transition"
+                            title="خوښ بټن"
                           >
-                            نور ولولئ
+                            <div className={`w-11.5 h-11.5 rounded-full border flex items-center justify-center backdrop-blur-md transition-all shadow-xl ${
+                              favoritePostIds.includes(activeReel.post.id)
+                                ? 'bg-rose-600/80 border-rose-500 scale-105'
+                                : 'bg-black/60 border-white/10 hover:border-rose-500 hover:scale-105 hover:bg-black/80'
+                            }`}>
+                              <Heart className={`w-5 h-5 transition duration-250 ${
+                                favoritePostIds.includes(activeReel.post.id) 
+                                  ? 'text-white fill-white scale-110' 
+                                  : 'text-slate-100 group-hover:text-rose-500 group-hover:scale-110'
+                              }`} />
+                            </div>
+                            <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
+                              {favoritePostIds.includes(activeReel.post.id) ? 'خوښ شو' : 'خوښول'}
+                            </span>
                           </button>
-                        ) : null}
-                      </div>
 
-                      {/* Views count and date indicator */}
-                      <div className="flex items-center gap-3 justify-end text-[9px] text-slate-350 pointer-events-none select-none drop-shadow mt-1">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-indigo-400" />
-                          {activeReel.post.timeLabel || 'وروستی'}
-                        </span>
-                        <span className="flex items-center gap-1 font-mono">
-                          <Eye className="w-3.5 h-3.5 text-indigo-400" />
-                          {activeReel.post.views || '0'} كتنې
-                        </span>
-                      </div>
-                    </div>
+                          {/* Share button */}
+                          <button 
+                            onClick={handleShareReel}
+                            style={{ cursor: 'pointer' }}
+                            className="flex flex-col items-center group active:scale-90 transition"
+                            title="شریکول"
+                          >
+                            <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-indigo-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
+                              <Share2 className="w-5 h-5 text-slate-100 group-hover:text-indigo-400 group-hover:scale-110 transition duration-250" />
+                            </div>
+                            <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">شریک کړئ</span>
+                          </button>
 
-                    {/* 8. MINI RUNNING TIMELINE PROGRESS TRACKER BAR */}
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-20 pointer-events-none">
-                      <div 
-                        className="h-full bg-linear-to-r from-indigo-500 via-pink-500 to-rose-500 transition-all duration-100" 
-                        style={{ width: `${reelProgress}%` }}
-                      />
-                    </div>
+                          {/* Copy poetry text button */}
+                          <button 
+                            onClick={handleCopyReelText}
+                            style={{ cursor: 'pointer' }}
+                            className="flex flex-col items-center group active:scale-90 transition"
+                            title="شعر کاپي کړه"
+                          >
+                            <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-pink-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
+                              <Copy className="w-5 h-5 text-slate-100 group-hover:text-pink-400 group-hover:scale-110 transition duration-250" />
+                            </div>
+                            <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">کاپي کول</span>
+                          </button>
+
+                          {/* Mute/Volume Toggle */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (reelVideoRef.current) {
+                                const isM = !reelMuted;
+                                reelVideoRef.current.muted = isM;
+                                setReelMuted(isM);
+                              }
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className="flex flex-col items-center group active:scale-95 transition"
+                            title={reelMuted ? "غږ فعال کړه" : "غږ پټ کړه"}
+                          >
+                            <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-indigo-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
+                              {reelMuted ? (
+                                <VolumeX className="w-5 h-5 text-rose-450 group-hover:scale-110 transition duration-250" />
+                              ) : (
+                                <Volume2 className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition duration-250" />
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">{reelMuted ? "غږ فعالول" : "غږ پټول"}</span>
+                          </button>
+
+                          {/* Desktop Up Indicator (Previous video) */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePrevReel();
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className="hidden sm:flex flex-col items-center group active:scale-95 transition"
+                            title="مخکینی ویډیو"
+                          >
+                            <div className="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md hover:bg-white/10 transition shadow">
+                              <ChevronUp className="w-4.5 h-4.5 text-white animate-pulse" />
+                            </div>
+                          </button>
+
+                          {/* Desktop Down Indicator (Next video) */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleNextReel();
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className="hidden sm:flex flex-col items-center group active:scale-95 transition"
+                            title="بل ویډیو"
+                          >
+                            <div className="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md hover:bg-white/10 transition shadow">
+                              <ChevronDown className="w-4.5 h-4.5 text-white animate-pulse" />
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* 7. BOTTOM POETRY OVERLAY CAPTION BLOCK */}
+                        <div className="absolute bottom-6 right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2">
+                          <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
+                            <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
+                              {feedData?.channelInfo?.title || 'پښتو شعرونه'}
+                            </span>
+                            <div className="w-6.5 h-6.5 rounded-full overflow-hidden border border-white/20 shadow-md">
+                              <img 
+                                src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
+                                alt="avatar" 
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Poetry text message body */}
+                          <div className="pointer-events-auto mt-1 pr-1 text-right flex flex-col gap-0.5" style={{ direction: 'rtl' }}>
+                            <p className="text-white text-[12.5px] sm:text-[13.5px] leading-relaxed drop-shadow font-sans font-semibold break-words text-right line-clamp-2 select-text whitespace-pre-line">
+                              {activeReel.post.text || 'پښتو شعر د کتنې لپاره...'}
+                            </p>
+                            {(activeReel.post.text && (activeReel.post.text.length > 50 || activeReel.post.text.includes('\n'))) ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOverlayActiveText(activeReel.post.text);
+                                  markPostAsRead(activeReel.post.id);
+                                }}
+                                className="bg-black/45 hover:bg-black/65 px-2.5 py-0.5 rounded-lg text-[10.5px] font-black text-indigo-300 hover:text-indigo-200 text-right cursor-pointer self-start select-none w-max border border-white/10 shadow-md mt-1 transition pointer-events-auto"
+                              >
+                                نور ولولئ
+                              </button>
+                            ) : null}
+                          </div>
+
+                          {/* Views count and date indicator */}
+                          <div className="flex items-center gap-3 justify-end text-[9px] text-slate-350 pointer-events-none select-none drop-shadow mt-1">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                              {activeReel.post.timeLabel || 'وروستی'}
+                            </span>
+                            <span className="flex items-center gap-1 font-mono">
+                              <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                              {activeReel.post.views || '0'} كتنې
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 8. MINI RUNNING TIMELINE PROGRESS TRACKER BAR */}
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-20 pointer-events-none">
+                          <div 
+                            className="h-full bg-linear-to-r from-indigo-500 via-pink-500 to-rose-500 transition-all duration-100" 
+                            style={{ width: `${reelProgress}%` }}
+                          />
+                        </div>
+                      </motion.div>
+                    </AnimatePresence>
                   </div>
                 </div>
               );
@@ -4021,171 +4673,203 @@ export default function App() {
 
                   {/* Complete black background beautiful fullscreen theater overlay */}
                   <div className="w-full h-full relative bg-black flex items-center justify-center overflow-hidden">
-                    
-                    {/* 1. IMMERSIVE PHOTO ELEMENT */}
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/95">
-                      <img
-                        src={activePhotoReel.photoUrl}
-                        alt="photo reel display"
-                        className="w-full h-full object-contain select-none max-h-screen"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-
-                    {/* 2. LIGHTNING GRADIENT OVERLAYS */}
-                    <div className="absolute top-0 left-0 right-0 h-28 bg-gradient-to-b from-black/85 via-black/35 to-transparent pointer-events-none z-10" />
-                    <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
-
-                    {/* 3. TOP FLOATING STATUS BAR */}
-                    <div className="absolute top-6 left-6 right-6 flex items-center justify-between z-20 text-white">
-                      {/* Left: Indicator of photo progress */}
-                      <span className="text-[11px] font-mono font-black bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
-                        {activePhotoReelIndex + 1} / {photoReelsList.length}
-                      </span>
-                      
-                      {/* Right heading */}
-                      <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
-                        <div className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                        <span className="text-[11.5px] font-black text-indigo-300 font-sans">ښکلي انځورونه (Swipe)</span>
-                      </div>
-                    </div>
-
-                    {/* 4. CONTROL BUTTONS IN THE BOTTOM RIGHT CORNER */}
-                    <div 
-                      className="absolute bottom-24 right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {/* Like / Heart Button (د انځور خوښول) */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleFavorite(activePhotoReel.post.id);
+                    <AnimatePresence initial={false} custom={photoSwipeDirection}>
+                      <motion.div
+                        key={activePhotoReelIndex}
+                        custom={photoSwipeDirection}
+                        variants={{
+                          enter: (dir) => ({
+                            y: dir === 'next' ? '100%' : '-100%',
+                            opacity: 0,
+                            scale: 0.96
+                          }),
+                          center: {
+                            y: 0,
+                            opacity: 1,
+                            scale: 1
+                          },
+                          exit: (dir) => ({
+                            y: dir === 'next' ? '-100%' : '100%',
+                            opacity: 0,
+                            scale: 0.96
+                          })
                         }}
-                        style={{ cursor: 'pointer' }}
-                        className="flex flex-col items-center group active:scale-90 transition"
-                        title="خوښ بټن"
-                      >
-                        <div className={`w-11.5 h-11.5 rounded-full border flex items-center justify-center backdrop-blur-md transition-all shadow-xl ${
-                          favoritePostIds.includes(activePhotoReel.post.id)
-                            ? 'bg-rose-600/80 border-rose-500 scale-105'
-                            : 'bg-black/60 border-white/10 hover:border-rose-500 hover:scale-105 hover:bg-black/80'
-                        }`}>
-                          <Heart className={`w-5 h-5 transition duration-250 ${
-                            favoritePostIds.includes(activePhotoReel.post.id) 
-                              ? 'text-white fill-white scale-110' 
-                              : 'text-slate-100 group-hover:text-rose-500 group-hover:scale-110'
-                          }`} />
-                        </div>
-                        <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
-                          {favoritePostIds.includes(activePhotoReel.post.id) ? 'خوښ شو' : 'خوښول'}
-                        </span>
-                      </button>
-
-                      {/* Share button */}
-                      <button 
-                        onClick={handleSharePhotoReel}
-                        style={{ cursor: 'pointer' }}
-                        className="flex flex-col items-center group active:scale-90 transition"
-                        title="شریکول"
-                      >
-                        <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-indigo-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
-                          <Share2 className="w-5 h-5 text-slate-100 group-hover:text-indigo-400 group-hover:scale-110 transition duration-250" />
-                        </div>
-                        <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">شریک کړئ</span>
-                      </button>
-
-                      {/* Copy poetry text button */}
-                      <button 
-                        onClick={handleCopyPhotoReelText}
-                        style={{ cursor: 'pointer' }}
-                        className="flex flex-col items-center group active:scale-90 transition"
-                        title="شعر کاپي کړه"
-                      >
-                        <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-pink-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
-                          <Copy className="w-5 h-5 text-slate-100 group-hover:text-pink-400 group-hover:scale-110 transition duration-250" />
-                        </div>
-                        <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">کاپي کول</span>
-                      </button>
-
-                      {/* Desktop Up Indicator (Previous image) */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePrevPhotoReel();
+                        initial="enter"
+                        animate="center"
+                        exit="exit"
+                        transition={{
+                          type: "spring",
+                          stiffness: 240,
+                          damping: 26,
+                          mass: 0.8
                         }}
-                        style={{ cursor: 'pointer' }}
-                        className="hidden sm:flex flex-col items-center group active:scale-95 transition"
-                        title="مخکینی انځور"
+                        className="w-full h-full absolute inset-0 flex items-center justify-center overflow-hidden bg-black"
                       >
-                        <div className="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md hover:bg-white/10 transition shadow">
-                          <ChevronUp className="w-4.5 h-4.5 text-white animate-pulse" />
-                        </div>
-                      </button>
-
-                      {/* Desktop Down Indicator (Next image) */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleNextPhotoReel();
-                        }}
-                        style={{ cursor: 'pointer' }}
-                        className="hidden sm:flex flex-col items-center group active:scale-95 transition"
-                        title="بل انځور"
-                      >
-                        <div className="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md hover:bg-white/10 transition shadow">
-                          <ChevronDown className="w-4.5 h-4.5 text-white animate-pulse" />
-                        </div>
-                      </button>
-                    </div>
-
-                    {/* 5. BOTTOM POETRY OVERLAY CAPTION BLOCK */}
-                    <div className="absolute bottom-6 right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2">
-                      <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
-                        <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
-                          {feedData?.channelInfo?.title || 'پښتو شعرونه'}
-                        </span>
-                        <div className="w-6.5 h-6.5 rounded-full overflow-hidden border border-white/20 shadow-md">
-                          <img 
-                            src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
-                            alt="avatar" 
-                            className="w-full h-full object-cover"
+                        {/* 1. IMMERSIVE PHOTO ELEMENT */}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/95">
+                          <img
+                            src={cachedActivePhotoReelUrl || activePhotoReel.photoUrl}
+                            alt="photo reel display"
+                            className="w-full h-full object-contain select-none max-h-screen"
                             referrerPolicy="no-referrer"
                           />
                         </div>
-                      </div>
 
-                      {/* Poetry text message body */}
-                      <div className="pointer-events-auto mt-1 pr-1 text-right flex flex-col gap-0.5" style={{ direction: 'rtl' }}>
-                        <p className="text-white text-[12.5px] sm:text-[13.5px] leading-relaxed drop-shadow font-sans font-semibold break-words text-right line-clamp-2 select-text whitespace-pre-line">
-                          {activePhotoReel.post.text || 'پښتو شعر د کتنې لپاره...'}
-                        </p>
-                        {(activePhotoReel.post.text && (activePhotoReel.post.text.length > 50 || activePhotoReel.post.text.includes('\n'))) ? (
-                          <button
+                        {/* 2. LIGHTNING GRADIENT OVERLAYS */}
+                        <div className="absolute top-0 left-0 right-0 h-28 bg-gradient-to-b from-black/85 via-black/35 to-transparent pointer-events-none z-10" />
+                        <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
+
+                        {/* 3. TOP FLOATING STATUS BAR */}
+                        <div className="absolute top-6 left-6 right-6 flex items-center justify-between z-20 text-white">
+                          {/* Left: Indicator of photo progress */}
+                          <span className="text-[11px] font-mono font-black bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
+                            {activePhotoReelIndex + 1} / {photoReelsList.length}
+                          </span>
+                          
+                          {/* Right heading */}
+                          <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
+                            <div className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                            <span className="text-[11.5px] font-black text-indigo-300 font-sans">ښکلي انځورونه (Swipe)</span>
+                          </div>
+                        </div>
+
+                        {/* 4. CONTROL BUTTONS IN THE BOTTOM RIGHT CORNER */}
+                        <div 
+                          className="absolute bottom-24 right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {/* Like / Heart Button (د انځور خوښول) */}
+                          <button 
                             onClick={(e) => {
                               e.stopPropagation();
-                              setOverlayActiveText(activePhotoReel.post.text);
-                              markPostAsRead(activePhotoReel.post.id);
+                              toggleFavorite(activePhotoReel.post.id);
                             }}
-                            className="bg-black/45 hover:bg-black/65 px-2.5 py-0.5 rounded-lg text-[10.5px] font-black text-indigo-300 hover:text-indigo-200 text-right cursor-pointer self-start select-none w-max border border-white/10 shadow-md mt-1 transition pointer-events-auto"
+                            style={{ cursor: 'pointer' }}
+                            className="flex flex-col items-center group active:scale-90 transition"
+                            title="خوښ بټن"
                           >
-                            نور ولولئ
+                            <div className={`w-11.5 h-11.5 rounded-full border flex items-center justify-center backdrop-blur-md transition-all shadow-xl ${
+                              favoritePostIds.includes(activePhotoReel.post.id)
+                                ? 'bg-rose-600/80 border-rose-500 scale-105'
+                                : 'bg-black/60 border-white/10 hover:border-rose-500 hover:scale-105 hover:bg-black/80'
+                            }`}>
+                              <Heart className={`w-5 h-5 transition duration-250 ${
+                                favoritePostIds.includes(activePhotoReel.post.id) 
+                                  ? 'text-white fill-white scale-110' 
+                                  : 'text-slate-100 group-hover:text-rose-500 group-hover:scale-110'
+                              }`} />
+                            </div>
+                            <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
+                              {favoritePostIds.includes(activePhotoReel.post.id) ? 'خوښ شو' : 'خوښول'}
+                            </span>
                           </button>
-                        ) : null}
-                      </div>
 
-                      {/* Views count and date indicator */}
-                      <div className="flex items-center gap-3 justify-end text-[9px] text-slate-350 pointer-events-none select-none drop-shadow mt-1">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-indigo-400" />
-                          {activePhotoReel.post.timeLabel || 'وروستی'}
-                        </span>
-                        <span className="flex items-center gap-1 font-mono">
-                          <Eye className="w-3.5 h-3.5 text-indigo-400" />
-                          {activePhotoReel.post.views || '0'} كتنې
-                        </span>
-                      </div>
-                    </div>
+                          {/* Share button */}
+                          <button 
+                            onClick={handleSharePhotoReel}
+                            style={{ cursor: 'pointer' }}
+                            className="flex flex-col items-center group active:scale-90 transition"
+                            title="شریکول"
+                          >
+                            <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-indigo-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
+                              <Share2 className="w-5 h-5 text-slate-100 group-hover:text-indigo-400 group-hover:scale-110 transition duration-250" />
+                            </div>
+                            <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">شریک کړئ</span>
+                          </button>
 
+                          {/* Copy poetry text button */}
+                          <button 
+                            onClick={handleCopyPhotoReelText}
+                            style={{ cursor: 'pointer' }}
+                            className="flex flex-col items-center group active:scale-90 transition"
+                            title="شعر کاپي کړه"
+                          >
+                            <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-pink-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
+                              <Copy className="w-5 h-5 text-slate-100 group-hover:text-pink-400 group-hover:scale-110 transition duration-250" />
+                            </div>
+                            <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">کاپي کول</span>
+                          </button>
+
+                          {/* Desktop Up Indicator (Previous image) */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePrevPhotoReel();
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className="hidden sm:flex flex-col items-center group active:scale-95 transition"
+                            title="مخکینی انځور"
+                          >
+                            <div className="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md hover:bg-white/10 transition shadow">
+                              <ChevronUp className="w-4.5 h-4.5 text-white animate-pulse" />
+                            </div>
+                          </button>
+
+                          {/* Desktop Down Indicator (Next image) */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleNextPhotoReel();
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className="hidden sm:flex flex-col items-center group active:scale-95 transition"
+                            title="بل انځور"
+                          >
+                            <div className="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md hover:bg-white/10 transition shadow">
+                              <ChevronDown className="w-4.5 h-4.5 text-white animate-pulse" />
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* 5. BOTTOM POETRY OVERLAY CAPTION BLOCK */}
+                        <div className="absolute bottom-6 right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2">
+                          <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
+                            <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
+                              {feedData?.channelInfo?.title || 'پښتو شعرونه'}
+                            </span>
+                            <div className="w-6.5 h-6.5 rounded-full overflow-hidden border border-white/20 shadow-md">
+                              <img 
+                                src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
+                                alt="avatar" 
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Poetry text message body */}
+                          <div className="pointer-events-auto mt-1 pr-1 text-right flex flex-col gap-0.5" style={{ direction: 'rtl' }}>
+                            <p className="text-white text-[12.5px] sm:text-[13.5px] leading-relaxed drop-shadow font-sans font-semibold break-words text-right line-clamp-2 select-text whitespace-pre-line">
+                              {activePhotoReel.post.text || 'پښتو شعر د کتنې لپاره...'}
+                            </p>
+                            {(activePhotoReel.post.text && (activePhotoReel.post.text.length > 50 || activePhotoReel.post.text.includes('\n'))) ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOverlayActiveText(activePhotoReel.post.text);
+                                  markPostAsRead(activePhotoReel.post.id);
+                                }}
+                                className="bg-black/45 hover:bg-black/65 px-2.5 py-0.5 rounded-lg text-[10.5px] font-black text-indigo-300 hover:text-indigo-200 text-right cursor-pointer self-start select-none w-max border border-white/10 shadow-md mt-1 transition pointer-events-auto"
+                              >
+                                نور ولولئ
+                              </button>
+                            ) : null}
+                          </div>
+
+                          {/* Views count and date indicator */}
+                          <div className="flex items-center gap-3 justify-end text-[9px] text-slate-350 pointer-events-none select-none drop-shadow mt-1">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                              {activePhotoReel.post.timeLabel || 'وروستی'}
+                            </span>
+                            <span className="flex items-center gap-1 font-mono">
+                              <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                              {activePhotoReel.post.views || '0'} كتنې
+                            </span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </AnimatePresence>
                   </div>
                 </div>
               );
@@ -4301,7 +4985,13 @@ export default function App() {
                         return (
                           <div
                             key={post.id}
-                            onClick={() => setSelectedPost(post)}
+                            onClick={() => {
+                              const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                              if (currentScroll > 0) {
+                                detailScrollPosRef.current = currentScroll;
+                              }
+                              setSelectedPost(post);
+                            }}
                             style={{ cursor: 'pointer' }}
                             className={`${isDark ? 'bg-slate-950/40 border-slate-900 hover:bg-slate-900/60' : 'bg-white border-slate-201 hover:bg-slate-50 shadow-xs'} border p-3.5 rounded-xl flex items-center gap-3.5 transition group select-none text-right ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45 hover:opacity-100 dark:hover:opacity-100 transition-opacity duration-300' : ''}`}
                           >
@@ -4309,9 +4999,8 @@ export default function App() {
                           {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
                             post.photoUrl && (!post.photoUrls || post.photoUrls.length <= 1) ? (
                               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                                <img
-                                  src={post.photoUrl || null}
-                                  referrerPolicy="no-referrer"
+                                <CachedImage
+                                  src={post.photoUrl || ''}
                                   className="w-full h-full object-cover"
                                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                 />
@@ -4344,14 +5033,13 @@ export default function App() {
                           <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5">
                             <div>
                               <div className="flex items-center gap-1.5 text-[9px] text-slate-500 mb-1 font-sans">
-                                <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold text-white ${tc.bg}`}>#{post.id}</span>
                                 {isRead && (
                                   <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8px] font-bold flex items-center gap-0.5 border border-emerald-500/10 whitespace-nowrap scale-[0.85] origin-right">
                                     <Check className="w-2.5 h-2.5 text-emerald-500" />
                                     <span>لوستل شوی</span>
                                   </span>
                                 )}
-                                <span>{post.timeLabel || 'Recent'}</span>
+                                <span>{getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}</span>
                               </div>
                               <BeautifulTelegramText 
                                 text={getPostTextWithFallback(post)}
@@ -4901,13 +5589,18 @@ export default function App() {
 
                       {/* Content Info */}
                       <div 
-                        onClick={() => setSelectedPost(fPost)}
+                        onClick={() => {
+                          const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                          if (currentScroll > 0) {
+                            detailScrollPosRef.current = currentScroll;
+                          }
+                          setSelectedPost(fPost);
+                        }}
                         style={{ cursor: 'pointer' }}
                         className="absolute inset-x-0 bottom-0 z-5 flex flex-col justify-end p-4 text-right space-y-1"
                       >
                         <div className="flex items-center gap-2 self-end justify-end text-[10px] text-slate-300 font-sans">
-                          <span>{fPost.timeLabel || 'وروستی'}</span>
-                          <span className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-bold text-white ${tc.bg}`}>#{fPost.id}</span>
+                          <span>{getRelativeTimeInPashto(fPost.date, fPost.timeLabel || 'وروستی')}</span>
                         </div>
                         <h4 className="text-sm sm:text-base font-black font-sans leading-snug line-clamp-2 text-right">
                           {getPostTextWithFallback(fPost)}
@@ -5036,16 +5729,98 @@ export default function App() {
 
             </div>
 
-            {/* 3. CATEGORY FILTER TABS (د موضوع کټګوري ښکلي ټابونه) */}
-            <div className="relative overflow-hidden rounded-2xl p-1 shadow-sm border border-slate-500/10" style={{ direction: 'rtl' }}>
-              <div className="flex gap-2 overflow-x-auto pb-1.5 pt-1 scrollbar-none items-center">
+            {/* 2.5. BEAUTIFUL DYNAMIC INFO & CONTACT NAVIGATION LINKS (زمونږ په اړه او تماس بټنې) */}
+            <div id="dewa-quick-info-section" className="grid grid-cols-2 gap-3" style={{ direction: 'rtl' }}>
+              {/* زمونږ په اړه مینو د غوړ پرمختللو حرکتونو سره */}
+              <motion.div
+                id="btn-about-us-home"
+                whileHover={{ scale: 1.025, y: -2 }}
+                whileTap={{ scale: 0.975 }}
+                onClick={() => {
+                  setIsAboutPageOpen(true);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                style={{ cursor: 'pointer' }}
+                className={`relative overflow-hidden rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between h-20 sm:h-22 border transition-all duration-300 group select-none shadow-[0_5px_15px_rgba(0,0,0,0.02)] ${
+                  isDark 
+                    ? 'bg-slate-900/40 border-indigo-500/20 text-white hover:border-indigo-400/40' 
+                    : 'bg-white border-indigo-100 text-slate-900 hover:border-indigo-200 shadow-[0_4px_12px_rgba(79,70,229,0.04)]'
+                }`}
+              >
+                {/* Decorative glowing gradient backdrop */}
+                <div className={`absolute -right-4 -top-4 w-16 h-16 rounded-full bg-gradient-to-br ${tc.gradient} opacity-10 blur-xl group-hover:scale-150 transition-all duration-500`} />
+                <div className="absolute left-3 bottom-2 text-indigo-500/10 pointer-events-none group-hover:text-indigo-500/20 transition duration-300">
+                  <Info className="w-11 h-11 shrink-0" />
+                </div>
+
+                <div className="flex items-center justify-between w-full z-10">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-300 ${isDark ? 'bg-indigo-500/15 text-indigo-400 group-hover:bg-indigo-500/20' : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70'}`}>
+                    <Info className="w-4.5 h-4.5" />
+                  </div>
+                  <span className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full ${isDark ? 'bg-indigo-950/30 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>موږ وپېژنئ</span>
+                </div>
+
+                <div className="text-right z-10 pt-1">
+                  <h4 className="text-xs sm:text-[13.5px] font-black tracking-tight font-sans text-right leading-none group-hover:text-indigo-500 transition-colors">
+                    زموږ په اړه معلومات
+                  </h4>
+                  <p className="text-[8px] sm:text-[9px] text-slate-400 font-medium mt-1 leading-none">
+                    هدفونه، پېژندنه او زموږ کړنې
+                  </p>
+                </div>
+              </motion.div>
+
+              {/* زمونږ سره اړیکه مینو د غوړ پرمختللو حرکتونو سره */}
+              <motion.div
+                id="btn-contact-us-home"
+                whileHover={{ scale: 1.025, y: -2 }}
+                whileTap={{ scale: 0.975 }}
+                onClick={() => {
+                  setIsContactPageOpen(true);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                style={{ cursor: 'pointer' }}
+                className={`relative overflow-hidden rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between h-20 sm:h-22 border transition-all duration-300 group select-none shadow-[0_5px_15px_rgba(0,0,0,0.02)] ${
+                  isDark 
+                    ? 'bg-slate-900/40 border-violet-500/20 text-white hover:border-violet-400/40' 
+                    : 'bg-white border-violet-100 text-slate-900 hover:border-violet-200 shadow-[0_4px_12px_rgba(139,92,246,0.04)]'
+                }`}
+              >
+                {/* Decorative glowing gradient backdrop */}
+                <div className="absolute -right-4 -top-4 w-16 h-16 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 opacity-10 blur-xl group-hover:scale-150 transition-all duration-500" />
+                <div className="absolute left-3 bottom-2 text-violet-500/10 pointer-events-none group-hover:text-violet-500/25 transition duration-300">
+                  <Mail className="w-11 h-11 shrink-0" />
+                </div>
+
+                <div className="flex items-center justify-between w-full z-10">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors duration-300 ${isDark ? 'bg-violet-500/15 text-violet-400 group-hover:bg-violet-500/20' : 'bg-violet-50 text-violet-600 group-hover:bg-violet-100/70'}`}>
+                    <Mail className="w-4.5 h-4.5" />
+                  </div>
+                  <span className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full ${isDark ? 'bg-violet-950/30 text-violet-300' : 'bg-violet-50 text-violet-600'}`}>پوښتنې او غبرګون</span>
+                </div>
+
+                <div className="text-right z-10 pt-1">
+                  <h4 className="text-xs sm:text-[13.5px] font-black tracking-tight font-sans text-right leading-none group-hover:text-violet-500 transition-colors">
+                    زموږ سره رسمي اړیکه
+                  </h4>
+                  <p className="text-[8px] sm:text-[9px] text-slate-400 font-medium mt-1 leading-none">
+                    بریښنالیک او غونډې
+                  </p>
+                </div>
+              </motion.div>
+            </div>
+
+            {/* 3. CATEGORY FILTER TABS (د موضوع کټګوري ښکلي افقي ريسايکلر ويو) */}
+            <div className="relative overflow-visible" style={{ direction: 'rtl' }}>
+              <div className="flex gap-2.5 text-right relative overflow-x-auto py-4 px-2 scrollbar-none items-center snap-x snap-mandatory -my-2.5">
                 {[
-                  { id: 'all', label: 'ټول', icon: Layers },
-                  { id: 'writings', label: 'شعرونه', icon: FileText },
-                  { id: 'audio', label: 'غږیزې', icon: Music },
-                  { id: 'videos', label: 'ویډیوګانې', icon: Video },
-                  { id: 'images', label: 'انځورونه', icon: ImageIcon },
-                  { id: 'pdf', label: 'کتابونه', icon: BookOpen },
+                  { id: 'all', label: 'ټول', icon: Layers, activeClass: 'cat-btn-all-active' },
+                  { id: 'writings_plain', label: 'ليکنې', icon: FileText, activeClass: 'cat-btn-writings-active' },
+                  { id: 'poems', label: 'شعرونه', icon: Feather, activeClass: 'cat-btn-poems-active' },
+                  { id: 'videos', label: 'ويډيويي', icon: Video, activeClass: 'cat-btn-videos-active' },
+                  { id: 'audio', label: 'غږيز', icon: Music, activeClass: 'cat-btn-audio-active' },
+                  { id: 'pdf', label: 'کتابونه', icon: BookOpen, activeClass: 'cat-btn-pdf-active' },
+                  { id: 'images', label: 'انځورونه', icon: ImageIcon, activeClass: 'cat-btn-images-active' },
                 ].map((cat) => {
                   const CatIcon = cat.icon;
                   const isActive = selectedCategory === cat.id;
@@ -5057,14 +5832,14 @@ export default function App() {
                         setActiveFavoriteFilter(null);
                       }}
                       style={{ cursor: 'pointer' }}
-                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition duration-200 select-none border whitespace-nowrap active:scale-95 ${
+                      className={`snap-center flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12.5px] font-black transition-all duration-300 select-none border whitespace-nowrap active:scale-[0.96] ${
                         isActive 
-                          ? `bg-linear-to-b ${tc.gradient} text-white border-transparent shadow relative z-10`
-                          : `${isDark ? 'bg-slate-900/60 hover:bg-slate-800 border-slate-800 text-slate-305' : 'bg-slate-50 hover:bg-slate-100 border-slate-205 text-slate-707'}`
+                          ? `${cat.activeClass} text-white border-transparent transform scale-[1.04]`
+                          : `${isDark ? 'bg-slate-900/60 hover:bg-slate-800 border-slate-800/70 text-slate-300 hover:text-white shadow-xs' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-950 shadow-xs'}`
                       }`}
                     >
-                      <CatIcon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : tc.text}`} />
-                      <span>{cat.label}</span>
+                      <CatIcon className={`w-4 h-4 transition-transform duration-300 ${isActive ? 'text-white scale-110 rotate-3' : isDark ? 'text-slate-450' : 'text-slate-500'}`} />
+                      <span className="font-sans tracking-tight">{cat.label}</span>
                     </button>
                   );
                 })}
@@ -5222,6 +5997,12 @@ export default function App() {
                   `}>
                     {homePosts.map((post) => {
                       const handleClick = () => {
+                        // Synchronously capture the listing scroll position precisely before navigating
+                        const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                        if (currentScroll > 0) {
+                          detailScrollPosRef.current = currentScroll;
+                        }
+
                         const hasVideo = post.hasVideo || post.videoUrl || (post.videoList && post.videoList.length > 0);
                         const hasImage = post.photoUrl || (post.photoUrls && post.photoUrls.length > 0);
                         
@@ -5259,9 +6040,8 @@ export default function App() {
                             {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
                               post.photoUrl ? (
                                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                                  <img
-                                    src={post.photoUrl || null}
-                                    referrerPolicy="no-referrer"
+                                  <CachedImage
+                                    src={post.photoUrl || ''}
                                     alt="thumb"
                                     className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
                                   />
@@ -5300,7 +6080,6 @@ export default function App() {
                               <div>
                                 <div className="flex items-center justify-between w-full mb-1.5 text-[10px] text-slate-400 font-sans" style={{ direction: 'rtl' }}>
                                   <div className="flex items-center gap-2">
-                                    <span className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-bold text-white ${tc.bg}`}>#{post.id}</span>
                                     {isRead && (
                                       <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8.5px] font-bold flex items-center gap-0.5 border border-emerald-500/10 whitespace-nowrap">
                                         <Check className="w-2.5 h-2.5 text-emerald-500" />
@@ -5309,25 +6088,42 @@ export default function App() {
                                     )}
                                     <span className="flex items-center gap-1">
                                       <Clock className="w-3 h-3 text-slate-550" />
-                                      {post.timeLabel || 'وروستی'}
+                                      {getRelativeTimeInPashto(post.date, post.timeLabel || 'وروستی')}
                                     </span>
                                   </div>
                                   
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleFavorite(post.id);
-                                    }}
-                                    className={`focus:outline-hidden p-1.5 rounded-lg transition-all transform hover:scale-105 active:scale-95 ${
-                                      favoritePostIds.includes(post.id)
-                                        ? 'text-rose-500 bg-rose-500/10'
-                                        : 'text-slate-400 hover:text-rose-400 hover:bg-slate-500/10'
-                                    }`}
-                                    style={{ cursor: 'pointer' }}
-                                    title="خوښ کړل"
-                                  >
-                                    <Heart className={`w-3.5 h-3.5 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    {/* Share to WhatsApp Button */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleWhatsAppShare(post);
+                                      }}
+                                      className="focus:outline-hidden p-1.5 rounded-lg text-emerald-500 hover:text-emerald-400 hover:bg-emerald-550/10 transition-all transform hover:scale-110 active:scale-95 flex items-center justify-center gap-1 group"
+                                      style={{ cursor: 'pointer' }}
+                                      title="واټساپ کې مستقیم شریکول"
+                                    >
+                                      <svg className="w-4 h-4 fill-current group-hover:scale-110 transition duration-200" viewBox="0 0 24 24">
+                                        <path d="M12.012 3c-4.96-.005-9.005 4.02-9.01 8.977a8.94 8.94 0 0 0 1.202 4.492L3 21l4.7-.1.353-.1.332.352c1.082.52 2.274.8 3.518.8h.01c4.965.004 9.01-4.015 9.013-8.977A8.97 8.97 0 0 0 12.012 3zm4.5 12c-.2.5-.9.9-1.4 1-1 .2-2.3-.2-3.8-1.5-1.5-1.3-2.5-2.8-2.8-3.4-.3-.5-.4-.9-.4-1.3 0-.6.3-.9.4-1.1.1-.2.2-.2.3-.2l.7.1c.2 0 .4.1.5.3.3.6.7 1.4.8 1.5.1.2.1.4 0 .6-.1.2-.2.3-.3.4l-.4.3c-.1.1-.1.2 0 .4.4.8 1 1.4 1.8 1.8.2.1.3.1.4 0 .2-.2.4-.5.6-.7l.4-.2c.2 0 .4.1.7.3.7.4 1.2.7 1.3.8.3.1.3.3.2.4-.1.4-.4.8-.8 1z"/>
+                                      </svg>
+                                    </button>
+
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleFavorite(post.id);
+                                      }}
+                                      className={`focus:outline-hidden p-1.5 rounded-lg transition-all transform hover:scale-105 active:scale-95 ${
+                                        favoritePostIds.includes(post.id)
+                                          ? 'text-rose-500 bg-rose-500/10'
+                                          : 'text-slate-400 hover:text-rose-400 hover:bg-slate-500/10'
+                                      }`}
+                                      style={{ cursor: 'pointer' }}
+                                      title="خوښ کړل"
+                                    >
+                                      <Heart className={`w-3.5 h-3.5 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
+                                    </button>
+                                  </div>
                                 </div>
                                 <BeautifulTelegramText 
                                   text={getPostTextWithFallback(post)}
@@ -5434,16 +6230,14 @@ export default function App() {
                           >
                             <div className="relative aspect-video w-full bg-slate-950 overflow-hidden flex items-center justify-center">
                               {post.photoUrl ? (
-                                <img
-                                  src={post.photoUrl || null}
-                                  referrerPolicy="no-referrer"
+                                <CachedImage
+                                  src={post.photoUrl || ''}
                                   alt="grid-thumb"
                                   className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
                                 />
                               ) : post.videoThumbUrl ? (
-                                <img
-                                  src={post.videoThumbUrl || null}
-                                  referrerPolicy="no-referrer"
+                                <CachedImage
+                                  src={post.videoThumbUrl || ''}
                                   alt="grid-thumb"
                                   className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
                                 />
@@ -5463,16 +6257,13 @@ export default function App() {
                                   <PlayCircle className="w-8 h-8 text-white" />
                                 </span>
                               )}
-                              <span className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold text-white ${tc.bg}`}>
-                                #{post.id}
-                              </span>
                             </div>
                             <div className="p-3 flex-1 flex flex-col justify-between gap-1.5">
                               <div>
                                 <div className="flex items-center justify-between w-full mb-1">
                                   <span className="text-[9px] text-slate-500 flex items-center gap-1">
                                     <Clock className="w-2.5 h-2.5" />
-                                    {post.timeLabel || 'Recent'}
+                                    {getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}
                                   </span>
                                   {isRead && (
                                     <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8px] font-bold flex items-center gap-0.5 border border-emerald-500/10 whitespace-nowrap leading-none scale-[0.85]">
@@ -5480,21 +6271,38 @@ export default function App() {
                                       <span>لوستل شوی</span>
                                     </span>
                                   )}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleFavorite(post.id);
-                                    }}
-                                    className={`focus:outline-hidden p-1 rounded transition-all transform hover:scale-105 active:scale-95 ${
-                                      favoritePostIds.includes(post.id)
-                                        ? 'text-rose-500 bg-rose-500/10'
-                                        : 'text-slate-400 hover:text-rose-400 hover:bg-slate-500/10'
-                                    }`}
-                                    style={{ cursor: 'pointer' }}
-                                    title="خوښ کړل"
-                                  >
-                                    <Heart className={`w-3 h-3 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    {/* Share to WhatsApp Button */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleWhatsAppShare(post);
+                                      }}
+                                      className="focus:outline-hidden p-1 rounded text-emerald-500 hover:text-emerald-400 hover:bg-emerald-550/10 transition-all transform hover:scale-110 active:scale-95 flex items-center justify-center group"
+                                      style={{ cursor: 'pointer' }}
+                                      title="واټساپ کې شریکول"
+                                    >
+                                      <svg className="w-3.5 h-3.5 fill-current group-hover:scale-110 transition duration-200" viewBox="0 0 24 24">
+                                        <path d="M12.012 3c-4.96-.005-9.005 4.02-9.01 8.977a8.94 8.94 0 0 0 1.202 4.492L3 21l4.7-.1.353-.1.332.352c1.082.52 2.274.8 3.518.8h.01c4.965.004 9.01-4.015 9.013-8.977A8.97 8.97 0 0 0 12.012 3zm4.5 12c-.2.5-.9.9-1.4 1-1 .2-2.3-.2-3.8-1.5-1.5-1.3-2.5-2.8-2.8-3.4-.3-.5-.4-.9-.4-1.3 0-.6.3-.9.4-1.1.1-.2.2-.2.3-.2l.7.1c.2 0 .4.1.5.3.3.6.7 1.4.8 1.5.1.2.1.4 0 .6-.1.2-.2.3-.3.4l-.4.3c-.1.1-.1.2 0 .4.4.8 1 1.4 1.8 1.8.2.1.3.1.4 0 .2-.2.4-.5.6-.7l.4-.2c.2 0 .4.1.7.3.7.4 1.2.7 1.3.8.3.1.3.3.2.4-.1.4-.4.8-.8 1z"/>
+                                      </svg>
+                                    </button>
+
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleFavorite(post.id);
+                                      }}
+                                      className={`focus:outline-hidden p-1 rounded transition-all transform hover:scale-105 active:scale-95 ${
+                                        favoritePostIds.includes(post.id)
+                                          ? 'text-rose-500 bg-rose-500/10'
+                                          : 'text-slate-400 hover:text-rose-400 hover:bg-slate-500/10'
+                                      }`}
+                                      style={{ cursor: 'pointer' }}
+                                      title="خوښ کړل"
+                                    >
+                                      <Heart className={`w-3 h-3 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
+                                    </button>
+                                  </div>
                                 </div>
                                 <BeautifulTelegramText 
                                   text={getPostTextWithFallback(post)}
@@ -5565,15 +6373,15 @@ export default function App() {
                             style={{ cursor: 'pointer' }}
                             className={`${cardBg} py-2.5 px-3.5 rounded-lg flex items-center gap-3 transition group active:scale-[0.99] select-none text-right shadow-2xs border border-slate-500/5`}
                           >
-                            <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 font-mono text-[9px] font-black text-white ${tc.bg}`}>
-                              {post.id}
+                            <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-white ${tc.bg}`}>
+                              <Feather className="w-3.5 h-3.5" />
                             </span>
                             <div className="flex-1 min-w-0 pr-1">
                               <p className={`text-[12.5px] sm:text-[13px] ${isDark ? 'text-slate-200' : 'text-slate-800'} font-semibold truncate`}>
                                 {getPostTextWithFallback(post)}
                               </p>
                               <span className="text-[9px] text-slate-500 flex items-center gap-1.5 mt-0.5 font-sans">
-                                {post.timeLabel || 'ثبت شوی'}
+                                {getRelativeTimeInPashto(post.date, post.timeLabel || 'ثبت شوی')}
                               </span>
                               {post.audioList && post.audioList.length > 0 ? (
                                 <div className="mt-1.5 max-w-xs scale-95 origin-right space-y-1.5">
@@ -5638,13 +6446,10 @@ export default function App() {
                               </div>
                             )}
                             <div className="p-5 space-y-3">
-                              <div className="flex items-center justify-between pb-1 border-b border-slate-500/10">
-                                <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold text-white ${tc.bg}`}>
-                                  پوسټ #{post.id}
-                                </span>
+                              <div className="flex items-center justify-end pb-1 border-b border-slate-500/10">
                                 <span className="text-xs text-slate-500 flex items-center gap-1 font-sans">
                                   <Clock className="w-3.5 h-3.5" />
-                                  {post.timeLabel || 'پورته شوی'}
+                                  {getRelativeTimeInPashto(post.date, post.timeLabel || 'پورته شوی')}
                                 </span>
                               </div>
                               <BeautifulTelegramText 
@@ -5693,11 +6498,10 @@ export default function App() {
                             style={{ cursor: 'pointer' }}
                             className={`${cardBg} p-5 rounded-2xl flex flex-col gap-3 transition group active:scale-[0.99] select-none text-right border border-slate-500/5`}
                           >
-                            <div className="flex justify-between items-center pb-2 border-b border-slate-500/10">
-                              <span className={`text-[10px] font-extrabold ${tc.text}`}>#{post.id} پوسټ</span>
+                            <div className="flex justify-end items-center pb-2 border-b border-slate-500/10">
                               <span className="text-[10px] text-slate-500 flex items-center gap-1">
                                 <Calendar className="w-3.5 h-3.5" />
-                                {post.timeLabel || 'Recent'}
+                                {getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}
                               </span>
                             </div>
                             <BeautifulTelegramText 
@@ -5788,7 +6592,13 @@ export default function App() {
               {fullFeedPosts.map((post) => (
                 <div
                   key={post.id}
-                  onClick={() => setSelectedPost(post)}
+                  onClick={() => {
+                    const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                    if (currentScroll > 0) {
+                      detailScrollPosRef.current = currentScroll;
+                    }
+                    setSelectedPost(post);
+                  }}
                   style={{ cursor: 'pointer' }}
                   className={`${isDark ? 'bg-slate-900/50 border-white/40 hover:bg-slate-800/60' : 'bg-white border-slate-200 hover:bg-slate-100/80 shadow-md'} border p-4 rounded-xl flex items-center gap-4 transition group select-none text-right`}
                 >
@@ -5837,10 +6647,9 @@ export default function App() {
                   <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5 h-full w-full">
                     <div>
                       <div className="flex items-center gap-2 text-[10px] text-slate-400 mb-1.5 font-sans">
-                        <span className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-bold text-white ${tc.bg}`}>#{post.id}</span>
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-slate-500" />
-                          {post.timeLabel || 'Recent'}
+                          {getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}
                         </span>
                       </div>
                       <BeautifulTelegramText 
@@ -6879,10 +7688,9 @@ export default function App() {
               {/* Title Header */}
               <div className="px-5 pb-3 border-b border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-1.5 self-end">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black text-white ${tc.bg}`}>
-                    #{bottomSheetPost.id}
+                  <span className="text-[11px] text-indigo-400 font-sans font-bold">
+                    {getRelativeTimeInPashto(bottomSheetPost.date, bottomSheetPost.timeLabel || 'وروستی')}
                   </span>
-                  <span className="text-[11px] text-slate-400 font-sans font-bold">بشپړ لیدنه</span>
                 </div>
                 
                 {/* Back / Close button */}
@@ -7003,6 +7811,97 @@ export default function App() {
           </>
         )}
       </AnimatePresence>
+
+      {/* GLOBAL FLOATING BACKGROUND AUDIO CONTROL (په شالید کې د غږیزو خپرونو وقفه او کنټرول) */}
+      <GlobalFloatingAudioPlayer isDark={isDark} tc={tc} />
     </div>
+  );
+}
+
+// Global Floating Dynamic Control Player (د هیواد په کچه خوځنده غږیز کنټرول)
+function GlobalFloatingAudioPlayer({ isDark, tc }: { isDark: boolean; tc: any }) {
+  const globalAudio = useGlobalAudio();
+
+  // If there's no audio active, return null
+  if (!globalAudio.url) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ y: 90, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 90, opacity: 0 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+        className="fixed bottom-[18px] left-1/2 -translate-x-1/2 w-[calc(100%-24px)] sm:w-[440px] z-[9999] shadow-[0_15px_40px_rgba(0,0,0,0.55)]"
+      >
+        <div className={`backdrop-blur-2xl ${isDark ? 'bg-slate-950/85 border-slate-800/80 shadow-[0_12px_36px_rgba(0,0,0,0.4)]' : 'bg-white/90 border-slate-200/90 shadow-[0_12px_36px_rgba(0,0,0,0.06)]'} border rounded-2xl p-3.5 flex flex-col gap-2.5 w-full text-right transition-colors duration-200`}>
+          <div className="flex items-center justify-between gap-3">
+            {/* Play/Pause & Stop Controls */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (globalAudio.isPlaying) {
+                    pauseGlobalAudio();
+                  } else {
+                    playGlobalAudio(globalAudio.url, globalAudio.title, globalAudio.duration);
+                  }
+                }}
+                className={`w-9 h-9 rounded-full ${tc.bg} ${tc.hoverBg} text-white flex items-center justify-center shadow transition active:scale-95`}
+                style={{ cursor: 'pointer' }}
+                title={globalAudio.isPlaying ? "ودروئ / Pause" : "غږول / Play"}
+              >
+                {globalAudio.isPlaying ? (
+                  <svg className="w-3.5 h-3.5 fill-current text-white" viewBox="0 0 24 24">
+                    <rect x="6" y="4" width="4" height="16" rx="1" />
+                    <rect x="14" y="4" width="4" height="16" rx="1" />
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5 fill-current text-white translate-x-[0.5px]" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </button>
+              
+              <button
+                onClick={stopAndCloseGlobalAudio}
+                className={`p-2 rounded-xl border ${isDark ? 'border-slate-800 hover:bg-slate-900 text-slate-400 hover:text-rose-450' : 'border-slate-200 hover:bg-slate-100 text-slate-500 hover:text-rose-600'} transition active:scale-95`}
+                title="غږ بند کړئ او مینو وتړئ"
+                style={{ cursor: 'pointer' }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Title / Info */}
+            <div className="flex-1 min-w-0 pr-1 text-right">
+              <span className={`text-[11.5px] font-bold block truncate leading-snug ${isDark ? 'text-white' : 'text-slate-950'}`}>
+                {globalAudio.title || 'فعال غږ د غږېدو په حال کې...'}
+              </span>
+              <div className="flex items-center gap-1.5 justify-end mt-0.5 select-none">
+                <span className="text-[9px] text-slate-400 font-medium">په شالید (بیکګرانډ) کې غږېږي</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Tracker Bar */}
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-[9.5px] text-slate-500 font-mono shrink-0 select-none">{globalAudio.currentTime}</span>
+            <div className="flex-grow relative flex items-center">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="0.5"
+                value={globalAudio.progress}
+                onChange={(e) => seekGlobalAudio(parseFloat(e.target.value))}
+                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none"
+              />
+            </div>
+            <span className="text-[9.5px] text-slate-500 font-mono shrink-0 select-none">{globalAudio.totalDuration}</span>
+          </div>
+        </div>
+      </motion.div>
+    </AnimatePresence>
   );
 }

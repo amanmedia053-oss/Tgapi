@@ -134,6 +134,50 @@
   background-image: linear-gradient(135deg, #0a192f, #1d4ed8, #3b82f6, #0a192f);
 }
 
+/* ۶ د ښکلي افقي ريسايکلر ويو د کټګوريو لپاره متحرک رنګ لرونکي بيګراونډونه */
+.cat-btn-all-active {
+  background-image: linear-gradient(135deg, #4f46e5, #7c3aed, #a855f7, #4f46e5);
+  background-size: 200% 200%;
+  animation: flow-right-to-left 6s ease-in-out infinite;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.45);
+}
+.cat-btn-writings-active {
+  background-image: linear-gradient(135deg, #d97706, #ea580c, #f59e0b, #d97706);
+  background-size: 200% 200%;
+  animation: flow-right-to-left 6s ease-in-out infinite;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.45);
+}
+.cat-btn-poems-active {
+  background-image: linear-gradient(135deg, #e11d48, #db2777, #ec4899, #e11d48);
+  background-size: 200% 200%;
+  animation: flow-right-to-left 6s ease-in-out infinite;
+  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.45);
+}
+.cat-btn-videos-active {
+  background-image: linear-gradient(135deg, #dc2626, #ea580c, #ef4444, #dc2626);
+  background-size: 200% 200%;
+  animation: flow-right-to-left 6s ease-in-out infinite;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45);
+}
+.cat-btn-audio-active {
+  background-image: linear-gradient(135deg, #0284c7, #2563eb, #3b82f6, #0284c7);
+  background-size: 200% 200%;
+  animation: flow-right-to-left 6s ease-in-out infinite;
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.45);
+}
+.cat-btn-pdf-active {
+  background-image: linear-gradient(135deg, #059669, #0d9488, #10b981, #059669);
+  background-size: 200% 200%;
+  animation: flow-right-to-left 6s ease-in-out infinite;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.45);
+}
+.cat-btn-images-active {
+  background-image: linear-gradient(135deg, #7c3aed, #d946ef, #a855f7, #7c3aed);
+  background-size: 200% 200%;
+  animation: flow-right-to-left 6s ease-in-out infinite;
+  box-shadow: 0 4px 14px rgba(168, 85, 247, 0.45);
+}
+
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
