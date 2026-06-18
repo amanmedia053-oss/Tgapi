@@ -77,7 +77,7 @@ function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: 
   const [showTelegramModal, setShowTelegramModal] = useState(false);
   const [activeFile, setActiveFile] = useState<{ fileName: string; fileSize?: string; url?: string; postUrl?: string } | null>(null);
 
-  const defaultFileName = post.fileName || post.text?.split('\n')?.[0]?.slice(0, 45) || 'پښتو شعرونه کتاب (PDF)';
+  const defaultFileName = post.fileName || post.text?.split('\n')?.[0]?.slice(0, 45) || 'پښتو ادبي خزانه کتاب (PDF)';
   const defaultFileSize = post.fileSize || 'سند / PDF فایل';
 
   const files = post.fileList && post.fileList.length > 0 ? post.fileList : [{ fileName: defaultFileName, fileSize: defaultFileSize, postUrl: post.postUrl }];
@@ -1299,6 +1299,13 @@ function preloadPostMedia(post: any) {
   }
 }
 
+/* Global helper function for identifying stories */
+export function isStoryPost(post: any) {
+  if (!post || !post.text) return false;
+  const lowerText = post.text.toLowerCase();
+  return lowerText.includes('#سټوري') || lowerText.includes('#ستوری') || lowerText.includes('#story') || lowerText.includes('#سټوريانې');
+}
+
 export default function App() {
   const [feedData, setFeedData] = useState<FeedResponse | null>(() => {
     const cached = localStorage.getItem('dewa_cached_feed_data');
@@ -1357,6 +1364,17 @@ export default function App() {
   const [isFavoritesMenuOpen, setIsFavoritesMenuOpen] = useState(false);
   const [activeFavoriteFilter, setActiveFavoriteFilter] = useState<'videos' | 'images' | 'writings' | 'pdf' | 'audio' | null>(null);
 
+  // Reading history state and page state
+  const [readingHistoryIds, setReadingHistoryIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('dewa_reading_history_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isReadingHistoryOpen, setIsReadingHistoryOpen] = useState(false);
+
   // Toggling favorite post helper and automatic sync to localStorage (د خوښې پوسټ ثبت او لرې والي سیسټم)
   const toggleFavorite = (postId: string) => {
     setFavoritePostIds(prev => {
@@ -1395,6 +1413,14 @@ export default function App() {
     
     window.open(whatsappUrl, '_blank');
     showToast('واټساپ ته د شریکولو دوسیه خلاصه شوه! 🟢', 'success');
+  };
+
+  // Smoothly scroll back to the page top (پورته تلو بټن)
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
   const [bottomSheetPost, setBottomSheetPost] = useState<TelegramPost | null>(null);
   const [readPostIds, setReadPostIds] = useState<string[]>(() => {
@@ -1443,6 +1469,7 @@ export default function App() {
   const [activePhotoReelIndex, setActivePhotoReelIndex] = useState(0);
   const [photoSwipeDirection, setPhotoSwipeDirection] = useState<'next' | 'prev'>('next');
   const [isCategoryPageOpen, setIsCategoryPageOpen] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   // Optical Zoom states for image lightbox
   const [zoomPhotoUrl, setZoomPhotoUrl] = useState<string | null>(null);
@@ -1466,9 +1493,10 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
 
-  // Splash Screen and Welcome Dialog states
+  // Splash Screen and Onboarding states
   const [showSplash, setShowSplash] = useState(true);
-  const [showWelcome, setShowWelcome] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [activeOnboardingPage, setActiveOnboardingPage] = useState(0);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [splashProgress, setSplashProgress] = useState(0);
 
@@ -1646,12 +1674,18 @@ export default function App() {
   // 1. Background Scroll Tracker (captures main home feed scroll whenever we are not in any subpage or panel)
   useEffect(() => {
     const handleScroll = () => {
+      const currentScroll = window.scrollY || document.documentElement.scrollTop;
       const isInAnySubpage = !!(selectedPost || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen);
       if (!isInAnySubpage) {
-        const currentScroll = window.scrollY || document.documentElement.scrollTop;
         if (currentScroll > 0) {
           homeScrollPosRef.current = currentScroll;
         }
+      }
+      // Toggle Scroll to Top button after scrolling 500 pixels
+      if (currentScroll > 500) {
+        setShowScrollTop(true);
+      } else {
+        setShowScrollTop(false);
       }
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -1768,7 +1802,7 @@ export default function App() {
         const snippet = cleanText.substring(0, 100) + (cleanText.length > 100 ? '...' : '');
 
         scheduledList.push({
-          title: 'د کښلي مینه دیوه نوي شعر 🌸',
+          title: 'پښتو ادبي خزانه 🌸',
           body: snippet,
           id: 100 + i,
           schedule: { at: triggerTime },
@@ -1788,7 +1822,7 @@ export default function App() {
     }
   }, [notificationsEnabled]);
 
-  // Triggers real HTML5 notifications (or native system notifications via Capacitor if running on Android, or in-app backup floating card)
+  // Triggers real HTML5 notifications (or native system notifications via Capacitor if running on Android)
   const triggerLocalNotification = React.useCallback(async (post: TelegramPost) => {
     if (!notificationsEnabled) return;
     
@@ -1797,7 +1831,7 @@ export default function App() {
     const cleanPoetryText = poetryText.replace(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g, '').trim();
     const snippet = cleanPoetryText.substring(0, 120) + (cleanPoetryText.length > 120 ? '...' : '');
     
-    const notificationTitle = 'د کاه مینه دیوه نوی خپرونه 📢';
+    const notificationTitle = 'پښتو ادبي خزانه 📢';
     
     // Play subtle chime sound if possible
     try {
@@ -1862,12 +1896,8 @@ export default function App() {
             notif.close();
           };
         } catch (err) {
-          console.warn('Native notification failed, showing in-app banner instead:', err);
-          setNewPostNotification(post);
+          console.warn('Native notification failed:', err);
         }
-      } else {
-        // In-app fallback warning or popup banner in case browser does not grant or support perm
-        setNewPostNotification(post);
       }
     }
   }, [notificationsEnabled]);
@@ -2387,10 +2417,16 @@ export default function App() {
     const hasCapacitorHttp = !!(cap && cap.Plugins && cap.Plugins.CapacitorHttp);
     
     if (hasCapacitorHttp) {
-      console.log('[Dewa Fetch] Invoking native CapacitorHttp for URL:', url);
+      // CapacitorHttp requires absolute URLs. Convert relative routes to absolute using current origin.
+      let requestUrl = url;
+      if (url.startsWith('/')) {
+        requestUrl = window.location.origin + url;
+      }
+
+      console.log('[Dewa Fetch] Invoking native CapacitorHttp for URL:', requestUrl);
       try {
         const nativeResp = await cap.Plugins.CapacitorHttp.get({
-          url: url,
+          url: requestUrl,
           headers: options.headers || {},
           connectTimeout: 15000,
           readTimeout: 15000
@@ -2728,10 +2764,10 @@ export default function App() {
         clearInterval(progressInterval);
         setShowSplash(false);
         
-        // After splash closes, check if welcome dialog should be shown
-        const hasShown = localStorage.getItem('dewa_welcome_shown');
-        if (!hasShown) {
-          setShowWelcome(true);
+        // After splash closes, check if onboarding should be shown
+        const hasShownOnboarding = localStorage.getItem('dewa_onboarding_shown_v2');
+        if (!hasShownOnboarding) {
+          setShowOnboarding(true);
         }
       }
     }, intervalTime);
@@ -2742,16 +2778,37 @@ export default function App() {
   // Dynamic filtering of all posts by search string, always sorted latest first
   const allPosts = feedData?.posts ? feedData.posts.filter(p => {
     if (!p) return false;
+    
+    // 1. Filter out the '#dev' post
+    const textLower = (p.text || '').toLowerCase();
+    if (textLower.includes('#dev')) {
+      return false;
+    }
+    
+    // 2. Filter out 'channel created' post or post ID '1'
+    if (textLower.includes('channel created') || p.id === '1') {
+      return false;
+    }
+
     const matchesSearch = !searchQuery || (p.text && p.text.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesSearch;
   }).sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0)) : [];
 
+  // Find the custom '#dev' post (from raw posts pool) to dynamically populate the About Us section
+  const devPost = React.useMemo(() => {
+    if (!feedData?.posts) return null;
+    return feedData.posts.find(p => p && p.text && p.text.toLowerCase().includes('#dev'));
+  }, [feedData?.posts]);
+
   // Slider featured posts (10 random posts from any category to keep it dynamic and fresh)
   const featuredPosts = React.useMemo(() => {
     if (!allPosts || allPosts.length === 0) return [];
-    const shuffled = [...allPosts].sort(() => 0.5 - Math.random());
+    // Hide stories from featured slider so they don't block normal features
+    const nonStoryPosts = allPosts.filter(p => !isStoryPost(p));
+    if (nonStoryPosts.length === 0) return [];
+    const shuffled = [...nonStoryPosts].sort(() => 0.5 - Math.random());
     return shuffled.slice(0, 10);
-  }, [feedData?.posts]);
+  }, [allPosts]);
 
   // 1. Filtered archive matching selection criteria (either Category or activeFavoriteFilter)
   const filteredHomePosts = React.useMemo(() => {
@@ -2759,6 +2816,9 @@ export default function App() {
 
     if (activeFavoriteFilter) {
       list = list.filter(p => favoritePostIds.includes(p.id));
+      // By default exclude stories from general favorites categorization lists
+      list = list.filter(p => !isStoryPost(p));
+      
       if (activeFavoriteFilter === 'videos') {
         list = list.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
       } else if (activeFavoriteFilter === 'images') {
@@ -2771,20 +2831,28 @@ export default function App() {
         list = list.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
       }
     } else {
-      if (selectedCategory === 'videos') {
-        list = list.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
-      } else if (selectedCategory === 'images') {
-        list = list.filter(p => !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0));
-      } else if (selectedCategory === 'audio') {
-        list = list.filter(p => !!p.hasAudio || !!p.audioUrl);
-      } else if (selectedCategory === 'pdf') {
-        list = list.filter(p => getIsBook(p));
-      } else if (selectedCategory === 'writings_plain') {
-        list = list.filter(p => getIsWriting(p));
-      } else if (selectedCategory === 'poems') {
-        list = list.filter(p => getIsPoem(p));
-      } else if (selectedCategory === 'writings') {
-        list = list.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
+      if (selectedCategory === 'stories') {
+        // ONLY show story posts in 'stories' category
+        list = list.filter(p => isStoryPost(p));
+      } else {
+        // Exclude stories from all standard categories (and 'all')
+        list = list.filter(p => !isStoryPost(p));
+
+        if (selectedCategory === 'videos') {
+          list = list.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
+        } else if (selectedCategory === 'images') {
+          list = list.filter(p => !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0));
+        } else if (selectedCategory === 'audio') {
+          list = list.filter(p => !!p.hasAudio || !!p.audioUrl);
+        } else if (selectedCategory === 'pdf') {
+          list = list.filter(p => getIsBook(p));
+        } else if (selectedCategory === 'writings_plain') {
+          list = list.filter(p => getIsWriting(p));
+        } else if (selectedCategory === 'poems') {
+          list = list.filter(p => getIsPoem(p));
+        } else if (selectedCategory === 'writings') {
+          list = list.filter(p => !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p));
+        }
       }
     }
     return list;
@@ -3063,14 +3131,111 @@ export default function App() {
   const [reelLoading, setReelLoading] = useState(false);
   const reelVideoRef = useRef<HTMLVideoElement | null>(null);
 
+  const [showCenterIcon, setShowCenterIcon] = useState(false);
+  const [centerIconType, setCenterIconType] = useState<'play' | 'pause' | null>(null);
+  const centerIconTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const flashCenterIcon = (type: 'play' | 'pause') => {
+    setCenterIconType(type);
+    setShowCenterIcon(true);
+    if (centerIconTimeoutRef.current) {
+      clearTimeout(centerIconTimeoutRef.current);
+    }
+    centerIconTimeoutRef.current = setTimeout(() => {
+      setShowCenterIcon(false);
+    }, 1800); // Disappear after 1.8 seconds (2 seconds auto disappear)
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (centerIconTimeoutRef.current) {
+        clearTimeout(centerIconTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  /* ==========================================================
+     STORIES CORE STATE ENGINE (د سټوريانو د حساب او کنټرول برخې)
+     ========================================================== */
+  const storiesList = React.useMemo(() => {
+    if (!feedData?.posts) return [];
+    return feedData.posts.filter(isStoryPost);
+  }, [feedData?.posts]);
+
+  const [isStoryViewerOpen, setIsStoryViewerOpen] = useState(false);
+  const [activeStoryIndex, setActiveStoryIndex] = useState(0);
+  const [storyProgress, setStoryProgress] = useState(0);
+  const [isStoryPaused, setIsStoryPaused] = useState(false);
+  const storyProgressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleNextStory = () => {
+    setStoryProgress(0);
+    setActiveStoryIndex((prev) => {
+      if (prev < storiesList.length - 1) {
+        return prev + 1;
+      } else {
+        setIsStoryViewerOpen(false);
+        return prev;
+      }
+    });
+  };
+
+  const handlePrevStory = () => {
+    setStoryProgress(0);
+    setActiveStoryIndex((prev) => {
+      if (prev > 0) {
+        return prev - 1;
+      }
+      return prev;
+    });
+  };
+
+  // Story Autoplay & interval loop
+  useEffect(() => {
+    if (!isStoryViewerOpen || storiesList.length === 0 || isStoryPaused) {
+      if (storyProgressIntervalRef.current) {
+        clearInterval(storyProgressIntervalRef.current);
+      }
+      return;
+    }
+
+    const duration = 6500; // 6.5s per story
+    const intervalTime = 40;
+    const steps = duration / intervalTime;
+    const increment = 100 / steps;
+
+    storyProgressIntervalRef.current = setInterval(() => {
+      setStoryProgress((prev) => {
+        if (prev >= 100) {
+          handleNextStory();
+          return 0;
+        }
+        return prev + increment;
+      });
+    }, intervalTime);
+
+    return () => {
+      if (storyProgressIntervalRef.current) {
+        clearInterval(storyProgressIntervalRef.current);
+      }
+    };
+  }, [isStoryViewerOpen, activeStoryIndex, isStoryPaused, storiesList.length]);
+
   const handleNextReel = () => {
     if (reelsList.length === 0) return;
+    if (reelVideoRef.current) {
+      reelVideoRef.current.pause();
+    }
     setSwipeDirection('next');
     setActiveReelIndex((prev) => (prev + 1) % reelsList.length);
   };
 
   const handlePrevReel = () => {
     if (reelsList.length === 0) return;
+    if (reelVideoRef.current) {
+      reelVideoRef.current.pause();
+    }
     setSwipeDirection('prev');
     setActiveReelIndex((prev) => (prev - 1 + reelsList.length) % reelsList.length);
   };
@@ -3113,17 +3278,30 @@ export default function App() {
     }
   };
 
-  // Autoplay video on Index changes or overlay load
+  // Reset mute state when opening Reels so first video always plays with active audio automatically
   useEffect(() => {
-    if (!isReelsOpen || reelsList.length === 0) return;
+    if (isReelsOpen) {
+      setReelMuted(false);
+      setReelPlaying(true);
+    }
+  }, [isReelsOpen]);
+
+  // Autoplay video on Index changes or overlay load with complete cleanup (پخوانی ویډیو درول ترڅو د غږونو ګډوډي رامنځته نشي)
+  useEffect(() => {
+    if (!isReelsOpen || reelsList.length === 0) {
+      if (reelVideoRef.current) {
+        reelVideoRef.current.pause();
+      }
+      return;
+    }
     setReelPlaying(true);
     setReelProgress(0);
     setReelLoading(true);
 
     const video = reelVideoRef.current;
     if (video) {
-      video.load();
       video.muted = reelMuted;
+      video.volume = 1.0; // Ensure sound is active and loud
       
       // Stop all background videos and audios
       const allVideos = document.querySelectorAll('video');
@@ -3138,12 +3316,20 @@ export default function App() {
 
       video.play().then(() => {
         setReelLoading(false);
+        setReelPlaying(true);
       }).catch(err => {
         console.warn('Autoplay failed or was blocked by browser:', err);
         setReelPlaying(false);
         setReelLoading(false);
       });
     }
+
+    return () => {
+      // Explicitly pause the video on swipe/scroll/exit cleanup to prevent overlapping track signals
+      if (video) {
+        video.pause();
+      }
+    };
   }, [activeReelIndex, isReelsOpen]);
 
   // Handle keyboard arrow keys for navigation
@@ -3522,7 +3708,7 @@ export default function App() {
             
             <div className="min-w-0 text-right">
               <h1 className={`text-sm sm:text-base font-bold truncate leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                {selectedPost ? 'د پوسټ لوستل' : isAboutPageOpen ? 'زمونږ په اړه معلومات' : isContactPageOpen ? 'زمونږ سره اړیکه' : isSettingsPageOpen ? 'د اپلیکیشن تنظیمات' : isSearchOpen ? 'په پوسټونو کې پلټنه' : isFullFeedOpen ? 'ټول آرشیف پوسټونه' : isReelsOpen ? 'شارټ ویډیوګانې (Reels)' : isPhotoReelsOpen ? 'ښکلي انځورونه (Images Carousel)' : isCategoryPageOpen ? 'د شعرونو ډلبندي (کټګورۍ)' : (feedData?.channelInfo?.title || 'پښتو شعرونه')}
+                {selectedPost ? 'د پوسټ لوستل' : isAboutPageOpen ? 'زمونږ په اړه معلومات' : isContactPageOpen ? 'زمونږ سره اړیکه' : isSettingsPageOpen ? 'د اپلیکیشن تنظیمات' : isSearchOpen ? 'په پوسټونو کې پلټنه' : isFullFeedOpen ? 'ټول آرشیف پوسټونه' : isReelsOpen ? 'شارټ ویډیوګانې (Reels)' : isPhotoReelsOpen ? 'ښکلي انځورونه (Images Carousel)' : isCategoryPageOpen ? 'د شعرونو ډلبندي (کټګورۍ)' : 'پښتو ادبي خزانه'}
               </h1>
             </div>
           </div>
@@ -3673,13 +3859,13 @@ export default function App() {
               {/* Sidebar Content (عکس ➔ نوم ➔ بټنې) */}
               <div className="flex-1 overflow-y-auto p-5 space-y-5 text-right">
                 
-                {/* 1. د اپلیکیشن رسمي بڼه (بڼکه او پښتو شعرونه) */}
+                {/* 1. د اپلیکیشن رسمي بڼه (بڼکه او پښتو ادبي خزانه) */}
                 <div className={`flex flex-col items-center text-center ${subCardBg} rounded-2xl p-5 border gap-2.5 shadow-sm`}>
                   <div className={`w-14 h-14 rounded-full ${isDark ? 'bg-indigo-550/10' : 'bg-indigo-600/10'} flex items-center justify-center border border-indigo-500/30`}>
                     <Feather className={`w-7 h-7 ${tc.text}`} />
                   </div>
                   <h4 className={`text-xs font-black ${isDark ? 'text-white' : 'text-slate-900'} leading-tight font-sans`}>
-                    {appLanguage === 'en' ? 'Pashto Poetry' : 'پښتو شعرونه'}
+                    {appLanguage === 'en' ? 'Pashto Literary Treasure' : 'پښتو ادبي خزانه'}
                   </h4>
                 </div>
 
@@ -4353,24 +4539,37 @@ export default function App() {
                         {/* 1. IMMERSIVE VIDEO ELEMENT */}
                         <div className="absolute inset-0 flex items-center justify-center bg-black">
                           <video
-                            ref={reelVideoRef}
+                            ref={(el) => {
+                              if (el) {
+                                reelVideoRef.current = el;
+                              }
+                            }}
                             src={cachedActiveReelVideoUrl || activeReel.videoUrl}
                             poster={cachedActiveReelPosterUrl || activeReel.poster}
                             loop
                             playsInline
+                            autoPlay
+                            muted={reelMuted}
                             preload="auto"
                             onClick={() => {
                               if (reelVideoRef.current) {
-                                pauseGlobalAudio();
-                                const playPromise = reelVideoRef.current.play();
-                                if (playPromise !== undefined) {
-                                  playPromise.catch((err) => {
-                                    if (err.name !== 'AbortError') {
-                                      console.warn("Reel play failed on click:", err);
-                                    }
-                                  });
+                                if (reelPlaying) {
+                                  reelVideoRef.current.pause();
+                                  setReelPlaying(false);
+                                  flashCenterIcon('pause');
+                                } else {
+                                  pauseGlobalAudio();
+                                  const playPromise = reelVideoRef.current.play();
+                                  if (playPromise !== undefined) {
+                                    playPromise.catch((err) => {
+                                      if (err.name !== 'AbortError') {
+                                        console.warn("Reel play failed on click:", err);
+                                      }
+                                    });
+                                  }
+                                  setReelPlaying(true);
+                                  flashCenterIcon('play');
                                 }
-                                setReelPlaying(true);
                               }
                             }}
                             onTimeUpdate={() => {
@@ -4391,30 +4590,26 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* 3. BIG PLAY ICON OVERLAY WHEN PAUSED */}
-                        {!reelPlaying && !reelLoading && (
-                          <div 
-                            onClick={() => {
-                              if (reelVideoRef.current) {
-                                pauseGlobalAudio();
-                                const playPromise = reelVideoRef.current.play();
-                                if (playPromise !== undefined) {
-                                  playPromise.catch((err) => {
-                                    if (err.name !== 'AbortError') {
-                                      console.warn("Reel play failed on overlay click:", err);
-                                    }
-                                  });
-                                }
-                                setReelPlaying(true);
-                              }
-                            }}
-                            className="absolute inset-0 bg-black/35 flex items-center justify-center z-15 cursor-pointer animate-fade-in"
-                          >
-                            <div className="bg-white/10 hover:bg-white/25 backdrop-blur-md p-5 rounded-full border border-white/20 transform hover:scale-110 active:scale-95 transition text-white shadow-lg">
-                              <Play className="w-9 h-9 text-white fill-white translate-x-0.5" />
-                            </div>
-                          </div>
-                        )}
+                        {/* 3. DYNAMIC PLAY/PAUSE ICON OVERLAY WITH 2-SECOND AUTOHIDE (د ۲ ثانیو وروسته د بټن خپله ورکېدل) */}
+                        <AnimatePresence>
+                          {showCenterIcon && centerIconType && (
+                            <motion.div 
+                              initial={{ opacity: 0, scale: 0.5 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 1.4 }}
+                              transition={{ duration: 0.30 }}
+                              className="absolute inset-0 flex items-center justify-center z-15 pointer-events-none select-none"
+                            >
+                              <div className="bg-black/55 backdrop-blur-md p-6 sm:p-6.5 rounded-full border border-white/20 shadow-[0_8px_32px_rgba(99,102,241,0.25)] text-white">
+                                {centerIconType === 'play' ? (
+                                  <Play className="w-10 h-10 text-white fill-white translate-x-0.5" />
+                                ) : (
+                                  <Pause className="w-10 h-10 text-white fill-white" />
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
 
                         {/* 4. LIGHTNING GRADIENT OVERLAYS */}
                         <div className="absolute top-0 left-0 right-0 h-28 bg-gradient-to-b from-black/85 via-black/35 to-transparent pointer-events-none z-10" />
@@ -4550,15 +4745,31 @@ export default function App() {
                         <div className="absolute bottom-6 right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2">
                           <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
                             <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
-                              {feedData?.channelInfo?.title || 'پښتو شعرونه'}
+                              پښتو ادبي خزانه
                             </span>
-                            <div className="w-6.5 h-6.5 rounded-full overflow-hidden border border-white/20 shadow-md">
-                              <img 
-                                src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
-                                alt="avatar" 
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
+                            <div 
+                              onClick={() => {
+                                if (storiesList.length > 0) {
+                                  setActiveStoryIndex(0);
+                                  setIsStoryViewerOpen(true);
+                                }
+                              }}
+                              style={{ cursor: storiesList.length > 0 ? 'pointer' : 'default' }}
+                              className={`pointer-events-auto shrink-0 transition-all duration-300 ${
+                                storiesList.length > 0 
+                                  ? 'p-[2px] bg-gradient-to-tr from-pink-500 via-purple-600 to-indigo-500 rounded-full animate-pulse-slow active:scale-95 shadow-[0_0_12px_rgba(236,72,153,0.55)]' 
+                                  : 'w-6.5 h-6.5 rounded-full border border-white/20 shadow-md overflow-hidden'
+                              }`}
+                              title={storiesList.length > 0 ? "پښتو ادبي خزانه سټوري وګورئ" : ""}
+                            >
+                              <div className={`rounded-full overflow-hidden ${storiesList.length > 0 ? 'w-5.5 h-5.5' : 'w-full h-full'}`}>
+                                <img 
+                                  src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
+                                  alt="avatar" 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
                             </div>
                           </div>
 
@@ -4825,15 +5036,31 @@ export default function App() {
                         <div className="absolute bottom-6 right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2">
                           <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
                             <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
-                              {feedData?.channelInfo?.title || 'پښتو شعرونه'}
+                              پښتو ادبي خزانه
                             </span>
-                            <div className="w-6.5 h-6.5 rounded-full overflow-hidden border border-white/20 shadow-md">
-                              <img 
-                                src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
-                                alt="avatar" 
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
+                            <div 
+                              onClick={() => {
+                                if (storiesList.length > 0) {
+                                  setActiveStoryIndex(0);
+                                  setIsStoryViewerOpen(true);
+                                }
+                              }}
+                              style={{ cursor: storiesList.length > 0 ? 'pointer' : 'default' }}
+                              className={`pointer-events-auto shrink-0 transition-all duration-300 ${
+                                storiesList.length > 0 
+                                  ? 'p-[2px] bg-gradient-to-tr from-pink-500 via-purple-600 to-indigo-500 rounded-full animate-pulse-slow active:scale-95 shadow-[0_0_12px_rgba(236,72,153,0.55)]' 
+                                  : 'w-6.5 h-6.5 rounded-full border border-white/20 shadow-md overflow-hidden'
+                              }`}
+                              title={storiesList.length > 0 ? "پښتو ادبي خزانه سټوري وګورئ" : ""}
+                            >
+                              <div className={`rounded-full overflow-hidden ${storiesList.length > 0 ? 'w-5.5 h-5.5' : 'w-full h-full'}`}>
+                                <img 
+                                  src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
+                                  alt="avatar" 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
                             </div>
                           </div>
 
@@ -5199,13 +5426,29 @@ export default function App() {
               <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-900 p-6 flex flex-col items-center text-center gap-4 shadow-md">
                 <div className={`absolute inset-0 bg-gradient-to-r ${tc.gradient} opacity-20`} />
                 <div className="relative w-23 h-23 rounded-full border-2 border-indigo-500/40 p-1 flex items-center justify-center bg-slate-950 overflow-hidden shadow-inner shrink-0">
-                  <div className={`w-full h-full rounded-full bg-gradient-to-tr ${tc.gradient} flex items-center justify-center`}>
-                    <User className="w-12 h-12 text-white" />
+                  <div className={`w-full h-full rounded-full bg-gradient-to-tr ${tc.gradient} flex items-center justify-center overflow-hidden`}>
+                    {devPost?.photoUrl ? (
+                      <img 
+                        src={devPost.photoUrl} 
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover" 
+                        alt="Profile Photo" 
+                      />
+                    ) : feedData?.channelInfo?.avatarUrl ? (
+                      <img 
+                        src={feedData.channelInfo.avatarUrl} 
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover" 
+                        alt="Channel Avatar" 
+                      />
+                    ) : (
+                      <User className="w-12 h-12 text-white" />
+                    )}
                   </div>
                 </div>
                 <div className="relative z-10 w-full font-sans">
                   <h3 className="text-base font-black text-white tracking-tight">عبیدالله غفاري (Obaidullah Ghaffari)</h3>
-                  <p className="text-[10px] text-slate-400 font-medium mt-1">طالب العلم • د علم، مطالعې او ټکنالوژۍ مینهوال</p>
+                  <p className="text-[10px] text-slate-400 font-medium mt-1">د علم، مطالعې او ټکنالوژۍ مینهوال</p>
                 </div>
 
                 {/* Direct quick action contacts on about page */}
@@ -5236,12 +5479,33 @@ export default function App() {
                     <span className="text-xs">پېژندنه او زده کړې</span>
                     <User className="w-4 h-4" />
                   </div>
-                  <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
-                    زه <strong>عبیدالله غفاري</strong> یم، د جهادي مدرسې د اوومې درجې طالب العلم او د علم، مطالعې او ټکنالوژۍ مینهوال. زما هڅه دا ده چې د اسلامي ارزښتونو، ګټورو معلوماتو او مثبتو افکارو د خپرولو لپاره له عصري وسایلو او ټکنالوژۍ څخه ګټه واخلم.
-                  </p>
-                  <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
-                    ځان د ټول عمر زده کوونکی ګڼم او باور لرم چې علم د انسان د پرمختګ او نېکمرغۍ تر ټولو ستره وسیله ده. له دیني زده کړو سره سره د کمپیوټر، ویبپاڼو، مصنوعي ځیرکتیا (AI)، لیکوالۍ او ډیجیټلي نړۍ په اړه هم زده کړې او تجربې ترلاسه کوم.
-                  </p>
+                  {devPost ? (
+                    <div className="text-right leading-[1.8]">
+                      {devPost.htmlText ? (
+                        <div 
+                          className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} whitespace-pre-wrap`}
+                          dangerouslySetInnerHTML={{ __html: makeHtmlHashtagsClickable(devPost.htmlText.replace(/#dev/gi, '').trim()) }}
+                        />
+                      ) : (
+                        <BeautifulTelegramText 
+                          text={devPost.text.replace(/#dev/gi, '').trim()} 
+                          isDark={isDark}
+                          fs={fs}
+                          showExpander={false}
+                          limitLines={100}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
+                        زه <strong>عبیدالله غفاري</strong> یم، د علم، مطالعې او ټکنالوژۍ مینهوال. زما هڅه دا ده چې د اسلامي ارزښتونو، ګټورو معلوماتو او مثبتو افکارو د خپرولو لپاره له عصري وسایلو او ټکنالوژۍ څخه ګټه واخلم.
+                      </p>
+                      <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
+                        ځان د ټول عمر زده کوونکی ګڼم او باور لرم چې علم د انسان د پرمختګ او نېکمرغۍ تر ټولو ستره وسیله ده. له دیني زده کړو سره سره د کمپیوټر، ویبپاڼو، مصنوعي ځیرکتیا (AI)، لیکوالۍ او ډیجیټلي نړۍ په اړه هم زده کړې او تجربې ترلاسه کوم.
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
@@ -5535,6 +5799,80 @@ export default function App() {
              F. HOME MAIN SCREEN (کورپاڼه)
              ========================================================== */
           <div className="space-y-5 animate-fade-in">
+            {/* 0. STORIES HORIZONTAL SYSTEM TRAY (سټوري برخه د رنګیني حلقې او ځانګړو پیغامونو سره) */}
+            {storiesList.length > 0 && (
+              <div className="relative p-1 bg-slate-500/5 dark:bg-slate-900/10 rounded-2xl border border-slate-500/10" style={{ direction: 'rtl' }}>
+                <div className="px-3 py-1.5 flex items-center justify-between border-b border-slate-500/5">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-pink-500 animate-pulse" />
+                    <span className={`text-[12px] font-black ${isDark ? 'text-white' : 'text-slate-950'} font-sans`}>
+                      تازه سټورياني (Stories)
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-slate-400 font-bold">د کتنې لپاره باندې کلیک وباسئ</span>
+                </div>
+                
+                <div className="flex gap-5 items-center overflow-x-auto scrollbar-none py-3.5 px-4 justify-start">
+                  {/* Dynamic story avatar for the whole app stories */}
+                  <div 
+                    onClick={() => {
+                      setActiveStoryIndex(0);
+                      setIsStoryViewerOpen(true);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 select-none group relative"
+                  >
+                    {/* Ring like story around app icon */}
+                    <div className="relative p-[3px] rounded-full bg-gradient-to-tr from-pink-500 via-purple-600 to-indigo-500 animate-pulse-slow shadow-lg transform hover:scale-105 active:scale-95 transition-all duration-300">
+                      <div className={`w-13.5 h-13.5 rounded-full ${isDark ? 'bg-slate-950' : 'bg-white'} flex items-center justify-center p-1`}>
+                        <div className={`w-full h-full rounded-full bg-gradient-to-br ${tc.gradient} flex items-center justify-center shadow-inner`}>
+                          <Feather className="w-6.5 h-6.5 text-white transform -rotate-12 group-hover:scale-110 group-hover:rotate-0 transition duration-300" />
+                        </div>
+                      </div>
+                      <span className="absolute -bottom-1 -left-1 bg-pink-500 text-white rounded-full px-1.5 py-0.5 border border-slate-950 text-[7px] font-black pointer-events-none tracking-widest animate-pulse">سټوري</span>
+                    </div>
+                    <span className={`text-[10px] font-black ${isDark ? 'text-slate-200' : 'text-slate-800'} font-sans mt-0.5`}>د مېنې ډېوه</span>
+                  </div>
+
+                  {/* Individual stories listing */}
+                  {storiesList.slice(0, 10).map((stPost, stIdx) => {
+                    const thumb = stPost.photoUrl || (stPost.photoUrls && stPost.photoUrls[1] ? stPost.photoUrls[1] : (stPost.photoUrls && stPost.photoUrls[0] ? stPost.photoUrls[0] : null));
+                    return (
+                      <div
+                        key={stPost.id}
+                        onClick={() => {
+                          setActiveStoryIndex(stIdx);
+                          setIsStoryViewerOpen(true);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 select-none group relative"
+                      >
+                        <div className="relative p-[2.5px] rounded-full bg-gradient-to-tr from-rose-500 via-fuchsia-600 to-purple-600 shadow transform hover:scale-105 active:scale-95 transition duration-300">
+                          <div className={`w-12 h-12 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-0.5`}>
+                            {thumb ? (
+                              <img
+                                src={thumb}
+                                alt="thumb"
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover rounded-full"
+                              />
+                            ) : (
+                              <div className="w-full h-full rounded-full bg-slate-850 flex items-center justify-center">
+                                <FileText className="w-4 h-4 text-purple-400" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`text-[8.5px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'} font-sans truncate w-14 text-center mt-0.5`}>
+                          {stPost.text ? stPost.text.replace(/#سټوري|#ستوری|#story|#سټوريانې/g, '').trim().substring(0, 15) : `کیسه ${stIdx + 1}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
 {/* 1. FEATURED POSTS SLIDER (ښکلی او متحرک سلائیډر د شعرونو) */}
             {featuredPosts.length > 0 && (
               <div 
@@ -5813,36 +6151,40 @@ export default function App() {
             {/* 3. CATEGORY FILTER TABS (د موضوع کټګوري ښکلي افقي ريسايکلر ويو) */}
             <div className="relative overflow-visible" style={{ direction: 'rtl' }}>
               <div className="flex gap-2.5 text-right relative overflow-x-auto py-4 px-2 scrollbar-none items-center snap-x snap-mandatory -my-2.5">
-                {[
-                  { id: 'all', label: 'ټول', icon: Layers, activeClass: 'cat-btn-all-active' },
-                  { id: 'writings_plain', label: 'ليکنې', icon: FileText, activeClass: 'cat-btn-writings-active' },
-                  { id: 'poems', label: 'شعرونه', icon: Feather, activeClass: 'cat-btn-poems-active' },
-                  { id: 'videos', label: 'ويډيويي', icon: Video, activeClass: 'cat-btn-videos-active' },
-                  { id: 'audio', label: 'غږيز', icon: Music, activeClass: 'cat-btn-audio-active' },
-                  { id: 'pdf', label: 'کتابونه', icon: BookOpen, activeClass: 'cat-btn-pdf-active' },
-                  { id: 'images', label: 'انځورونه', icon: ImageIcon, activeClass: 'cat-btn-images-active' },
-                ].map((cat) => {
-                  const CatIcon = cat.icon;
-                  const isActive = selectedCategory === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => {
-                        setSelectedCategory(cat.id);
-                        setActiveFavoriteFilter(null);
-                      }}
-                      style={{ cursor: 'pointer' }}
-                      className={`snap-center flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12.5px] font-black transition-all duration-300 select-none border whitespace-nowrap active:scale-[0.96] ${
-                        isActive 
-                          ? `${cat.activeClass} text-white border-transparent transform scale-[1.04]`
-                          : `${isDark ? 'bg-slate-900/60 hover:bg-slate-800 border-slate-800/70 text-slate-300 hover:text-white shadow-xs' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-950 shadow-xs'}`
-                      }`}
-                    >
-                      <CatIcon className={`w-4 h-4 transition-transform duration-300 ${isActive ? 'text-white scale-110 rotate-3' : isDark ? 'text-slate-450' : 'text-slate-500'}`} />
-                      <span className="font-sans tracking-tight">{cat.label}</span>
-                    </button>
-                  );
-                })}
+                {(() => {
+                  const categoriesBase = [
+                    { id: 'all', label: 'ټول', icon: Layers, activeClass: 'cat-btn-all-active' },
+                    ...(storiesList.length > 0 ? [{ id: 'stories', label: 'سټوريانې', icon: Sparkles, activeClass: 'bg-gradient-to-r from-pink-500 via-fuchsia-600 to-rose-500 border-transparent shadow-[0_4px_12px_rgba(236,72,153,0.35)]' }] : []),
+                    { id: 'writings_plain', label: 'ليکنې', icon: FileText, activeClass: 'cat-btn-writings-active' },
+                    { id: 'poems', label: 'شعرونه', icon: Feather, activeClass: 'cat-btn-poems-active' },
+                    { id: 'videos', label: 'ويډيويي', icon: Video, activeClass: 'cat-btn-videos-active' },
+                    { id: 'audio', label: 'غږيز', icon: Music, activeClass: 'cat-btn-audio-active' },
+                    { id: 'pdf', label: 'کتابونه', icon: BookOpen, activeClass: 'cat-btn-pdf-active' },
+                    { id: 'images', label: 'انځورونه', icon: ImageIcon, activeClass: 'cat-btn-images-active' },
+                  ];
+                  return categoriesBase.map((cat) => {
+                    const CatIcon = cat.icon;
+                    const isActive = selectedCategory === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => {
+                          setSelectedCategory(cat.id);
+                          setActiveFavoriteFilter(null);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className={`snap-center flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12.5px] font-black transition-all duration-300 select-none border whitespace-nowrap active:scale-[0.96] ${
+                          isActive 
+                            ? cat.activeClass.includes('cat-btn') ? `${cat.activeClass} text-white border-transparent transform scale-[1.04]` : `${cat.activeClass} text-white border-transparent transform scale-[1.04]`
+                            : `${isDark ? 'bg-slate-900/60 hover:bg-slate-800 border-slate-800/70 text-slate-300 hover:text-white shadow-xs' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-950 shadow-xs'}`
+                        }`}
+                      >
+                        <CatIcon className={`w-4 h-4 transition-transform duration-300 ${isActive ? 'text-white scale-110 rotate-3' : isDark ? 'text-slate-455' : 'text-slate-500'}`} />
+                        <span className="font-sans tracking-tight">{cat.label}</span>
+                      </button>
+                    );
+                  });
+                })()}
               </div>
             </div>
 
@@ -6380,7 +6722,7 @@ export default function App() {
                               <p className={`text-[12.5px] sm:text-[13px] ${isDark ? 'text-slate-200' : 'text-slate-800'} font-semibold truncate`}>
                                 {getPostTextWithFallback(post)}
                               </p>
-                              <span className="text-[9px] text-slate-500 flex items-center gap-1.5 mt-0.5 font-sans">
+                              <span className="text-[9px] text-slate-550 flex items-center gap-1.5 mt-0.5 font-sans">
                                 {getRelativeTimeInPashto(post.date, post.timeLabel || 'ثبت شوی')}
                               </span>
                               {post.audioList && post.audioList.length > 0 ? (
@@ -6447,7 +6789,7 @@ export default function App() {
                             )}
                             <div className="p-5 space-y-3">
                               <div className="flex items-center justify-end pb-1 border-b border-slate-500/10">
-                                <span className="text-xs text-slate-500 flex items-center gap-1 font-sans">
+                                <span className="text-xs text-slate-550 flex items-center gap-1 font-sans">
                                   <Clock className="w-3.5 h-3.5" />
                                   {getRelativeTimeInPashto(post.date, post.timeLabel || 'پورته شوی')}
                                 </span>
@@ -6479,7 +6821,7 @@ export default function App() {
                                       className={`${isDark ? 'bg-slate-950/80' : 'bg-slate-100'} rounded-lg px-2.5 py-1 text-xs flex items-center gap-1 text-slate-550 border border-slate-800/10`}
                                     >
                                       <span>{react.emoji}</span>
-                                      <span className="font-mono text-[10px] text-slate-500">{react.count}</span>
+                                      <span className="font-mono text-[10px] text-slate-555">{react.count}</span>
                                     </span>
                                   ))}
                                 </div>
@@ -6499,7 +6841,7 @@ export default function App() {
                             className={`${cardBg} p-5 rounded-2xl flex flex-col gap-3 transition group active:scale-[0.99] select-none text-right border border-slate-500/5`}
                           >
                             <div className="flex justify-end items-center pb-2 border-b border-slate-500/10">
-                              <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                              <span className="text-[10px] text-slate-555 flex items-center gap-1">
                                 <Calendar className="w-3.5 h-3.5" />
                                 {getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}
                               </span>
@@ -6567,7 +6909,7 @@ export default function App() {
                       <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-400/15 dark:bg-slate-800/40 shrink-0" />
                       <div className="flex-1 space-y-2">
                         <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-1/4" />
-                        <div className="h-4 bg-slate-400/25 dark:bg-slate-800/45 rounded w-3/4" />
+                        <div className="h-4 bg-slate-400/25 dark:bg-slate-800/35 rounded w-3/4" />
                         <div className="h-3 bg-slate-400/15 dark:bg-slate-800/25 rounded w-5/6" />
                         <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-1/2" />
                       </div>
@@ -6577,10 +6919,41 @@ export default function App() {
               </div>
             )}
 
-            {/* INFINITE SCROLL SENTINEL (د غبرکون سینټینل تڼۍ) */}
-            {visibleHomeCount < filteredHomePosts.length && (
-              <div id="home-infinite-scroll-sentinel" className="h-10 w-full flex items-center justify-center opacity-0 pointer-events-none" />
-            )}
+            {/* INFINITE SCROLL SENTINEL & MANUAL OVERRIDE (د غبرکون سینټینل او نور وګورئ بټن) */}
+            <div className="mt-8 flex flex-col items-center justify-center gap-3">
+              {visibleHomeCount < filteredHomePosts.length && (
+                <div id="home-infinite-scroll-sentinel" className="h-6 w-full flex items-center justify-center opacity-0 pointer-events-none" />
+              )}
+              
+              {isAutoloadingMore || isScrapingMore ? (
+                <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                  <span className="w-4 h-4 rounded-full border-2 border-slate-700 border-t-indigo-500 animate-spin shrink-0"></span>
+                  <span className="text-xs font-semibold font-sans">صبر وکړئ، نور پوسټونه راغونډیږي...</span>
+                </div>
+              ) : (
+                <button
+                  onClick={async () => {
+                    setIsAutoloadingMore(true);
+                    try {
+                      if (visibleHomeCount < filteredHomePosts.length) {
+                        setVisibleHomeCount((prev) => prev + 30);
+                      } else {
+                        await loadMoreOlderPosts();
+                        setVisibleHomeCount((prev) => prev + 30);
+                      }
+                    } catch (err) {
+                      console.error("Manual home posts loading failed:", err);
+                    } finally {
+                      setIsAutoloadingMore(false);
+                    }
+                  }}
+                  className="w-full max-w-xs px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black transition-all duration-300 shadow-md active:scale-98 flex items-center justify-center gap-2"
+                >
+                  <Eye className="w-4 h-4 text-indigo-100" />
+                  <span>نور وګورئ (Load More)</span>
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           /* ==========================================================
@@ -6600,7 +6973,7 @@ export default function App() {
                     setSelectedPost(post);
                   }}
                   style={{ cursor: 'pointer' }}
-                  className={`${isDark ? 'bg-slate-900/50 border-white/40 hover:bg-slate-800/60' : 'bg-white border-slate-200 hover:bg-slate-100/80 shadow-md'} border p-4 rounded-xl flex items-center gap-4 transition group select-none text-right`}
+                  className={`${isDark ? 'bg-slate-900/50 border-white/40 hover:bg-slate-800/60' : 'bg-white border-slate-205 hover:bg-slate-100/80 shadow-md'} border p-4 rounded-xl flex items-center gap-4 transition group select-none text-right`}
                 >
                   {/* Right: Enlarged thumbnail image with no white stroke */}
                   {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
@@ -6610,7 +6983,7 @@ export default function App() {
                           src={post.photoUrl || null}
                           referrerPolicy="no-referrer"
                           alt="Scrape preview node"
-                          className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                          className="w-full h-full object-cover transition duration-305 group-hover:scale-105"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = 'none';
                           }}
@@ -6627,7 +7000,7 @@ export default function App() {
                           src={post.videoThumbUrl || null}
                           referrerPolicy="no-referrer"
                           alt="Scrape preview node"
-                          className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                          className="w-full h-full object-cover transition duration-305 group-hover:scale-105"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = 'none';
                           }}
@@ -6637,7 +7010,7 @@ export default function App() {
                         </span>
                       </div>
                     ) : post.hasVideo ? (
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950/60 flex items-center justify-center shrink-0 text-indigo-400">
+                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950/65 flex items-center justify-center shrink-0 text-indigo-400">
                         <Video className="w-8 h-8 text-indigo-400" />
                       </div>
                     ) : null
@@ -6710,14 +7083,33 @@ export default function App() {
 
             {/* AUTOMATED INFINITE SCROLL SENTINEL FOR ARCHIVE SCREEN */}
             {feedData?.posts && (
-              <div id="infinite-scroll-sentinel" className="py-6 flex flex-col justify-center items-center gap-2">
+              <div id="infinite-scroll-sentinel" className="py-6 flex flex-col justify-center items-center gap-3">
                 {isScrapingMore ? (
                   <div className="flex items-center gap-2">
                     <span className="w-5 h-5 rounded-full border-2 border-slate-700 border-t-indigo-500 animate-spin shrink-0"></span>
                     <span className="text-xs text-slate-400 font-sans">د تېرو او پخوانيو پوسټونو کښته کول... (لوډیږي)</span>
                   </div>
                 ) : (
-                  <span className="text-[10px] text-slate-500 font-sans opacity-70">د نورو پوسټونو د موندلو او لوډیدو لپاره لاندې لاړ شئ...</span>
+                  <div className="flex flex-col items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        setIsScrapingMore(true);
+                        try {
+                          await loadMoreOlderPosts();
+                          setVisibleFullCount(prev => prev + 10);
+                        } catch (err) {
+                          console.error("Manual loading archive failed:", err);
+                        } finally {
+                          setIsScrapingMore(false);
+                        }
+                      }}
+                      className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-700 hover:border-slate-600 text-white dark:text-slate-300 text-xs font-bold transition active:scale-95 flex items-center justify-center gap-2 shadow-sm"
+                    >
+                      <Eye className="w-4 h-4 text-indigo-400" />
+                      <span>نور وګورئ (Load More)</span>
+                    </button>
+                    <span className="text-[10px] text-slate-500 font-sans opacity-75">د نورو پوستونو موندلو لپاره لاندې لاړ شئ یا په پورته بټن کلیک وکړئ.</span>
+                  </div>
                 )}
               </div>
             )}
@@ -6794,129 +7186,326 @@ export default function App() {
         </div>
       )}
 
-      {/* ==========================================================
-         FLOATING NEW POST PUSH NOTIFICATION (د نوې خپرونې د خبرتیا فیچر)
-         ========================================================== */}
-      <AnimatePresence>
-        {newPostNotification && (
-          <motion.div
-            initial={{ y: -100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -100, opacity: 0 }}
-            transition={{ type: 'spring', damping: 20, stiffness: 100 }}
-            className="fixed top-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-[150] select-none text-right"
-            style={{ direction: 'rtl' }}
-          >
-            <div className={`p-4 rounded-2xl shadow-[0_15px_30px_rgba(0,0,0,0.35)] border flex gap-3 ${
-              isDark 
-                ? 'bg-slate-900/95 backdrop-blur-md border-indigo-500/30 text-white' 
-                : 'bg-white/95 backdrop-blur-md border-indigo-100 text-slate-800'
-            }`}>
-              {/* Notification icon */}
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white shrink-0 shadow-md">
-                <Bell className="w-5 h-5 animate-swing text-white" />
-              </div>
-
-              {/* Title & snippet */}
-              <div className="flex-1 min-w-0 text-right">
-                <div className="flex items-center justify-between gap-1 mb-0.5">
-                  <span className="text-[10px] font-sans text-slate-400 font-medium">همدا اوس 🔥</span>
-                  <h4 className="text-[11px] font-black font-sans leading-none block">د مینه دیوه نوې خپرونه</h4>
-                </div>
-                <p className={`text-[10px] sm:text-[11px] leading-relaxed truncate font-sans ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-                  {newPostNotification.text ? newPostNotification.text.replace(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g, '').trim() : 'د نوي شعر لوستلو لپاره کلیک وکړی...'}
-                </p>
-
-                {/* Actions inside notification */}
-                <div className="flex items-center gap-2 mt-2.5">
-                  <button
-                    onClick={() => {
-                      setSelectedPost(newPostNotification);
-                      setIsReelsOpen(false);
-                      setIsPhotoReelsOpen(false);
-                      setIsCategoryPageOpen(false);
-                      setNewPostNotification(null);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-550 text-white text-[10px] font-bold rounded-lg transition-all"
-                  >
-                    پرانیستل
-                  </button>
-                  <button
-                    onClick={() => setNewPostNotification(null)}
-                    style={{ cursor: 'pointer' }}
-                    className={`px-3 py-1 text-[10px] font-bold rounded-lg transition-all ${
-                      isDark ? 'bg-slate-800 hover:bg-slate-750 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-650'
-                    }`}
-                  >
-                    بندول
-                  </button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ==========================================================
-         FIRST-TIME WELCOME DIALOG (د يوځل لپاره د ښه راغلاست ډیالوګ)
+         FIRST-TIME 10-PAGE ONBOARDING CAROUSEL (ښکلی او د لسو پاڼو مډرن اونبورډینګ سلایډر)
          ========================================================== */}
       <AnimatePresence>
-        {showWelcome && (
-          <>
-            {/* Overlay backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/80 z-[80] backdrop-blur-xs"
-            />
-            {/* Centered Modal view */}
-            <div className="fixed inset-0 z-[85] overflow-y-auto flex items-center justify-center p-4">
+        {showOnboarding && (() => {
+          const onboardingSlides = [
+            {
+              title: 'پښتو ادبي خزانه',
+              desc: 'د پښتنو د مډرن ادب، کلتور، بې‌ساري ادبي زېرمو او خوندورو شعرونو یوازینی پوره ډیجیټل راټولونه.',
+              icon: Sparkles,
+              gradient: 'from-pink-500 via-fuchsia-600 to-rose-500',
+              badge: 'بشپړه ادبي زېرمه'
+            },
+            {
+              title: 'د غونډال ښکلي سټوريانې',
+              desc: 'د لنډو شعرونو او خوندورو پیغامونو د مډرن کتنې لپاره د واټساپ سټایل په څېر ډینامیک پرمختګ کونکي سټوري ځانګړتیا.',
+              icon: Feather,
+              gradient: 'from-amber-500 to-orange-600',
+              badge: 'سټوري بڼه (Stories)'
+            },
+            {
+              title: 'شارټ او ترنمیز ریلزونه',
+              desc: 'د زړګي کښلي پښتو ترنمونو او د شعرونو کیفیت لرونکي لړۍ په ځانګړو او رنګینو لنډو ویډیوګانو (Reels) بڼې سره.',
+              icon: Video,
+              gradient: 'from-red-500 to-rose-600',
+              badge: 'شارټ ویډیوګانې'
+            },
+            {
+              title: 'د انځورونو او بیتونو سلایډر',
+              desc: 'د کښلو شعرونو څخه جوړ شوي لوړ کیفیت لرونکي انځورونه او ګرافیکي بڼې په یو پوره مډرن تصویري ریل کښې وګورئ.',
+              icon: ImageIcon,
+              gradient: 'from-emerald-500 to-teal-600',
+              badge: 'انځورونه'
+            },
+            {
+              title: 'غږيز ترنمونه او پوډکاسټونه',
+              desc: 'د پښتلو د خوندورو ترنمونو، بېلابېلو غږیزو پیغامونو او خپرونو موندل او د شالید (Background Player) کې په اسانه غږول.',
+              icon: Music,
+              gradient: 'from-indigo-500 to-blue-600',
+              badge: 'غږيز کلامونه'
+            },
+            {
+              title: 'د ډلبندیو منظم موضوعات',
+              desc: 'ټول پوسټونه په بشپړه توګه په څانګو وېشل شوي دي لکه: شعرونه، لیکنې، غږیز پیغامونه او د پښتو ادبي کتابونه.',
+              icon: Layers,
+              gradient: 'from-violet-500 to-purple-600',
+              badge: 'کټګورۍ'
+            },
+            {
+              title: 'د پښتو ادبي کتابونو لوی ارشیف',
+              desc: 'د غوښتنلیک څخه په اسانۍ د تلیګرام لوی ادبي کتابونه او پي‌ډي‌اف (PDF) فایلونه کښته او په مستقیمه توګه مطالعه کړئ.',
+              icon: BookOpen,
+              gradient: 'from-cyan-500 to-blue-500',
+              badge: 'کتابتون او PDF'
+            },
+            {
+              title: 'د موبایل اصلي خبرتیاوې',
+              desc: 'هیڅ کله نوې ادبی خپرونې مه له لاسه ورکوئ، سمدستي پخپل اندارئډ موبایل بار (System Bar) کې رښتینې خبرتیا ترلاسه کړئ.',
+              icon: Bell,
+              gradient: 'from-purple-500 via-pink-500 to-rose-500',
+              badge: 'د غونډال خبرتیاوې'
+            },
+            {
+              title: 'روښانه او د سترګو هوسا بېلابېل حالتونه',
+              desc: 'د سترګو د هوساینې او په اسانه د لوستلو لپاره هر کله غوښتنلیک تیاره (Twilight Dark) یا روښانه بڼې ته اړولی شئ.',
+              icon: Sun,
+              gradient: 'from-orange-400 to-amber-500',
+              badge: 'بهرني رنګونه'
+            },
+            {
+              title: 'خوښې او نښه شوي شعرونه',
+              desc: 'خپل تر ټولو محبوبه کلامونه په نښه کړئ او د انټرنیټ پرته یې په خپلو غوره والي کې د تل لپاره ذخیره وساتئ.',
+              icon: Heart,
+              gradient: 'from-rose-500 to-pink-600',
+              badge: 'زما خوښې'
+            }
+          ];
+
+          const currentSlide = onboardingSlides[activeOnboardingPage];
+          if (!currentSlide) return null;
+          const SlideIcon = currentSlide.icon;
+
+          const handleFinishOnboarding = () => {
+            localStorage.setItem('dewa_onboarding_shown_v2', 'true');
+            setShowOnboarding(false);
+          };
+
+          const handleLaunchFeatureOnboard = (slideIndex: number) => {
+            localStorage.setItem('dewa_onboarding_shown_v2', 'true');
+            setShowOnboarding(false);
+            
+            // Close any overlay pages first to avoid overlapping
+            setIsReelsOpen(false);
+            setIsPhotoReelsOpen(false);
+            setIsCategoryPageOpen(false);
+            setIsSettingsPageOpen(false);
+            setIsAboutPageOpen(false);
+            setIsContactPageOpen(false);
+            setIsFullFeedOpen(false);
+            setIsSearchOpen(false);
+            setSelectedPost(null);
+
+            if (slideIndex === 0) {
+              // ۱. پښتو ادبي خزانه
+              setSelectedCategory('all');
+            } else if (slideIndex === 1) {
+              // ۲. د سټوريانو برخه
+              if (storiesList.length > 0) {
+                setActiveStoryIndex(0);
+                setIsStoryViewerOpen(true);
+              } else {
+                setSelectedCategory('stories');
+              }
+            } else if (slideIndex === 2) {
+              // ۳. شارټ او ترنمیز ریلزونه (Reels)
+              setIsReelsOpen(true);
+            } else if (slideIndex === 3) {
+              // ۴. د انځورونو او بیتونو سلایډر
+              setIsPhotoReelsOpen(true);
+            } else if (slideIndex === 4) {
+              // ۵. غږيز کلامونه
+              setSelectedCategory('audio');
+            } else if (slideIndex === 5) {
+              // ۶. موضوعي ډلبندۍ
+              setIsCategoryPageOpen(true);
+            } else if (slideIndex === 6) {
+              // ۷. د کتابونو ارشیف (PDF)
+              setSelectedCategory('pdf');
+            } else if (slideIndex === 7) {
+              // ۸. د غونډال خبرتیاوې
+              setIsSettingsPageOpen(true);
+            } else if (slideIndex === 8) {
+              // ۹. بهرني رنګونه (تھیم ترتیب)
+              setIsSettingsPageOpen(true);
+            } else if (slideIndex === 9) {
+              // ۱۰. خوښ شوي اثار (Favorites)
+              setIsFavoritesMenuOpen(true);
+            }
+          };
+
+          return (
+            <>
+              {/* Overlay Backdrop */}
               <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 30 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 30 }}
-                className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative text-right"
-              >
-                {/* Visual Icon */}
-                <div className="mx-auto w-12 h-12 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 mb-4 animate-bounce">
-                  <Sparkles className="w-6 h-6" />
-                </div>
-                
-                <h3 className="text-sm font-bold text-white text-center mb-2.5">
-                  رسمي اپلیکیشن ته ښه راغلاست!
-                </h3>
-                
-                <p className="text-[11.5px] text-slate-350 leading-relaxed text-right mb-5">
-                  دا مینه دیوه رسمي خپرونې خوندور اپلیکیشن ته ښه راغلاست. دلته به تاسو ته د کانال ټول علمي، ادبي او فکري پوسټونه، په خورا ښکلي او منظم ډیزاین کې وړاندې شي.
-                </p>
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-slate-950/95 z-[9991] backdrop-blur-md"
+              />
 
-                <div className="space-y-2 bg-slate-950/40 p-3.5 rounded-2xl border border-slate-850 text-[10.5px] text-slate-400 mb-6">
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <span>ثانیه کې د انځورونو کښته کول</span>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  </div>
-                  <div className="flex items-center gap-1.5 justify-end mt-1">
-                    <span>ګړندی او باوري د لټون سیسټم</span>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => {
-                    localStorage.setItem('dewa_welcome_shown', 'true');
-                    setShowWelcome(false);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-550 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 font-sans"
+              {/* Onboarding Dialog view */}
+              <div className="fixed inset-0 z-[9992] overflow-y-auto flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0, y: 30 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.95, opacity: 0, y: -30 }}
+                  className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl relative text-right flex flex-col justify-between min-h-[580px]"
                 >
-                  مننه، د اپلیکیشن کارول پیل کړئ
-                </button>
-              </motion.div>
-            </div>
-          </>
-        )}
+                  
+                  {/* Top Segmented Progress Bar and Skip Button */}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between gap-4" style={{ direction: 'rtl' }}>
+                      <span className="text-[10px] uppercase tracking-wider font-sans font-black text-slate-400 bg-slate-800/60 px-2.5 py-1 rounded-full">
+                        مرحله {activeOnboardingPage + 1} / 10
+                      </span>
+                      <button
+                        onClick={handleFinishOnboarding}
+                        style={{ cursor: 'pointer' }}
+                        className="text-xs font-black font-sans text-rose-400 hover:text-rose-350 transition select-none active:scale-95"
+                      >
+                        تېرېدل / Skip
+                      </button>
+                    </div>
+
+                    {/* Highly Interactive Navigable Segmented Progress Bars */}
+                    <div className="flex gap-1 w-full" style={{ direction: 'rtl' }}>
+                      {onboardingSlides.map((_, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setActiveOnboardingPage(idx)}
+                          style={{ cursor: 'pointer' }}
+                          title={`مرحله ${idx + 1}`}
+                          className="h-1.5 flex-1 bg-slate-800 rounded-full overflow-hidden focus:outline-none transition-transform hover:scale-y-125"
+                        >
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              idx <= activeOnboardingPage
+                                ? `bg-gradient-to-r ${currentSlide.gradient}`
+                                : 'bg-transparent'
+                            }`}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Icon and Animated Content inside the slider */}
+                  <div className="my-5 flex flex-col items-center text-center">
+                    
+                    {/* Glowing outer ring and icon */}
+                    <motion.div
+                      key={activeOnboardingPage}
+                      initial={{ scale: 0.6, rotate: -20, opacity: 0 }}
+                      animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                      transition={{ type: 'spring', damping: 15 }}
+                      onClick={() => handleLaunchFeatureOnboard(activeOnboardingPage)}
+                      style={{ cursor: 'pointer' }}
+                      className={`w-18 h-18 rounded-full bg-gradient-to-tr ${currentSlide.gradient} p-0.5 shadow-lg shadow-indigo-500/10 flex items-center justify-center mb-4 relative cursor-pointer active:scale-95 transition`}
+                      title="د خلاصون لپاره کلیک وباسئ"
+                    >
+                      <div className="w-full h-full bg-slate-900 rounded-full flex items-center justify-center">
+                        <SlideIcon className={`w-8 h-8 text-white`} />
+                      </div>
+                      
+                      <span className="absolute -bottom-2 bg-slate-950 text-white rounded-full px-2.5 py-0.5 border border-slate-850 text-[8px] font-black tracking-wider shadow">
+                        {currentSlide.badge}
+                      </span>
+                    </motion.div>
+
+                    {/* Texts with animations */}
+                    <div className="space-y-2" style={{ direction: 'rtl' }}>
+                      <motion.h3
+                        key={`title_${activeOnboardingPage}`}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.1 }}
+                        onClick={() => handleLaunchFeatureOnboard(activeOnboardingPage)}
+                        style={{ cursor: 'pointer' }}
+                        className="text-[16px] font-black text-white hover:text-indigo-400 transition leading-tight font-sans cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        {currentSlide.title}
+                        <Sparkles className="w-4 h-4 text-amber-400" />
+                      </motion.h3>
+
+                      <motion.p
+                        key={`desc_${activeOnboardingPage}`}
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="text-xs text-slate-350 leading-relaxed font-semibold max-w-sm mx-auto px-2"
+                      >
+                        {currentSlide.desc}
+                      </motion.p>
+                    </div>
+
+                  </div>
+
+                  {/* HIGHLY INTERACTIVE GRID OF FEATURES (د فیچرونو ځانګړی لیست چي په کلیک کولو سره په مستقیم ډول خلاصيږي) */}
+                  <div className="mb-6 border-t border-slate-800/80 pt-4 text-right w-full">
+                    <span className="block text-[11px] font-black text-amber-400 mb-2.5 font-sans leading-none flex items-center justify-start gap-1 justify-end">
+                      <span>د کتنې لپاره لاندې په هر بېلابېل فیچر باندې کلیک وباسئ:</span>
+                      <Sparkles className="w-3 h-3 text-amber-450 animate-pulse" />
+                    </span>
+                    
+                    <div className="grid grid-cols-2 gap-2 max-h-34 overflow-y-auto pr-1 pb-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                      {onboardingSlides.map((slide, idx) => {
+                        const IconComponent = slide.icon;
+                        const isCurrent = idx === activeOnboardingPage;
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => handleLaunchFeatureOnboard(idx)}
+                            style={{ cursor: 'pointer' }}
+                            className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-right transition-all duration-200 active:scale-[0.96] group ${
+                              isCurrent 
+                                ? 'bg-slate-800/90 border-indigo-500/50 text-white shadow-md' 
+                                : 'bg-slate-950/65 border-slate-850 hover:border-slate-800 text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            <span className="text-[9.5px] font-bold truncate order-2 font-sans select-none pointer-events-none">
+                              {slide.title}
+                            </span>
+                            <div className={`p-1.5 rounded-lg bg-gradient-to-tr ${slide.gradient} text-white shrink-0 shadow-xs order-1 pointer-events-none select-none`}>
+                              <IconComponent className="w-3 h-3" />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Navigation controls next, back and get started */}
+                  <div className="flex gap-3 items-center mt-2" style={{ direction: 'rtl' }}>
+                    {activeOnboardingPage < 9 ? (
+                      <button
+                        onClick={() => setActiveOnboardingPage(prev => Math.min(prev + 1, 9))}
+                        style={{ cursor: 'pointer' }}
+                        className={`flex-1 py-3 bg-gradient-to-r ${currentSlide.gradient} active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 font-sans shadow-lg shadow-indigo-500/10`}
+                      >
+                        <span>بلې مرحلې ته لاړ شئ</span>
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleFinishOnboarding}
+                        style={{ cursor: 'pointer' }}
+                        className="flex-1 py-3 bg-pink-600 hover:bg-pink-550 active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 font-sans shadow-lg shadow-pink-500/15"
+                      >
+                        <span>دلته پیل کړئ</span>
+                        <Check className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {activeOnboardingPage > 0 && (
+                      <button
+                        onClick={() => setActiveOnboardingPage(prev => Math.max(prev - 1, 0))}
+                        style={{ cursor: 'pointer' }}
+                        className="px-5 py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold transition active:scale-[0.98]"
+                      >
+                        بېرته
+                      </button>
+                    )}
+                  </div>
+
+                </motion.div>
+              </div>
+            </>
+          );
+        })()}
       </AnimatePresence>
 
       {/* ==========================================================
@@ -7292,7 +7881,7 @@ export default function App() {
                           {/* Circular Avatar */}
                           <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full border-4 border-slate-900 bg-slate-950 overflow-hidden shadow-lg">
                             <img
-                              src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200"
+                              src={devPost?.photoUrl || feedData?.channelInfo?.avatarUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200"}
                               className="w-full h-full object-cover"
                               alt="Obaidullah Ghaffari Portal"
                             />
@@ -7300,7 +7889,7 @@ export default function App() {
                           
                           <h4 className={`text-base font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>عبیدالله غفاري</h4>
                           <span className="text-[10px] text-slate-400 block mt-1 tracking-wider">
-                            طالب العلم • AI Developer • Web Enthusiast
+                            AI Developer • Web Enthusiast
                           </span>
 
                           {/* Quick Action Contact Buttons */}
@@ -7311,7 +7900,7 @@ export default function App() {
                               rel="noreferrer"
                               className="py-1.5 px-3 bg-indigo-650/10 hover:bg-indigo-600/20 text-indigo-400 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
                             >
-                              <Globe className="w-3 h-3" />
+                              <Globe className="w-3" />
                               <span>Website</span>
                             </a>
                             <a
@@ -7340,9 +7929,28 @@ export default function App() {
                           <span className="text-xs">زما په اړه</span>
                           <User className="w-4 h-4" />
                         </div>
-                        <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
-                          زه عبیدالله غفاري یم، د لوګر ولایت اوسېدونکی او د جهادي مدرسې د اوومې درجې طالب العلم. د ټکنالوژۍ، ویب پرافتیا, مصنوعي ځیرکتیا او زده کړې سره ځانګړې مینه لرم او هڅه کوم چې د دین، هېواد او پښتو ژبې لپاره ګټور ډیجیټلي خدمتونه وړاندې کړم.
-                        </p>
+                        {devPost ? (
+                          <div className="text-right text-[11px] leading-relaxed">
+                            {devPost.htmlText ? (
+                              <div 
+                                className={`${isDark ? 'text-slate-300' : 'text-slate-700'} whitespace-pre-wrap`}
+                                dangerouslySetInnerHTML={{ __html: makeHtmlHashtagsClickable(devPost.htmlText.replace(/#dev/gi, '').trim()) }}
+                              />
+                            ) : (
+                              <BeautifulTelegramText 
+                                text={devPost.text.replace(/#dev/gi, '').trim()} 
+                                isDark={isDark}
+                                fs={fs}
+                                showExpander={false}
+                                limitLines={50}
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                            زه عبیدالله غفاري یم، د لوګر ولایت اوسېدونکی. د ټکنالوژۍ، ویب پرافتیا, مصنوعي ځیرکتیا او زده کړې سره ځانګړې مینه لرم او هڅه کوم چې د دین، هېواد او پښتو ژبې لپاره ګټور ډیجیټلي خدمتونه وړاندې کړم.
+                          </p>
+                        )}
                       </div>
 
                       {/* Mission Card */}
@@ -7810,6 +8418,212 @@ export default function App() {
             </motion.div>
           </>
         )}
+      </AnimatePresence>
+
+      {/* FLOATING SCROLL TO TOP BUTTON (د پورته تللو ښکلې کارول اسانه بټنه) */}
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.button
+            id="scroll-to-top-floating-btn"
+            initial={{ opacity: 0, scale: 0.5, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.5, y: 15 }}
+            whileHover={{ scale: 1.1, y: -2 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={scrollToTop}
+            style={{ cursor: 'pointer' }}
+            className={`fixed bottom-[105px] right-5 sm:right-7 z-[9900] w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center shadow-lg border outline-none transition-all duration-300 select-none ${
+              isDark 
+                ? 'bg-slate-900/95 border-indigo-500/35 text-indigo-400 hover:text-white hover:bg-indigo-600 shadow-[0_5px_20px_rgba(99,102,241,0.2)]' 
+                : 'bg-white/95 border-indigo-150 text-indigo-600 hover:text-white hover:bg-indigo-600 shadow-[0_5px_16px_rgba(79,70,229,0.15)]'
+            }`}
+            title="پورته تللو بټنه"
+          >
+            <ChevronUp className="w-5.5 h-5.5 sm:w-6 sm:h-6 stroke-[3] animate-pulse" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* ==========================================================
+         STORIES IMMERSIVE FULLSCREEN VIEWER (د کیسو د کتلو پرمختللی د سمارټ فون د کیسو په شان سکرین)
+         ========================================================== */}
+      <AnimatePresence>
+        {isStoryViewerOpen && storiesList.length > 0 && (() => {
+          const activeStory = storiesList[activeStoryIndex];
+          if (!activeStory) return null;
+
+          const storyImage = activeStory.photoUrl || (activeStory.photoUrls && activeStory.photoUrls[0]);
+          const storyVideo = activeStory.videoUrl;
+
+          return (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.25 }}
+              className="fixed inset-0 w-screen h-screen bg-black z-[10000] overflow-hidden flex flex-col justify-between select-none"
+            >
+              {/* Blurred background image/gradient for premium atmosphere */}
+              <div className="absolute inset-0 z-0 opacity-40 blur-3xl pointer-events-none scale-110">
+                {storyImage ? (
+                  <img src={storyImage} alt="bg-ambient" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                ) : (
+                  <div className={`w-full h-full bg-gradient-to-tr ${tc.gradient}`} />
+                )}
+              </div>
+
+              {/* Top Navigation Bar */}
+              <div className="relative z-20 w-full pt-4 px-4 pb-2 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex flex-col gap-3">
+                
+                {/* 1. Progress indicators */}
+                <div className="flex gap-1.5 w-full">
+                  {storiesList.map((_, index) => {
+                    let progressPct = 0;
+                    if (index < activeStoryIndex) progressPct = 100;
+                    else if (index === activeStoryIndex) progressPct = storyProgress;
+
+                    return (
+                      <div key={index} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 transition-all duration-[40ms] ease-linear"
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 2. Channel header */}
+                <div className="flex items-center justify-between w-full" style={{ direction: 'rtl' }}>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-full p-[2.5px] bg-gradient-to-tr from-rose-500 via-purple-600 to-indigo-500 shadow-md">
+                      <div className="w-full h-full rounded-full overflow-hidden border border-black/20">
+                        <img
+                          src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"}
+                          alt="channel-pic"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <h4 className="text-xs sm:text-sm font-black text-white drop-shadow">
+                        پښتو ادبي خزانه
+                      </h4>
+                      <p className="text-[9px] text-slate-300 drop-shadow">
+                        {getRelativeTimeInPashto(activeStory.date, activeStory.timeLabel || 'وروستی')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Close button */}
+                  <button
+                    onClick={() => setIsStoryViewerOpen(false)}
+                    style={{ cursor: 'pointer' }}
+                    className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md border border-white/10 transition active:scale-95"
+                    title="تړل / Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Core Media Display */}
+              <div className="relative flex-1 w-full flex items-center justify-center p-4">
+                
+                {/* Touches for navigating Left/Right */}
+                <div
+                  onMouseDown={() => setIsStoryPaused(true)}
+                  onMouseUp={() => setIsStoryPaused(false)}
+                  onTouchStart={() => setIsStoryPaused(true)}
+                  onTouchEnd={() => setIsStoryPaused(false)}
+                  className="absolute inset-y-0 right-0 w-1/3 z-10 cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleNextStory();
+                  }}
+                />
+                
+                <div
+                  onMouseDown={() => setIsStoryPaused(true)}
+                  onMouseUp={() => setIsStoryPaused(false)}
+                  onTouchStart={() => setIsStoryPaused(true)}
+                  onTouchEnd={() => setIsStoryPaused(false)}
+                  className="absolute inset-y-0 left-0 w-1/3 z-10 cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handlePrevStory();
+                  }}
+                />
+
+                {/* Content Layout */}
+                <div className="w-full max-w-lg h-full flex flex-col justify-center items-center z-5">
+                  {storyVideo ? (
+                    <video
+                      src={storyVideo}
+                      autoPlay
+                      playsInline
+                      muted={false}
+                      className="max-h-[70vh] max-w-full rounded-2xl shadow-2xl object-contain border border-white/10 bg-black/40"
+                    />
+                  ) : storyImage ? (
+                    <img
+                      src={storyImage}
+                      alt="story-media"
+                      referrerPolicy="no-referrer"
+                      className="max-h-[70vh] max-w-full rounded-2xl shadow-2xl object-contain border border-white/10 bg-black/20"
+                    />
+                  ) : (
+                    // Poetry background
+                    <div className={`p-8 rounded-3xl bg-gradient-to-br ${tc.gradient} border border-white/15 shadow-[0_15px_50px_rgba(0,0,0,0.5)] text-center text-white max-w-sm mx-auto flex flex-col justify-center gap-4`}>
+                      <Feather className="w-10 h-10 mx-auto text-white/50 animate-bounce-slow" />
+                      <p className="text-sm font-black font-sans leading-relaxed tracking-wide select-text whitespace-pre-line text-center direction-rtl" style={{ direction: 'rtl' }}>
+                        {activeStory.text ? activeStory.text.replace(/#سټوري|#ستوری|#story|#سټوريانې/g, '').trim() : ''}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Text caption overlay for media */}
+                  {(storyVideo || storyImage) && activeStory.text && (
+                    <div className="absolute bottom-6 inset-x-8 z-20" style={{ direction: 'rtl' }}>
+                      <div className="p-4 sm:p-5 rounded-2xl bg-black/65 backdrop-blur-md border border-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.3)] text-right flex flex-col gap-1 max-w-md mx-auto">
+                        <p className="text-white text-xs sm:text-[13px] leading-relaxed font-sans font-semibold break-words text-right select-text whitespace-pre-line line-clamp-4">
+                          {activeStory.text.replace(/#سټوري|#ستوری|#story|#سټوريانې/g, '').trim()}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Premium Share Footer */}
+              <div className="relative z-20 w-full pb-8 pt-4 px-4 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-center gap-3">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const shareUrl = activeStory.postUrl || window.location.href;
+                    if (navigator.share) {
+                      navigator.share({
+                        title: 'د مينې ډېوه سټوري',
+                        text: activeStory.text || '',
+                        url: shareUrl
+                      }).catch(err => console.log(err));
+                    } else {
+                      navigator.clipboard.writeText(shareUrl);
+                      setToast('د سټوري پيوند ادرس کاپي شو!');
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  className="px-6 py-2.5 bg-white/15 hover:bg-white/20 active:scale-95 text-white font-bold rounded-xl text-xs transition-all border border-white/10 flex items-center gap-2"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-pink-400" />
+                  <span>سټوري شریک کړئ</span>
+                </button>
+              </div>
+            </motion.div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* GLOBAL FLOATING BACKGROUND AUDIO CONTROL (په شالید کې د غږیزو خپرونو وقفه او کنټرول) */}
