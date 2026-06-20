@@ -1,6 +1,6 @@
 {
   "name": "Remix: د مینې ډېوه",
-  "description": "A responsive mobile mockup and integrator for displaying Telegram channel message feeds inside a Capacitor application, featuring direct Bot API sandboxes.",
+  "description": "A responsive mobile mockup and integrator for displaying Telegram channel message feeds inside a Capacitor application, featuring direct Bot API sandboxes and an advanced Pashto stories and novels browser.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
