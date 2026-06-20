@@ -22,6 +22,7 @@ import {
   ArrowRight,
   ArrowLeft,
   Clock,
+  History,
   BookOpen,
   Video,
   FileText,
@@ -68,7 +69,9 @@ import {
   Quote,
   Award as AwardIcon,
   LogOut,
-  Hash
+  Hash,
+  Bookmark,
+  BookmarkCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -455,6 +458,7 @@ interface GlobalAudioState {
   currentTime: string;
   totalDuration: string;
   isPlaying: boolean;
+  playbackRate?: number;
 }
 
 let globalAudioElement: HTMLAudioElement | null = null;
@@ -466,6 +470,7 @@ let globalAudioState: GlobalAudioState = {
   currentTime: '0:00',
   totalDuration: '0:00',
   isPlaying: false,
+  playbackRate: 1.0,
 };
 
 const audioSubscribers = new Set<(state: GlobalAudioState) => void>();
@@ -488,6 +493,9 @@ function playGlobalAudio(url: string, title: string, duration?: string) {
     globalAudioElement = new Audio();
     
     globalAudioElement.addEventListener('play', () => {
+      if (globalAudioElement) {
+        globalAudioElement.playbackRate = globalAudioState.playbackRate || 1.0;
+      }
       updateGlobalAudio({ isPlaying: true });
     });
     globalAudioElement.addEventListener('pause', () => {
@@ -514,6 +522,7 @@ function playGlobalAudio(url: string, title: string, duration?: string) {
     });
     globalAudioElement.addEventListener('loadedmetadata', () => {
       if (!globalAudioElement) return;
+      globalAudioElement.playbackRate = globalAudioState.playbackRate || 1.0;
       const formatTime = (secs: number) => {
         if (isNaN(secs)) return '0:00';
         const m = Math.floor(secs / 60);
@@ -534,10 +543,16 @@ function playGlobalAudio(url: string, title: string, duration?: string) {
   allVideos.forEach(v => v.pause());
 
   if (globalAudioState.url === url) {
+    if (globalAudioElement) {
+      globalAudioElement.playbackRate = globalAudioState.playbackRate || 1.0;
+    }
     globalAudioElement.play().catch(err => console.warn(err));
   } else {
     globalAudioElement.src = url;
     globalAudioElement.preload = 'auto';
+    if (globalAudioElement) {
+      globalAudioElement.playbackRate = globalAudioState.playbackRate || 1.0;
+    }
     updateGlobalAudio({
       url,
       title,
@@ -585,6 +600,13 @@ function stopAndCloseGlobalAudio() {
   });
 }
 
+function setGlobalPlaybackRate(rate: number) {
+  updateGlobalAudio({ playbackRate: rate });
+  if (globalAudioElement) {
+    globalAudioElement.playbackRate = rate;
+  }
+}
+
 function useGlobalAudio() {
   const [state, setState] = useState<GlobalAudioState>(globalAudioState);
   useEffect(() => {
@@ -614,7 +636,7 @@ function BeautifulWaveform({
   tc: any;
 }) {
   const bars = React.useMemo(() => {
-    const count = 38;
+    const count = 45;
     let hash = 0;
     for (let i = 0; i < seed.length; i++) {
       hash = seed.charCodeAt(i) + ((hash << 5) - hash);
@@ -622,9 +644,9 @@ function BeautifulWaveform({
     
     const result: { height: number; delay: string }[] = [];
     for (let i = 0; i < count; i++) {
-      const pseudoRandom = Math.sin(hash + i * 1.6) * 0.5 + 0.5;
-      const height = Math.floor(18 + pseudoRandom * 72); // 18% to 90%
-      const delay = (i * 0.04).toFixed(3) + 's';
+      const pseudoRandom = Math.sin(hash + i * 1.8) * 0.4 + 0.6;
+      const height = Math.floor(20 + pseudoRandom * 75); // 20% to 95%
+      const delay = (i * 0.03).toFixed(3) + 's';
       result.push({ height, delay });
     }
     return result;
@@ -640,16 +662,16 @@ function BeautifulWaveform({
   return (
     <div 
       onClick={handleWaveformClick}
-      className="relative flex items-end justify-between h-12 w-full cursor-pointer select-none group px-1 py-1 rounded-xl"
+      className="relative flex items-center justify-between h-7 w-full cursor-pointer select-none group px-1 rounded-md"
     >
       <style>{`
-        @keyframes dewa-waveform-bounce {
+        @keyframes tg-waveform-pulse {
           0%, 100% { transform: scaleY(1); }
-          50% { transform: scaleY(1.45); }
+          50% { transform: scaleY(1.4); }
         }
-        .dewa-wave-active-animated {
-          animation: dewa-waveform-bounce 1s ease-in-out infinite;
-          transform-origin: bottom;
+        .tg-wave-active-animated {
+          animation: tg-waveform-pulse 0.8s ease-in-out infinite;
+          transform-origin: center;
         }
       `}</style>
       {bars.map((bar, idx) => {
@@ -658,9 +680,9 @@ function BeautifulWaveform({
         
         let barColorClass = '';
         if (isActive) {
-          barColorClass = tc.bg || 'bg-indigo-600';
+          barColorClass = tc.bg || 'bg-indigo-650';
         } else {
-          barColorClass = isDark ? 'bg-slate-800' : 'bg-slate-200';
+          barColorClass = isDark ? 'bg-slate-800' : 'bg-slate-300';
         }
 
         return (
@@ -669,14 +691,41 @@ function BeautifulWaveform({
             style={{ 
               height: `${bar.height}%`, 
               animationDelay: isPlaying && isActive ? bar.delay : undefined,
-              transition: 'background-color 0.25s, height 0.1s'
+              transition: 'background-color 0.2s, height 0.15s'
             }}
-            className={`w-[2px] sm:w-[3px] rounded-full ${barColorClass} ${isPlaying && isActive ? 'dewa-wave-active-animated' : ''} hover:scale-y-110`}
+            className={`w-[1.5px] sm:w-[2.2px] rounded-full ${barColorClass} ${isPlaying && isActive ? 'tg-wave-active-animated' : ''}`}
           />
         );
       })}
     </div>
   );
+}
+
+// Helper to parse a beautiful, human-readable audio chapter or voice title
+function getBeautifulAudioTitle(audioTitle: string | undefined, fallbackTitle: string | undefined, postText?: string, idx?: number): string {
+  const genericTitles = ['غږیز فایل / پیغام', 'غږیز فایل خپرونه', 'غږیز پیغام', 'غږیز فایل', 'اصلي معرفي کوونکی فایل غږول', 'غور چاڼ غږونه'];
+  const baseTitle = (audioTitle || '').trim();
+  const isGeneric = !baseTitle || genericTitles.some(t => baseTitle.includes(t)) || baseTitle.length < 3;
+  
+  if (isGeneric) {
+    if (fallbackTitle && fallbackTitle.trim() !== '') {
+      let t = fallbackTitle.trim();
+      if (t.length > 55) t = t.slice(0, 52) + '...';
+      return t;
+    }
+    if (postText && postText.trim() !== '') {
+      const firstLine = postText.replace(/#[^\s]+/g, '').split('\n').filter(l => l.trim() !== '')[0];
+      if (firstLine && firstLine.trim().length > 3) {
+        let cleaned = firstLine.trim();
+        if (cleaned.length > 55) {
+          cleaned = cleaned.slice(0, 52) + '...';
+        }
+        return cleaned;
+      }
+    }
+    return idx !== undefined ? `غږیز روایت ${idx + 1}` : 'د رومان برخه غږول';
+  }
+  return baseTitle;
 }
 
 // Custom elegant audio player with prominent progress tracker and visual waveform matching the video player's style
@@ -688,6 +737,7 @@ function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { key?: any;
   const progress = isThisActive ? globalAudio.progress : 0;
   const currentTime = isThisActive ? globalAudio.currentTime : '0:00';
   const totalDuration = isThisActive ? globalAudio.totalDuration : (duration || '0:00');
+  const activeSpeed = isThisActive ? (globalAudio.playbackRate || 1.0) : 1.0;
 
   const togglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -713,51 +763,95 @@ function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { key?: any;
     }
   };
 
+  const handleSpeedCycle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    let nextSpeed = 1.0;
+    const currentSpeed = globalAudio.playbackRate || 1.0;
+    if (currentSpeed === 1.0) nextSpeed = 1.5;
+    else if (currentSpeed === 1.5) nextSpeed = 2.0;
+    else nextSpeed = 1.0;
+    
+    setGlobalPlaybackRate(nextSpeed);
+  };
+
   return (
     <div 
       onClick={(e) => e.stopPropagation()}
-      className={`p-4 rounded-2xl ${isDark ? 'bg-slate-900/60 border-slate-850/80 shadow-[0_4px_20px_rgba(0,0,0,0.25)]' : 'bg-slate-100/90 border-slate-200 shadow-[0_4px_16px_rgba(0,0,0,0.03)]'} border flex flex-col gap-3 font-sans mt-3 text-right w-full`}
+      style={{ direction: 'rtl' }}
+      className={`p-3.5 rounded-3xl border select-none transition-all duration-300 mt-2.5 w-full flex items-center gap-3.5 text-right ${
+        isDark 
+          ? 'bg-slate-900/80 border-slate-805/70 shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-slate-850/90' 
+          : 'bg-slate-50/90 border-slate-205/85 shadow-[0_4px_12px_rgba(0,0,0,0.02)] hover:bg-slate-100/90'
+      }`}
     >
-      <div className="flex items-center justify-between gap-3 min-w-0">
+      {/* 1. PLAY BUTTON (Right side in RTL) */}
+      <div className="relative shrink-0 select-none">
+        {isPlaying && (
+          <span className={`absolute -inset-1 rounded-full animate-ping opacity-20 ${tc.bg || 'bg-indigo-650'}`} />
+        )}
         <button
           onClick={togglePlay}
           style={{ cursor: 'pointer' }}
-          className={`w-11 h-11 rounded-full ${tc.bg} ${tc.hoverBg} hover:scale-105 active:scale-95 text-white flex items-center justify-center shrink-0 shadow-md transition`}
+          className={`w-11 h-11 rounded-full ${tc.bg || 'bg-indigo-650'} ${tc.hoverBg || 'bg-indigo-600'} hover:scale-105 active:scale-95 text-white flex items-center justify-center relative z-10 transition duration-300 shadow-[0_3px_10px_rgba(30,30,30,0.15)]`}
         >
           {isPlaying ? (
-            <svg className="w-4 h-4 fill-current text-white" viewBox="0 0 24 24">
-              <rect x="6" y="4" width="4" height="16" rx="1" />
-              <rect x="14" y="4" width="4" height="16" rx="1" />
+            <svg className="w-3.5 h-3.5 fill-current text-white animate-pulse" viewBox="0 0 24 24">
+              <rect x="5" y="4" width="4" height="16" rx="1.5" />
+              <rect x="15" y="4" width="4" height="16" rx="1.5" />
             </svg>
           ) : (
-            <svg className="w-4 h-4 fill-current text-white translate-x-[1px]" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
+            <svg className="w-4 h-4 fill-current text-white translate-x-[-1.5px]" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" style={{ transform: 'scaleX(-1)', transformOrigin: 'center' }} />
             </svg>
           )}
         </button>
-        <div className="flex-1 min-w-0 text-right">
-          <span className={`text-[12.5px] sm:text-[13px] font-bold block truncate pr-0.5 ${isDark ? 'text-white' : 'text-slate-900'}`}>{title}</span>
-          <div className="flex items-center gap-1.5 justify-end mt-0.5">
-            <span className="text-[10px] text-slate-400 font-mono">ډېوه غږیز پلیر</span>
-            {isPlaying && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />}
-          </div>
-        </div>
       </div>
 
-      <div className="mt-1">
-        {/* Waveform Visualization Progress Tracker */}
-        <BeautifulWaveform 
-          progress={progress} 
-          isPlaying={isPlaying} 
-          onSeek={handleSeek} 
-          seed={url || title}
-          isDark={isDark}
-          tc={tc}
-        />
-        <div className="flex items-center justify-between mt-1 px-1">
-          <span className="text-[9.5px] text-slate-500 font-mono tracking-tight shrink-0">{currentTime}</span>
-          <span className="text-[9.5px] text-slate-500 font-mono tracking-tight shrink-0">{totalDuration}</span>
+      {/* 2. AUDIO INNER DETAILS & WAVEFORM */}
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5 justify-center">
+        
+        {/* Top bar: Title + Speed Badge */}
+        <div className="flex items-center justify-between gap-2">
+          {/* Title on the right */}
+          <span className={`text-[12px] sm:text-[12.5px] font-black truncate pr-0.5 ${isDark ? 'text-slate-100' : 'text-slate-900'} font-sans`}>
+            {title}
+          </span>
+
+          {/* Speed cycle badge on the left */}
+          <button
+            onClick={handleSpeedCycle}
+            style={{ cursor: 'pointer' }}
+            title="د غږ سرعت تنظیمول"
+            className={`px-2 py-0.5 rounded-full text-[9px] font-black font-mono transition-all duration-200 uppercase select-none shrink-0 ${
+              activeSpeed !== 1.0 
+                ? (isDark ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-indigo-100 text-indigo-700 border border-indigo-205')
+                : (isDark ? 'bg-slate-800 text-slate-400 hover:bg-slate-750' : 'bg-slate-200 text-slate-600 hover:bg-slate-250')
+            }`}
+          >
+            {activeSpeed.toFixed(1)}x
+          </button>
         </div>
+
+        {/* Middle Line: Waveform Visualizer */}
+        <div className="w-full">
+          <BeautifulWaveform 
+            progress={progress} 
+            isPlaying={isPlaying} 
+            onSeek={handleSeek} 
+            seed={url || title}
+            isDark={isDark}
+            tc={tc}
+          />
+        </div>
+
+        {/* Bottom bar: Timers */}
+        <div className="flex items-center justify-between py-0.5 select-none text-[9.5px]">
+          {/* Time text e.g. 0:04 / 3:15 */}
+          <span className="text-slate-400 font-mono tracking-tight shrink-0">
+            {currentTime} / {totalDuration}
+          </span>
+        </div>
+
       </div>
     </div>
   );
@@ -1306,6 +1400,66 @@ export function isStoryPost(post: any) {
   return lowerText.includes('#سټوري') || lowerText.includes('#ستوری') || lowerText.includes('#story') || lowerText.includes('#سټوريانې');
 }
 
+/* Global helper function for identifying novels and their parts */
+export function getIsNovelOrNovelPart(post: any | null): boolean {
+  if (!post || !post.text) return false;
+  const text = post.text.toLowerCase();
+  
+  // 1. If it's explicitly a Novel Profile
+  if (isPostNovelProfileGlobal(post)) return true;
+  
+  // 2. Contains novel or roman tags
+  const hashtags = getPostHashtags(post.text);
+  const novelTags = ['#ناول', '#novel', '#رومان', '#ناول_برخه', '#رومان_برخه'];
+  const hasNovelTag = hashtags.some(tag => novelTags.includes(tag));
+  if (hasNovelTag) return true;
+
+  // 3. Fallback: text contains hashtag #ناول or #رومان
+  if (text.includes('#ناول') || text.includes('#رومان')) {
+    return true;
+  }
+  
+  return false;
+}
+
+/* Global helper function for extracting hashtags */
+export function getPostHashtags(text: string): string[] {
+  if (!text) return [];
+  const matches = text.match(/#[^\s#\.,'\?\!\"🗺️✨🎙️🎵📚✍️():؛،«»\-]+/g) || [];
+  return matches.map(tag => tag.trim());
+}
+
+/* Global helper function for stripping hashtags entirely */
+export function removeHashtagsOnly(text: string): string {
+  if (!text) return '';
+  const withRemoved = text.replace(/#[^\s#\.,'\?\!\"🗺️✨🎙️🎵📚✍️():؛،«»\-]+/g, '');
+  return withRemoved.split('\n').map(line => line.trim()).filter(line => line !== '').join('\n');
+}
+
+/* Global helper function for getting unique novel identification-tag */
+export function getUniqueNovelHashtagGlobal(text: string): string | null {
+  const hashtags = getPostHashtags(text);
+  const excluded = [
+    '#ناول', '#ناول_پروفایل', '#ناول_پروفايل', '#پروفایل', '#پروفايل', 
+    '#پروفایل_ناول', '#پروفايل_ناول', '#کتاب', '#بشپړ', '#معلومات', '#پېژندنه', '#پیژندنه',
+    '#پښتو', '#افغانستان', '#audio', '#mp3', '#غږیز', '#صوتي', '#کیسه', '#کيسه',
+    '#کیسې', '#کيسې', '#داستان', '#لنډه_کیسه', '#novel_profile', '#profile_novel'
+  ];
+  return hashtags.find(tag => !excluded.includes(tag)) || null;
+}
+
+/* Global helper to determine if a post is a Novel Profile */
+export function isPostNovelProfileGlobal(post: any | null): boolean {
+  if (!post || !post.text) return false;
+  const hashtags = getPostHashtags(post.text);
+  return hashtags.some(tag => 
+    tag === '#novel_profile' || 
+    tag === '#ناول_پروفایل' || 
+    tag === '#ناول_پروفايل' || 
+    tag === '#profile_novel'
+  );
+}
+
 export default function App() {
   const [feedData, setFeedData] = useState<FeedResponse | null>(() => {
     const cached = localStorage.getItem('dewa_cached_feed_data');
@@ -1341,16 +1495,23 @@ export default function App() {
   const [backendHostInput, setBackendHostInput] = useState(() => {
     const saved = localStorage.getItem('dewa_custom_backend_host');
     if (saved) return saved;
-    // Dynamically fallback to window origin since that is where the live container server runs
+    // Fall back to window origin only if we are running in a standard public web environment
     if (typeof window !== 'undefined' && window.location && window.location.origin) {
-      return window.location.origin;
+      const origin = window.location.origin;
+      const isMobileProtocol = origin.startsWith('file:') || origin.startsWith('capacitor:') || origin.startsWith('chrome-extension:');
+      const isLocalUrl = origin.includes('localhost') || origin.includes('127.0.0.1');
+      if (!isMobileProtocol && !isLocalUrl) {
+        return origin;
+      }
     }
+    // Mobile apps and local dev fallback to the production deployed host
     return 'https://da-mine-dewa.web.app';
   });
   
   // States for navigation flows
   const [selectedPost, setSelectedPost] = useState<TelegramPost | null>(null);
   const [isFullFeedOpen, setIsFullFeedOpen] = useState(false);
+  const chapterScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Custom states for Favorites system & Bottom Text Sheet
   const [favoritePostIds, setFavoritePostIds] = useState<string[]>(() => {
@@ -1469,6 +1630,198 @@ export default function App() {
   const [activePhotoReelIndex, setActivePhotoReelIndex] = useState(0);
   const [photoSwipeDirection, setPhotoSwipeDirection] = useState<'next' | 'prev'>('next');
   const [isCategoryPageOpen, setIsCategoryPageOpen] = useState(false);
+  const [isNovelsPageOpen, setIsNovelsPageOpen] = useState(false);
+  const [novelsFeedData, setNovelsFeedData] = useState<FeedResponse | null>(null);
+  const [activeNovelTextChapter, setActiveNovelTextChapter] = useState<any | null>(null);
+  const [novelScrollProgress, setNovelScrollProgress] = useState(0);
+  
+  // Custom states and handlers for continuing reading and liked chapters/novels
+  const [novelReadingProgressList, setNovelReadingProgressList] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('dewa_novel_reading_progress');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [likedChaptersList, setLikedChaptersList] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('dewa_liked_chapters');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const updateNovelReadingProgress = (item: any, progressPercent: number, parentProfilePost?: any) => {
+    setNovelReadingProgressList(prev => {
+      const filtered = prev.filter(x => x.id !== item.id);
+      
+      let cleanTitle = item.title || '';
+      if (!cleanTitle && item.text) {
+        cleanTitle = item.text.split('\n').filter((l: string) => l.trim() !== '')[0]?.replace(/#[^\s]+/g, '').trim() || 'بې سرلیکه اثر';
+      }
+      if (!cleanTitle) {
+        cleanTitle = 'برخه';
+      }
+
+      const updatedItem = {
+        id: item.id,
+        title: cleanTitle,
+        progress: progressPercent,
+        timestamp: Date.now(),
+        post: item,
+        parentPost: parentProfilePost || null,
+      };
+      
+      const newList = [updatedItem, ...filtered].slice(0, 10);
+      try {
+        localStorage.setItem('dewa_novel_reading_progress', JSON.stringify(newList));
+      } catch (e) {
+        console.error("Error writing reading progress:", e);
+      }
+      return newList;
+    });
+  };
+
+  const toggleChapterFavorite = (chapter: any, parentPost?: any) => {
+    setLikedChaptersList(prev => {
+      const exists = prev.some(x => x.id === chapter.id);
+      let updated;
+      if (exists) {
+        updated = prev.filter(x => x.id !== chapter.id);
+      } else {
+        const cleanText = chapter.text 
+          ? chapter.text.replace(/#[^\s]+/g, '').trim()
+          : 'بې سرلیکه برخه';
+        const cleanTitle = cleanText.split('\n')[0] || 'بې سرلیکه چپتر';
+        
+        updated = [{
+          id: chapter.id,
+          title: cleanTitle,
+          post: chapter,
+          parentPost: parentPost || null,
+          timestamp: Date.now()
+        }, ...prev];
+      }
+      try {
+        localStorage.setItem('dewa_liked_chapters', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
+    
+    toggleFavorite(chapter.id);
+  };
+
+  const resumeReadingItem = (item: any) => {
+    if (item.parentPost) {
+      setSelectedPost(item.parentPost);
+      setActiveNovelTextChapter(item.post);
+    } else {
+      setSelectedPost(item.post);
+    }
+  };
+
+  const removeReadingProgress = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setNovelReadingProgressList(prev => {
+      const updated = prev.filter(x => x.id !== id);
+      try {
+        localStorage.setItem('dewa_novel_reading_progress', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
+  };
+
+  const [bookmarksList, setBookmarksList] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('dewa_novel_bookmarks');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const toggleBookmark = (chapterId: string, chapter: any, novel: any, pIndex: number, pText: string) => {
+    setBookmarksList(prev => {
+      const keyId = `${chapterId}_p_${pIndex}`;
+      const exists = prev.some(x => x.id === keyId);
+      let updated;
+      if (exists) {
+        updated = prev.filter(x => x.id !== keyId);
+      } else {
+        const cleanText = chapter.text 
+          ? chapter.text.replace(/#[^\s]+/g, '').trim()
+          : 'بې سرلیکه برخه';
+        const cleanChapterTitle = cleanText.split('\n')[0] || 'بې سرلیکه چپتر';
+        const cleanNovelTitle = novel?.text 
+          ? novel.text.replace(/#کیسه|#ناول|#داستان|#کیسې|#رومان|#غږیز|#صوتي|#کتاب|#داستانونه/g, '').split('\n')[0].trim()
+          : 'بې نومه اثر';
+
+        const newBookmark = {
+          id: keyId,
+          chapterId: chapterId,
+          chapterTitle: cleanChapterTitle,
+          novelId: novel?.id || '',
+          novelTitle: cleanNovelTitle,
+          paragraphIndex: pIndex,
+          textSnippet: pText.substring(0, 75) + (pText.length > 75 ? '...' : ''),
+          paragraphText: pText,
+          timestamp: Date.now(),
+          chapterPost: chapter,
+          novelPost: novel || null
+        };
+        updated = [newBookmark, ...prev];
+      }
+      try {
+        localStorage.setItem('dewa_novel_bookmarks', JSON.stringify(updated));
+      } catch (e) {
+        console.error("Error writing bookmarks:", e);
+      }
+      return updated;
+    });
+  };
+
+  const removeBookmarkRaw = (keyId: string) => {
+    setBookmarksList(prev => {
+      const updated = prev.filter(x => x.id !== keyId);
+      try {
+        localStorage.setItem('dewa_novel_bookmarks', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
+  };
+
+  const [activeBookmarkParagraphIndex, setActiveBookmarkParagraphIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (activeNovelTextChapter && activeBookmarkParagraphIndex !== null) {
+      const t = setTimeout(() => {
+        const element = document.getElementById(`para-${activeBookmarkParagraphIndex}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.classList.add('animate-pulse', 'ring-2', 'ring-indigo-500/30', 'p-2', 'rounded-2xl');
+          setTimeout(() => {
+            element.classList.remove('animate-pulse', 'ring-2', 'ring-indigo-500/30', 'p-2', 'rounded-2xl');
+          }, 3000);
+        }
+        setActiveBookmarkParagraphIndex(null);
+      }, 400);
+      return () => clearTimeout(t);
+    }
+  }, [activeNovelTextChapter, activeBookmarkParagraphIndex]);
+  const [isNovelsLoading, setIsNovelsLoading] = useState(false);
+  const [novelsErrorMsg, setNovelsErrorMsg] = useState<string | null>(null);
+  const [activeNovelCategory, setActiveNovelCategory] = useState<'stories' | 'novels'>('stories');
+  const [activeNovelSubTab, setActiveNovelSubTab] = useState<'audio' | 'written'>('audio');
+  const [isNovelsScrapingMore, setIsNovelsScrapingMore] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   // Optical Zoom states for image lightbox
@@ -1924,6 +2277,31 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Reset novel scroll progress and restore previous scroll state on load
+  useEffect(() => {
+    setNovelScrollProgress(0);
+    if (activeNovelTextChapter) {
+      const existing = novelReadingProgressList.find(x => x.id === activeNovelTextChapter.id);
+      if (existing) {
+        setNovelScrollProgress(existing.progress || 0);
+        if (existing.progress > 0) {
+          const t = setTimeout(() => {
+            if (chapterScrollRef.current) {
+              const el = chapterScrollRef.current;
+              const totalScroll = el.scrollHeight - el.clientHeight;
+              if (totalScroll > 0) {
+                el.scrollTop = (existing.progress / 100) * totalScroll;
+              }
+            }
+          }, 150);
+          return () => clearTimeout(t);
+        }
+      } else {
+        updateNovelReadingProgress(activeNovelTextChapter, 0, selectedPost);
+      }
+    }
+  }, [activeNovelTextChapter]);
+
   // Click Action Listener to handle deep linking when the native notification is clicked
   useEffect(() => {
     let sub: any = null;
@@ -2028,6 +2406,7 @@ export default function App() {
       : `/api/telegram-feed?channel=${encodeURIComponent(targetChannelName)}&before=${minPostId}`;
 
     let loadedPosts: TelegramPost[] = [];
+    let apiSucceeded = false;
 
     // Try API first
     try {
@@ -2035,6 +2414,7 @@ export default function App() {
         headers: { 'Accept': 'application/json' }
       });
       if (response.ok) {
+        apiSucceeded = true;
         const data: FeedResponse = await response.json();
         if (data && data.posts && data.posts.length > 0) {
           loadedPosts = data.posts;
@@ -2044,8 +2424,8 @@ export default function App() {
       console.warn('[Dewa Paging] API dynamic page fetch failed, falling back to direct browser scraping...', err);
     }
 
-    // Direct Scrape Fallback
-    if (loadedPosts.length === 0) {
+    // Direct Scrape Fallback - Only trigger if the API fetch failed/was unreachable
+    if (!apiSucceeded && loadedPosts.length === 0) {
       try {
         const directUrl = `https://t.me/s/${targetChannelName}?before=${minPostId}`;
         const response = await dewaFetch(directUrl, {
@@ -2061,7 +2441,7 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.error('[Dewa Paging] Direct scraper paging also failed:', err);
+        console.warn('[Dewa Paging] Direct scraper paging failed (expected in browser environment due to CORS):', err);
       }
     }
 
@@ -2414,7 +2794,8 @@ export default function App() {
 
   const dewaFetch = async (url: string, options: any = {}) => {
     const cap = (window as any).Capacitor;
-    const hasCapacitorHttp = !!(cap && cap.Plugins && cap.Plugins.CapacitorHttp);
+    const isNativePlatform = !!(cap && cap.getPlatform && (cap.getPlatform() === 'ios' || cap.getPlatform() === 'android'));
+    const hasCapacitorHttp = isNativePlatform && !!(cap.Plugins && cap.Plugins.CapacitorHttp);
     
     if (hasCapacitorHttp) {
       // CapacitorHttp requires absolute URLs. Convert relative routes to absolute using current origin.
@@ -2481,7 +2862,273 @@ export default function App() {
       console.warn('[Dewa Cache] Failed to serialize feed data cache', e);
     }
     setFeedData(newData);
+    setNovelsFeedData(newData);
+    try {
+      localStorage.setItem('dewa_cached_novels_data', JSON.stringify(newData));
+    } catch (e) {}
   };
+
+  const fetchNovelsChannelData = async (forceRefetch = false) => {
+    if (novelsFeedData && !forceRefetch) return;
+    setIsNovelsLoading(true);
+    setNovelsErrorMsg(null);
+
+    const checkIsCapacitor = !!(window as any).Capacitor;
+    const isMobileProtocol = window.location.protocol === 'file:' || window.location.protocol.startsWith('capacitor:');
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isMobileApp = checkIsCapacitor || isMobileProtocol || (isLocalhost && window.location.port !== '3000');
+
+    const cleanBackendHost = backendHostInput.trim().replace(/\/+$/, '');
+    const novelsChannel = 'da_mine_dewa';
+    const apiEndpoint = isMobileApp 
+      ? `${cleanBackendHost}/api/telegram-feed?channel=${encodeURIComponent(novelsChannel)}`
+      : `/api/telegram-feed?channel=${encodeURIComponent(novelsChannel)}`;
+
+    let apiSucceeded = false;
+
+    // 1. Try API first
+    try {
+      console.log(`[Dewa Novels] Attempting fetch via Backend API: ${apiEndpoint}`);
+      const response = await dewaFetch(apiEndpoint, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (response.ok) {
+        apiSucceeded = true;
+        const data: FeedResponse = await response.json();
+        if (data && data.posts && data.posts.length > 0) {
+          setNovelsFeedData(data);
+          setFeedData(data);
+          try {
+            localStorage.setItem('dewa_cached_novels_data', JSON.stringify(data));
+            localStorage.setItem('dewa_cached_feed_data', JSON.stringify(data));
+          } catch (e) {}
+          console.log('[Dewa Novels] Data loaded successfully from remote API.');
+          setIsNovelsLoading(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('[Dewa Novels] API channel fetch failed, falling back to direct browser scraping...', err);
+    }
+
+    // 2. Direct Scrape Fallback
+    if (!apiSucceeded) {
+      try {
+        const directUrl = `https://t.me/s/${novelsChannel}`;
+        console.log(`[Dewa Novels] Attempting direct scrape from: ${directUrl}`);
+        const response = await dewaFetch(directUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
+            'Accept-Language': 'ps,en-US;q=0.9,en;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9'
+          }
+        });
+        if (response.ok) {
+          const htmlText = await response.text();
+          if (htmlText && htmlText.includes('tgme_widget_message_wrap')) {
+            const parsedData = parseClientTelegramHtml(htmlText, novelsChannel);
+            if (parsedData && parsedData.posts && parsedData.posts.length > 0) {
+              try {
+                let currentPagingPosts = [...parsedData.posts];
+                const uniqueIds = new Set(parsedData.posts.map(p => p.id));
+                for (let pageIdx = 2; pageIdx <= 10; pageIdx++) {
+                  if (parsedData.posts.length >= 100) break;
+                  const postIdsNumeric = currentPagingPosts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
+                  if (postIdsNumeric.length === 0) break;
+                  const minPostId = Math.min(...postIdsNumeric);
+                  const nextUrl = `https://t.me/s/${novelsChannel}?before=${minPostId}`;
+                  const responseN = await dewaFetch(nextUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36' }
+                  });
+                  if (!responseN.ok) break;
+                  const htmlTextN = await responseN.text();
+                  const parsedDataN = parseClientTelegramHtml(htmlTextN, novelsChannel);
+                  if (!parsedDataN || !parsedDataN.posts || parsedDataN.posts.length === 0) break;
+                  const filteredNew = parsedDataN.posts.filter(p => !uniqueIds.has(p.id));
+                  if (filteredNew.length === 0) break;
+                  filteredNew.forEach(p => uniqueIds.add(p.id));
+                  parsedData.posts.push(...filteredNew);
+                  currentPagingPosts = parsedDataN.posts;
+                }
+              } catch (colErr) {
+                console.warn('[Dewa Novels] Direct client paging error:', colErr);
+              }
+              parsedData.posts.sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0));
+              setNovelsFeedData(parsedData);
+              setFeedData(parsedData);
+              try {
+                localStorage.setItem('dewa_cached_novels_data', JSON.stringify(parsedData));
+                localStorage.setItem('dewa_cached_feed_data', JSON.stringify(parsedData));
+              } catch (e) {}
+              setIsNovelsLoading(false);
+              return;
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error('[Dewa Novels] Both methods failed for novels channel.', err);
+      }
+    }
+
+    // Try offline recovery from local cache
+    const hasCached = localStorage.getItem('dewa_cached_novels_data');
+    if (hasCached) {
+      try {
+        const cachedObj = JSON.parse(hasCached);
+        if (cachedObj && cachedObj.posts && cachedObj.posts.length > 0) {
+          setNovelsFeedData(cachedObj);
+          setIsNovelsLoading(false);
+          return;
+        }
+      } catch (e) {
+        console.error('[Dewa Novels] Failed to parse cached novels', e);
+      }
+    }
+
+    setNovelsErrorMsg('د پوسټونو په لوډولو کې ستونزه رامنځته شوه. مهرباني وکړئ انټرنیټ وصل کړئ او بیا ځلي هڅه وکړئ.');
+    setIsNovelsLoading(false);
+  };
+
+  const loadMoreNovelsData = async () => {
+    if (isNovelsScrapingMore || !novelsFeedData || !novelsFeedData.posts || novelsFeedData.posts.length === 0) return;
+    setIsNovelsScrapingMore(true);
+
+    const ids = novelsFeedData.posts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
+    if (ids.length === 0) {
+      setIsNovelsScrapingMore(false);
+      return;
+    }
+    const minPostId = Math.min(...ids);
+
+    const checkIsCapacitor = !!(window as any).Capacitor;
+    const isMobileProtocol = window.location.protocol === 'file:' || window.location.protocol.startsWith('capacitor:');
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isMobileApp = checkIsCapacitor || isMobileProtocol || (isLocalhost && window.location.port !== '3000');
+
+    const cleanBackendHost = backendHostInput.trim().replace(/\/+$/, '');
+    const novelsChannel = 'da_mine_dewa';
+    const apiEndpoint = isMobileApp 
+      ? `${cleanBackendHost}/api/telegram-feed?channel=${encodeURIComponent(novelsChannel)}&before=${minPostId}`
+      : `/api/telegram-feed?channel=${encodeURIComponent(novelsChannel)}&before=${minPostId}`;
+
+    let loadedPosts: TelegramPost[] = [];
+    let apiSucceeded = false;
+
+    try {
+      const response = await dewaFetch(apiEndpoint, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (response.ok) {
+        apiSucceeded = true;
+        const data: FeedResponse = await response.json();
+        if (data && data.posts && data.posts.length > 0) {
+          loadedPosts = data.posts;
+        }
+      }
+    } catch (err) {
+      console.warn('[Dewa Novels Paging] API fetch failed:', err);
+    }
+
+    if (!apiSucceeded && loadedPosts.length === 0) {
+      try {
+        const directUrl = `https://t.me/s/${novelsChannel}?before=${minPostId}`;
+        const response = await dewaFetch(directUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36' }
+        });
+        if (response.ok) {
+          const htmlText = await response.text();
+          const parsed = parseClientTelegramHtml(htmlText, novelsChannel);
+          if (parsed && parsed.posts && parsed.posts.length > 0) {
+            loadedPosts = parsed.posts;
+          }
+        }
+      } catch (err) {
+        console.warn('[Dewa Novels Paging] Direct scrape failed:', err);
+      }
+    }
+
+    if (loadedPosts.length > 0) {
+      const existingIds = new Set(novelsFeedData.posts.map(p => p.id));
+      const filteredNew = loadedPosts.filter(p => p && p.id && !existingIds.has(p.id));
+      if (filteredNew.length > 0) {
+        setNovelsFeedData(prev => {
+          if (!prev) return prev;
+          const updatedPosts = [...prev.posts, ...filteredNew];
+          updatedPosts.sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0));
+          const updatedData = { ...prev, posts: updatedPosts };
+          localStorage.setItem('dewa_cached_novels_data', JSON.stringify(updatedData));
+          return updatedData;
+        });
+      }
+    }
+    setIsNovelsScrapingMore(false);
+  };
+
+  const filterNovelsPosts = React.useCallback((isNovelTab: boolean, isAudioSubTab: boolean) => {
+    const dataObj = novelsFeedData || feedData;
+    if (!dataObj || !dataObj.posts) return [];
+    
+    // Helper to get hashtags
+    const getHashtags = (t: string): string[] => {
+      if (!t) return [];
+      const matches = t.match(/#[^\s#\.,'\?\!\"🗺️✨🎙️🎵📚✍️():؛،«»\-]+/g) || [];
+      return matches.map(tag => tag.trim());
+    };
+
+    return dataObj.posts.filter(post => {
+      const text = post.text || '';
+      const textLower = text.toLowerCase();
+      const hashtags = getHashtags(text);
+
+      // Check if it's a Story (has #کيسه or #کیسه hashtag)
+      const hasStoryTag = hashtags.some(tag => tag === '#کيسه' || tag === '#کیسه');
+
+      // Check if it's a Novel Profile (has #novel_profile or variations)
+      const hasNovelProfileTag = hashtags.some(tag => 
+        tag === '#novel_profile' || 
+        tag === '#ناول_پروفایل' || 
+        tag === '#ناول_پروفايل' || 
+        tag === '#profile_novel'
+      );
+
+      // General audio indicator check
+      const hasAudioAttachment = !!(post.hasAudio || post.audioUrl || (post.audioList && post.audioList.length > 0));
+      const hasAudioKeywords = textLower.includes('audio') || textLower.includes('mp3') || textLower.includes('آډیو') || textLower.includes('اډیو') || textLower.includes('غږیز') || textLower.includes('غږيز');
+      const hasAudioHashtagGeneral = hashtags.some(tag => tag === '#audio' || tag === '#mp3' || tag === '#غږیز' || tag === '#اډیو' || tag === '#غږيز');
+      const isAudio = hasAudioAttachment || hasAudioKeywords || hasAudioHashtagGeneral;
+
+      if (isNovelTab) {
+        // Must have #novel_profile (or equivalent)
+        if (!hasNovelProfileTag) return false;
+
+        // If it has #audio hashtag, then it is an audio novel; if not, it is a written novel.
+        const hasAudioHashtag = hashtags.some(tag => tag === '#audio' || tag === '#mp3');
+        return isAudioSubTab === hasAudioHashtag;
+      } else {
+        // Must have #کيسه or #کیسه hashtag
+        if (!hasStoryTag) return false;
+
+        // If it has audio, then it goes to audio stories, otherwise written
+        return isAudioSubTab === isAudio;
+      }
+    });
+  }, [novelsFeedData]);
+
+  useEffect(() => {
+    if (isNovelsPageOpen) {
+      fetchNovelsChannelData();
+    }
+  }, [isNovelsPageOpen]);
+
+  useEffect(() => {
+    const cached = localStorage.getItem('dewa_cached_novels_data');
+    if (cached) {
+      try {
+        const obj = JSON.parse(cached);
+        if (obj && obj.posts) setNovelsFeedData(obj);
+      } catch (e) {}
+    }
+  }, []);
 
   const fetchChannelData = async () => {
     setIsLoading(true);
@@ -2803,8 +3450,8 @@ export default function App() {
   // Slider featured posts (10 random posts from any category to keep it dynamic and fresh)
   const featuredPosts = React.useMemo(() => {
     if (!allPosts || allPosts.length === 0) return [];
-    // Hide stories from featured slider so they don't block normal features
-    const nonStoryPosts = allPosts.filter(p => !isStoryPost(p));
+    // Hide stories and novels from featured slider so they don't block normal features
+    const nonStoryPosts = allPosts.filter(p => !isStoryPost(p) && !getIsNovelOrNovelPart(p));
     if (nonStoryPosts.length === 0) return [];
     const shuffled = [...nonStoryPosts].sort(() => 0.5 - Math.random());
     return shuffled.slice(0, 10);
@@ -2816,8 +3463,8 @@ export default function App() {
 
     if (activeFavoriteFilter) {
       list = list.filter(p => favoritePostIds.includes(p.id));
-      // By default exclude stories from general favorites categorization lists
-      list = list.filter(p => !isStoryPost(p));
+      // By default exclude stories and novels from general favorites categorization lists
+      list = list.filter(p => !isStoryPost(p) && !getIsNovelOrNovelPart(p));
       
       if (activeFavoriteFilter === 'videos') {
         list = list.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
@@ -2834,9 +3481,12 @@ export default function App() {
       if (selectedCategory === 'stories') {
         // ONLY show story posts in 'stories' category
         list = list.filter(p => isStoryPost(p));
+      } else if (selectedCategory === 'novels') {
+        // ONLY show Novel Profiles in 'novels' category
+        list = list.filter(p => isPostNovelProfileGlobal(p));
       } else {
-        // Exclude stories from all standard categories (and 'all')
-        list = list.filter(p => !isStoryPost(p));
+        // Exclude stories and novels (including parts) from all standard categories (and 'all')
+        list = list.filter(p => !isStoryPost(p) && !getIsNovelOrNovelPart(p));
 
         if (selectedCategory === 'videos') {
           list = list.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
@@ -3694,7 +4344,7 @@ export default function App() {
       
       {/* 1. TOP TOOLBAR (د چینل بار خوندور او پرمختللی ډیزاین) */}
       {!isReelsOpen && (
-        <header className={`sticky top-0 z-40 ${headerBg} backdrop-blur-md border-b py-4 px-4 sm:px-6 flex items-center justify-between shadow-lg`}>
+        <header className={`sticky top-0 z-40 ${headerBg} backdrop-blur-md border-b pb-4 px-4 sm:px-6 flex items-center justify-between shadow-lg safe-header-pt`}>
           {/* Right side: Sidebar Hamburger Menu and Title */}
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -3708,14 +4358,14 @@ export default function App() {
             
             <div className="min-w-0 text-right">
               <h1 className={`text-sm sm:text-base font-bold truncate leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                {selectedPost ? 'د پوسټ لوستل' : isAboutPageOpen ? 'زمونږ په اړه معلومات' : isContactPageOpen ? 'زمونږ سره اړیکه' : isSettingsPageOpen ? 'د اپلیکیشن تنظیمات' : isSearchOpen ? 'په پوسټونو کې پلټنه' : isFullFeedOpen ? 'ټول آرشیف پوسټونه' : isReelsOpen ? 'شارټ ویډیوګانې (Reels)' : isPhotoReelsOpen ? 'ښکلي انځورونه (Images Carousel)' : isCategoryPageOpen ? 'د شعرونو ډلبندي (کټګورۍ)' : 'پښتو ادبي خزانه'}
+                {selectedPost ? 'د پوسټ لوستل' : isAboutPageOpen ? 'زمونږ په اړه معلومات' : isContactPageOpen ? 'زمونږ سره اړیکه' : isSettingsPageOpen ? 'د اپلیکیشن تنظیمات' : isSearchOpen ? 'په پوسټونو کې پلټنه' : isFullFeedOpen ? 'ټول آرشیف پوسټونه' : isReelsOpen ? 'شارټ ویډیوګانې (Reels)' : isPhotoReelsOpen ? 'ښکلي انځورونه (Images Carousel)' : isCategoryPageOpen ? 'د شعرونو ډلبندي (ککړۍ)' : isNovelsPageOpen ? 'د کیسو او ناولونو برخه' : 'پښتو ادبي خزانه'}
               </h1>
             </div>
           </div>
 
           {/* Left side: Back navigation actions and the Action popup */}
           <div className="flex items-center gap-2 relative">
-            {(selectedPost || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen) && (
+            {(selectedPost || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen || isNovelsPageOpen) && (
               <button
                 onClick={() => {
                   setSelectedPost(null);
@@ -3727,6 +4377,7 @@ export default function App() {
                   setIsReelsOpen(false);
                   setIsPhotoReelsOpen(false);
                   setIsCategoryPageOpen(false);
+                  setIsNovelsPageOpen(false);
                   setSearchQuery('');
                   setContactSuccess(false);
                   setContactError(null);
@@ -4154,6 +4805,516 @@ export default function App() {
             )}
           </div>
         ) : selectedPost ? (
+          isPostNovelProfileGlobal(selectedPost) ? (
+            activeNovelTextChapter ? (
+              /* ==========================================================
+                 C3. DEDICATED MINIMALIST CHAPTER TEXT READER PAGE
+                 (د څپرکي د متن لوستلو بېله او ساده ممتازه لوستونکې پاڼه)
+                 ========================================================== */
+              <div className={`p-5 sm:p-7 rounded-3xl ${cardBg} border border-slate-500/10 dark:border-slate-800 shadow-xl text-right animate-fade-in font-sans space-y-6 select-none`} style={{ direction: 'rtl' }}>
+                
+                {/* Header with Back action */}
+                <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/80 border-slate-850/40' : 'bg-slate-100/90 border-slate-200'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-7 sm:-mt-7 mb-4`}>
+                  <button
+                    onClick={() => setActiveNovelTextChapter(null)}
+                    style={{ cursor: 'pointer' }}
+                    className={`px-3 py-1.5 rounded-lg transition text-xs font-black ${isDark ? 'text-slate-400 bg-slate-800 hover:text-white' : 'text-slate-705 bg-slate-200 hover:bg-slate-300'} flex items-center gap-1 shrink-0`}
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    <span>مخکینۍ پاڼې ته تلل</span>
+                  </button>
+                  
+                  {/* Action buttons inside reader header */}
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      onClick={() => toggleChapterFavorite(activeNovelTextChapter, selectedPost)}
+                      style={{ cursor: 'pointer' }}
+                      className={`p-1.8 rounded-xl transition-all duration-200 ${
+                        likedChaptersList.some(x => x.id === activeNovelTextChapter.id)
+                          ? 'bg-rose-500/15 text-rose-500 border border-rose-500/20'
+                          : isDark ? 'bg-slate-800 hover:bg-slate-750 text-slate-350 hover:text-white border border-slate-700/60' : 'bg-slate-150 hover:bg-slate-200 text-slate-605 hover:text-slate-900 border border-slate-200/50'
+                      }`}
+                      title={likedChaptersList.some(x => x.id === activeNovelTextChapter.id) ? "له خوښې لرې کول" : "څپرکی خوښول"}
+                    >
+                      <Heart className={`w-3.5 h-3.5 transition-transform group-active:scale-95 ${likedChaptersList.some(x => x.id === activeNovelTextChapter.id) ? 'fill-rose-500 text-rose-500 animate-pulse' : ''}`} />
+                    </button>
+                    
+                    <div className="flex items-center gap-1.5">
+                      <BookOpen className={`w-4 h-4 ${tc.text} animate-pulse`} />
+                      <span className={`text-[11px] font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                        بېله ساده لوستنې پاڼه (خوندي متن)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modern Interactive Scroll Progress Bar & Info */}
+                <div className="space-y-2.5 select-none px-1 pb-2 border-b border-slate-500/10">
+                  <div className="flex flex-row-reverse items-center justify-between text-[11.5px] font-extrabold font-sans">
+                    <span className={`${isDark ? 'text-indigo-400' : 'text-indigo-650'} flex items-center gap-1.5`}>
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+                      لوستل شوی پورشن: {novelScrollProgress}%
+                    </span>
+                    <span className={`${isDark ? 'text-slate-350' : 'text-slate-600'}`}>
+                      {novelScrollProgress >= 95 ? '🎉 څپرکی بشپړ لوستل شوی دی!' : 'لوستلو ته دوام ورکړئ'}
+                    </span>
+                  </div>
+                  <div className={`w-full h-2 ${isDark ? 'bg-slate-900/60' : 'bg-slate-100'} rounded-full overflow-hidden relative shadow-inner`}>
+                    <div 
+                      className="absolute inset-y-0 right-0 bg-gradient-to-l from-indigo-500 via-purple-600 to-pink-500 h-full rounded-full transition-all duration-150"
+                      style={{ width: `${novelScrollProgress}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Chapter Title */}
+                <div className="text-center py-2 border-b border-slate-500/10 pb-4">
+                  <h2 className={`text-base sm:text-lg font-black ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
+                    {activeNovelTextChapter.text 
+                      ? activeNovelTextChapter.text.replace(/#[^\s]+/g, '').split('\n').filter((l: string) => l.trim() !== '')[0] || 'بې سرلیکه برخه'
+                      : 'بې سرلیکه برخه'
+                    }
+                  </h2>
+                </div>
+
+                {/* Minimalist Scrollable Content with strict select-none and block copies */}
+                <div 
+                  ref={chapterScrollRef}
+                  className="text-right overflow-y-auto max-h-[60vh] pr-1 pl-1"
+                  onScroll={(e) => {
+                    const target = e.currentTarget;
+                    const totalScroll = target.scrollHeight - target.clientHeight;
+                    if (totalScroll > 0) {
+                      const pct = (target.scrollTop / totalScroll) * 100;
+                      const roundedPct = Math.round(pct);
+                      setNovelScrollProgress(roundedPct);
+                      updateNovelReadingProgress(activeNovelTextChapter, roundedPct, selectedPost);
+                    }
+                  }}
+                  onCopy={(e) => { e.preventDefault(); return false; }}
+                  onContextMenu={(e) => { e.preventDefault(); return false; }}
+                  style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
+                >
+                  <div 
+                    className={`text-right font-sans leading-relaxed text-[13.5px] sm:text-[14px] ${isDark ? 'text-slate-200' : 'text-slate-800'} space-y-4`}
+                    style={{ direction: 'rtl', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
+                  >
+                    {removeHashtagsOnly(activeNovelTextChapter.text || '')
+                      .split('\n')
+                      .filter((line, i) => {
+                        const firstLineRaw = activeNovelTextChapter.text.split('\n')[0] || '';
+                        const firstLineClean = firstLineRaw.replace(/#[^\s]+/g, '').trim();
+                        return i > 0 || (line.trim() !== firstLineClean && line.trim() !== '');
+                      })
+                      .map((para, idx) => {
+                        const trimmedPara = para.trim();
+                        if (!trimmedPara) return null;
+
+                        const bookmarkKey = `${activeNovelTextChapter.id}_p_${idx}`;
+                        const isBookmarked = bookmarksList.some(x => x.id === bookmarkKey);
+
+                        return (
+                          <div 
+                            key={idx}
+                            id={`para-${idx}`}
+                            onClick={() => toggleBookmark(activeNovelTextChapter.id, activeNovelTextChapter, selectedPost, idx, trimmedPara)}
+                            style={{ cursor: 'pointer' }}
+                            className={`group relative p-3 rounded-2xl transition-all duration-200 text-right flex items-start gap-3 select-none border border-transparent ${
+                              isBookmarked 
+                                ? isDark 
+                                  ? 'bg-indigo-950/20 border-indigo-500/20 shadow-[0_2px_12px_rgba(99,102,241,0.08)]' 
+                                  : 'bg-indigo-50/55 border-indigo-200/60 shadow-xs'
+                                : 'hover:bg-slate-500/5'
+                            }`}
+                          >
+                            <div className="flex-1 text-right min-w-0">
+                              <p className={`font-medium whitespace-pre-wrap leading-relaxed text-[13px] sm:text-[13.5px] ${
+                                isBookmarked 
+                                  ? isDark ? 'text-indigo-200' : 'text-indigo-950 font-black' 
+                                  : isDark ? 'text-slate-200' : 'text-slate-800'
+                              }`}>
+                                {trimmedPara}
+                              </p>
+                            </div>
+                            
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleBookmark(activeNovelTextChapter.id, activeNovelTextChapter, selectedPost, idx, trimmedPara);
+                              }}
+                              style={{ cursor: 'pointer' }}
+                              className={`p-1.5 rounded-lg shrink-0 transition-all duration-200 ${
+                                isBookmarked 
+                                  ? 'bg-indigo-500/20 text-indigo-500' 
+                                  : 'opacity-20 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-indigo-400 hover:bg-slate-500/10'
+                              }`}
+                              title={isBookmarked ? "ښکاره نښه (بوکمارک) لرې کول" : "نښه کول (بوکمارک کول)"}
+                            >
+                              {isBookmarked ? (
+                                <BookmarkCheck className="w-3.5 h-3.5 fill-indigo-500 text-indigo-500 animate-pulse" />
+                              ) : (
+                                <Bookmark className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })
+                    }
+                  </div>
+                </div>
+
+                {/* Guard notice */}
+                <div className="pt-4 border-t border-slate-505/10 text-center select-none">
+                  <span className="text-[10px] text-slate-400 font-bold font-sans flex items-center justify-center gap-1">
+                    🔒 د کاپي او شریکولو وړتیا بنده ده (متن خوندي دی)
+                  </span>
+                </div>
+              </div>
+            ) : (
+              /* ==========================================================
+                 C2. DEDICATED NOVEL'S MAIN DETAIL PAGE (د رومان ځانګړې پېژندنې او څپرکو بېله پاڼه)
+                 ========================================================== */
+              <div className={`p-4 sm:p-6 rounded-3xl ${cardBg} border border-slate-500/10 dark:border-slate-800 shadow-xl text-right animate-fade-in font-sans space-y-6`} style={{ direction: 'rtl' }}>
+                
+                {/* Header with Back action */}
+                <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/80 border-slate-850/40' : 'bg-slate-100/90 border-slate-200'} border-b flex items-center justify-between rounded-t-3xl -mx-4 -mt-4 sm:-mx-6 sm:-mt-6 mb-5`}>
+                  <button
+                    onClick={() => {
+                      setSelectedPost(null);
+                      setActiveNovelTextChapter(null);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className={`px-3 py-1.5 rounded-lg transition text-xs font-black ${isDark ? 'text-slate-400 bg-slate-800 hover:text-white' : 'text-slate-705 bg-slate-200 hover:bg-slate-300'} flex items-center gap-1 shrink-0`}
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    <span>مخکینۍ پاڼې ته تلل</span>
+                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <BookOpen className={`w-4 h-4 ${tc.text} animate-pulse`} />
+                    <span className={`text-xs font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      د ناول پېژندنه او څپرکي
+                    </span>
+                  </div>
+                </div>
+
+                {/* Novel Hero Card (كاور او خلاصه) */}
+                <div className="flex flex-col md:flex-row gap-5 items-center md:items-start text-right pb-5 border-b border-slate-500/10">
+                  {/* Cover Image container */}
+                  <div className="w-[140px] sm:w-[170px] aspect-[2/3] shrink-0 rounded-2xl overflow-hidden border border-slate-500/10 shadow-2xl relative group bg-black/5 dark:bg-black/20">
+                    <CachedImage
+                      src={selectedPost.photoUrl || "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=300&auto=format&fit=crop&q=80"}
+                      alt="Novel Cover"
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                      onClick={() => {
+                        if (selectedPost.photoUrl) {
+                          openPhotoLightbox(selectedPost.photoUrl, [selectedPost.photoUrl]);
+                        }
+                      }}
+                    />
+                    {selectedPost.photoUrl && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadImage(selectedPost.photoUrl!);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className="absolute bottom-2 left-2 bg-slate-950/80 hover:bg-indigo-650 p-2 rounded-lg text-white transition active:scale-95 shadow-lg opacity-0 group-hover:opacity-100 duration-200 pointer-events-auto"
+                        title="کاور ډاونلوډ"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Novel Meta and Description */}
+                  <div className="flex-1 space-y-3.5 w-full">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-1.5 justify-start mb-1 select-none">
+                        <span className="bg-indigo-505/10 text-indigo-400 font-sans font-black text-[9px] px-2 py-0.5 rounded border border-indigo-505/10">
+                          {selectedPost.hasAudio ? '🔊 غږیز رومان' : '✍️ لیکل شوی رومان'}
+                        </span>
+                        <span className="bg-emerald-500/15 text-emerald-500 font-sans font-black text-[9px] px-2 py-0.5 rounded border border-emerald-500/10">
+                          📖 بشپړ رومان
+                        </span>
+                        <span className="font-mono text-[9px] text-slate-400 flex items-center gap-1 mr-1">
+                          <Eye className="w-3 h-3 text-slate-500" />
+                          {selectedPost.views || '0'} کتنې
+                        </span>
+                      </div>
+                      <h2 className={`text-base sm:text-xl font-black ${isDark ? 'text-white' : 'text-slate-900'} leading-tight tracking-tight mt-1.5 font-sans`}>
+                        {selectedPost.text ? selectedPost.text.replace(/#کیسه|#ناول|#داستان|#کیسې|#رومان|#غږیز|#صوتي|#کتاب|#داستانونه/g, '').split('\n')[0].trim() : 'بې نومه اثر'}
+                      </h2>
+                    </div>
+
+                    {/* Overview text (HASHTAGS INVISIBLE - د ناول پېژندنې معلومات بې له هشټاګونو) */}
+                    <div className={`p-4 rounded-2.5xl border ${isDark ? 'bg-slate-950/40 border-slate-805/70' : 'bg-slate-50 border-slate-100'} w-full`}>
+                      <h3 className="text-xs font-black text-indigo-400 mb-2 font-sans flex items-center gap-1">
+                        <span>📌 د دې اثر خلاصه او پېژندنه:</span>
+                      </h3>
+                      <BeautifulTelegramText 
+                        text={removeHashtagsOnly(selectedPost.text || '')} 
+                        isDark={isDark} 
+                        fs={{ body: 'text-[12.5px] sm:text-[13px] text-right font-medium leading-relaxed' }} 
+                        limitLines={15} 
+                        showExpander={false} 
+                      />
+                    </div>
+
+                    {/* Audio files nested directly inside novel presentation */}
+                    {selectedPost.audioList && selectedPost.audioList.length > 0 && (
+                      <div className="w-full">
+                        {selectedPost.audioList.map((audioItem, idx) => {
+                          const cleanIntroTitle = getBeautifulAudioTitle(audioItem.title, selectedPost.title || 'د اثر پېژندنې معرفي غږ', selectedPost.text, idx);
+                          return (
+                            <BeautifulAudioPlayer
+                              key={idx}
+                              url={audioItem.url}
+                              title={cleanIntroTitle}
+                              duration={audioItem.duration}
+                              isDark={isDark}
+                              tc={tc}
+                            />
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bookmarks Section (خوندي شوي پاراګرافونه / یادښتونه) */}
+                {(() => {
+                  const activeNovelBookmarks = bookmarksList.filter(b => b.novelId === selectedPost.id);
+                  if (activeNovelBookmarks.length === 0) return null;
+
+                  return (
+                    <div className="space-y-3.5 pt-2 border-b border-dashed border-slate-500/10 pb-5">
+                      <div className="flex items-center justify-between text-right">
+                        <div className="flex items-center gap-2">
+                          <BookmarkCheck className="w-4 h-4 text-indigo-400 fill-indigo-400 animate-pulse" />
+                          <h3 className={`text-xs sm:text-sm font-black ${isDark ? 'text-indigo-300' : 'text-slate-800'} font-sans`}>
+                            📌 پدې رومان کې ستاسو نښه شوي پاڼې او یاداښتونه (بوکمارکونه)
+                          </h3>
+                        </div>
+                        <span className={`text-[9px] font-sans font-black ${isDark ? 'bg-indigo-950/40 text-indigo-400 border border-indigo-900/40' : 'bg-indigo-100/60 text-indigo-700'} px-2.5 py-0.5 rounded-lg`}>
+                          یادښتونه: {toPashtoNumber(activeNovelBookmarks.length.toString())}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[320px] overflow-y-auto pr-1 pl-1">
+                        {activeNovelBookmarks.map((bookmark) => (
+                          <div 
+                            key={bookmark.id}
+                            onClick={() => {
+                              markPostAsRead(bookmark.chapterPost.id);
+                              setActiveNovelTextChapter(bookmark.chapterPost);
+                              setActiveBookmarkParagraphIndex(bookmark.paragraphIndex);
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className={`p-3.5 rounded-2.5xl border transition-all duration-300 flex flex-col justify-between gap-3 text-right hover:scale-[1.012] hover:border-indigo-500/35 relative group ${
+                              isDark 
+                                ? 'bg-indigo-955/15 border-indigo-950/40 hover:bg-slate-900/80 shadow-md' 
+                                : 'bg-indigo-50/20 border-indigo-100/60 hover:bg-white shadow-xs'
+                            }`}
+                          >
+                            <div className="space-y-1.5 min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[9px] font-black text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">
+                                  {bookmark.chapterTitle}
+                                </span>
+                                
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeBookmarkRaw(bookmark.id);
+                                  }}
+                                  style={{ cursor: 'pointer' }}
+                                  className="p-1 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors z-10"
+                                  title="لرې کول"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                              <p className={`text-[11.5px] font-medium leading-relaxed font-sans line-clamp-3 pr-1 ${
+                                isDark ? 'text-slate-300' : 'text-slate-700'
+                              }`}>
+                                {bookmark.textSnippet}
+                              </p>
+                            </div>
+                            
+                            <div className="flex items-center justify-between border-t border-slate-500/5 pt-2 mt-1">
+                              <span className="text-[8.5px] text-slate-450 font-mono">
+                                {getRelativeTimeInPashto(new Date(bookmark.timestamp).toISOString(), 'اوسمهال')}
+                              </span>
+                              <span className="text-[8.5px] font-black text-indigo-505 flex items-center gap-1">
+                                <span>دلته لوستل پیل کړئ</span>
+                                <ChevronLeft className="w-2.5 h-2.5" />
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Chapters List (څپرکي په لیست او ډیزاین کې) */}
+                {(() => {
+                  const uniqueNovelTag = getUniqueNovelHashtagGlobal(selectedPost.text || '');
+                  if (!uniqueNovelTag) return null;
+
+                  const allNovelFeedPosts = novelsFeedData?.posts || feedData?.posts || [];
+                  const relatedParts = allNovelFeedPosts.filter(p => {
+                    const pTags = getPostHashtags(p.text || '');
+                    return pTags.includes(uniqueNovelTag);
+                  }).sort((a, b) => {
+                    const getPartNumber = (txt: string): number => {
+                      const match = txt.match(/برخه\s*(\d+)/i) || txt.match(/برخه\s*([۰-۹]+)/i);
+                      if (match) {
+                        let numStr = match[1];
+                        const easternToWestern: Record<string, string> = {
+                          '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+                          '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9'
+                        };
+                        numStr = numStr.split('').map(char => easternToWestern[char] || char).join('');
+                        return parseInt(numStr) || 0;
+                      }
+                      return 0;
+                    };
+                    const partA = getPartNumber(a.text || '');
+                    const partB = getPartNumber(b.text || '');
+                    if (partA && partB) return partA - partB;
+                    return (parseInt(a.id) || 0) - (parseInt(b.id) || 0);
+                  });
+
+                  const chapterParts = relatedParts.filter(part => !isPostNovelProfileGlobal(part));
+
+                  return (
+                    <div className="space-y-4 pt-2">
+                      <div className="flex items-center justify-between border-b pb-2.5 border-slate-500/10">
+                        <div className="flex items-center gap-1.5">
+                          <BookOpen className="w-5 h-5 text-indigo-400" />
+                          <span className={`text-xs sm:text-sm font-black ${isDark ? 'text-indigo-300' : 'text-slate-850'} font-sans`}>
+                            ✨ د دې رومان ټول خپاره شوي څپرکي او برخې
+                          </span>
+                        </div>
+                        <span className="text-[10px] sm:text-[11px] font-sans font-black bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-xl">
+                          ټولې برخې: {toPashtoNumber(chapterParts.length)}
+                        </span>
+                      </div>
+
+                      {chapterParts.length === 0 ? (
+                        <div className="p-8 text-center border border-dashed border-slate-550/15 rounded-2xl bg-black/5 dark:bg-black/15">
+                          <p className="text-xs text-slate-400 font-bold font-sans">پدې ناول پورې اړوند کوم بل خپرو شوی څپرکی ونه موندل شو.</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1 pl-1">
+                          {chapterParts.map((part, index) => {
+                            let partTitle = part.text 
+                              ? part.text.replace(/#[^\s]+/g, '').split('\n').filter((l: string) => l.trim() !== '')[0] || `برخه ${index + 1}`
+                              : `برخه ${index + 1}`;
+                            
+                            if (partTitle.length > 55) {
+                              partTitle = partTitle.slice(0, 52) + '...';
+                            }
+
+                            const hasAudio = !!(part.hasAudio || part.audioUrl || (part.audioList && part.audioList.length > 0));
+                            const isRead = readPostIds.includes(part.id);
+
+                            if (hasAudio) {
+                              // 1. Audio Chapters - Render playbacks completely in place without leaving
+                              const postAudioItems = part.audioList && part.audioList.length > 0
+                                ? part.audioList
+                                : (part.audioUrl ? [{ url: part.audioUrl, title: part.audioTitle || partTitle, duration: part.audioDuration }] : []);
+
+                              return (
+                                <div key={part.id} className="w-full">
+                                  {postAudioItems.map((audioItem: any, aIdx: number) => {
+                                    const cleanAudioTitle = getBeautifulAudioTitle(audioItem.title, partTitle, part.text, index);
+                                    return (
+                                      <BeautifulAudioPlayer
+                                        key={aIdx}
+                                        url={audioItem.url}
+                                        title={cleanAudioTitle}
+                                        duration={audioItem.duration}
+                                        isDark={isDark}
+                                        tc={tc}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              );
+                            } else {
+                              // 2. Text Chapters - Opens on clicking in a Dedicated, clean protect-reading page
+                              return (
+                                <div 
+                                  key={part.id}
+                                  onClick={() => {
+                                    markPostAsRead(part.id);
+                                    setActiveNovelTextChapter(part);
+                                  }}
+                                  style={{ cursor: 'pointer' }}
+                                  className={`p-3.5 rounded-3xl border transition-all duration-300 flex items-center justify-between gap-3 text-right hover:scale-[1.015] active:scale-[0.99] select-none ${
+                                    isDark 
+                                      ? 'bg-slate-900/60 border-slate-805/85 hover:bg-slate-800 hover:border-indigo-500/20 shadow-md' 
+                                      : 'bg-white border-slate-205 shadow-sm hover:bg-slate-50 hover:border-indigo-500/20'
+                                  } ${isRead ? 'opacity-45 saturate-[0.55] hover:opacity-95' : ''}`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                                      isDark ? 'bg-emerald-950/40 text-emerald-400' : 'bg-emerald-50 text-emerald-700'
+                                    }`}>
+                                      {toPashtoNumber(index + 1)}
+                                    </div>
+                                    <div className="text-right min-w-0">
+                                      <h4 className={`text-[12px] sm:text-[12.5px] font-black line-clamp-1 h-5 ${
+                                        isDark ? 'text-white' : 'text-slate-900'
+                                      }`}>
+                                        {partTitle}
+                                      </h4>
+                                      <p className="text-[9.5px] text-slate-450 mt-1 flex items-center gap-2 select-none">
+                                        <span>{getRelativeTimeInPashto(part.date, part.timeLabel || 'وروستی')}</span>
+                                        <span>•</span>
+                                        <span className="text-emerald-500 flex items-center gap-1 font-bold">
+                                          ✍️ متن لوستل
+                                        </span>
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 border transition ${
+                                    isDark 
+                                      ? 'bg-slate-950 border-slate-800 text-emerald-400' 
+                                      : 'bg-slate-50 border-slate-200 text-emerald-600'
+                                  }`}>
+                                    <ChevronLeft className="w-3.5 h-3.5" />
+                                  </div>
+                                </div>
+                              );
+                            }
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                
+                {/* Novel Profile Page Reactions */}
+                {selectedPost.reactions && selectedPost.reactions.length > 0 && (
+                  <div className={`flex flex-wrap gap-1.5 pt-4 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-205'} justify-start pb-1`}>
+                    {selectedPost.reactions.map((react, i) => (
+                      <div
+                        key={i}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 ${isDark ? 'bg-slate-950/80 border-slate-800 text-slate-200' : 'bg-slate-100 border-slate-200 text-slate-700'} rounded-full border text-xs select-none`}
+                      >
+                        <span className="text-sm">{react.emoji}</span>
+                        <span className={`font-mono text-[9px] ${isDark ? 'text-slate-400' : 'text-slate-505'} font-bold`}>{react.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          ) : (
           
           /* ==========================================================
              C. READING PAGE FOR SINGLE POST (د لوستلو صفحه)
@@ -4305,9 +5466,12 @@ export default function App() {
               {/* Audio player in detailed post view (if any) */}
               {selectedPost.audioList && selectedPost.audioList.length > 0 ? (
                 <div className="space-y-3">
-                  {selectedPost.audioList.map((audioItem, idx) => (
-                    <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل'} isDark={isDark} tc={tc} />
-                  ))}
+                  {selectedPost.audioList.map((audioItem, idx) => {
+                    const cleanTitle = getBeautifulAudioTitle(audioItem.title, selectedPost.title, selectedPost.text, idx);
+                    return (
+                      <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} isDark={isDark} tc={tc} />
+                    );
+                  })}
                 </div>
               ) : null}
 
@@ -4348,6 +5512,151 @@ export default function App() {
               ) : extractUrl(selectedPost.text || '') ? (
                 <CustomLinkPreview url={extractUrl(selectedPost.text || '')!} isDark={isDark} />
               ) : null}
+
+              {/* UNIQUE NOVEL RELATIONSHIP (د ناول برخې او کيسې تړاو تړون) */}
+              {(() => {
+                const getHashtags = (t: string): string[] => {
+                  if (!t) return [];
+                  const matches = t.match(/#[^\s#\.,'\?\!\"🗺️✨🎙️🎵📚✍️():؛،«»\-]+/g) || [];
+                  return matches.map(tag => tag.trim());
+                };
+
+                const getUniqueNovelHashtag = (t: string): string | null => {
+                  const hashtags = getHashtags(t);
+                  const excluded = [
+                    '#ناول', '#ناول_پروفایل', '#ناول_پروفايل', '#پروفایل', '#پروفايل', 
+                    '#پروفایل_ناول', '#پروفايل_ناول', '#کتاب', '#بشپړ', '#معلومات', '#پېژندنه', '#پیژندنه',
+                    '#پښتو', '#افغانستان', '#audio', '#mp3', '#غږیز', '#صوتي', '#کیسه', '#کيسه',
+                    '#کیسې', '#کيسې', '#داستان', '#لنډه_کیسه', '#novel_profile', '#profile_novel'
+                  ];
+                  return hashtags.find(tag => !excluded.includes(tag)) || null;
+                };
+
+                const uniqueNovelTag = getUniqueNovelHashtag(selectedPost.text || '');
+                if (!uniqueNovelTag) return null;
+
+                // Search all posts from novels feed that share this unique tag
+                const allNovelFeedPosts = novelsFeedData?.posts || [];
+                const relatedParts = allNovelFeedPosts.filter(p => {
+                  const pTags = getHashtags(p.text || '');
+                  return pTags.includes(uniqueNovelTag);
+                }).sort((a, b) => {
+                  const getPartNumber = (txt: string): number => {
+                    const match = txt.match(/برخه\s*(\d+)/i) || txt.match(/برخه\s*([۰-۹]+)/i);
+                    if (match) {
+                      let numStr = match[1];
+                      const easternToWestern: Record<string, string> = {
+                        '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+                        '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9'
+                      };
+                      numStr = numStr.split('').map(char => easternToWestern[char] || char).join('');
+                      return parseInt(numStr) || 0;
+                    }
+                    return 0;
+                  };
+                  const partA = getPartNumber(a.text || '');
+                  const partB = getPartNumber(b.text || '');
+                  if (partA && partB) return partA - partB;
+                  return (parseInt(a.id) || 0) - (parseInt(b.id) || 0);
+                });
+
+                if (relatedParts.length <= 1) return null;
+
+                const profilePost = relatedParts.find(p => {
+                  const pTags = getHashtags(p.text || '');
+                  return pTags.some(tag => 
+                    tag.includes('پروفایل') || 
+                    tag.includes('پروفايل') || 
+                    tag.includes('profile') || 
+                    tag.includes('پېژندنه') || 
+                    tag.includes('پیژندنه')
+                  );
+                });
+
+                return (
+                  <div className={`mt-5 p-4 rounded-2xl border text-right space-y-3 ${isDark ? 'bg-indigo-950/20 border-indigo-500/20' : 'bg-indigo-50/40 border-indigo-100'}`} style={{ direction: 'rtl' }}>
+                    <div className="flex flex-row-reverse items-center justify-between border-b pb-2 mb-2 border-indigo-500/10">
+                      <div className="flex flex-row-reverse items-center gap-2">
+                        <BookOpen className="w-4 h-4 text-indigo-400" />
+                        <h4 className="text-xs sm:text-sm font-black text-indigo-400 font-sans">
+                          📖 د دې رومان ځانګړي فصلونه (Novel Chapters / Parts)
+                        </h4>
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-bold font-sans">
+                        ټولې برخې: {relatedParts.length}
+                      </span>
+                    </div>
+                    
+                    <p className="text-[11px] text-slate-400 leading-relaxed font-sans mb-1">
+                      دا پوسټ د <span className="text-indigo-400 font-bold">{uniqueNovelTag}</span> تر سرلیک لاندې رومان پورې تړاو لري:
+                    </p>
+
+                    {profilePost && selectedPost.id !== profilePost.id && (
+                      <button
+                        onClick={() => setSelectedPost(profilePost)}
+                        style={{ cursor: 'pointer' }}
+                        className={`w-full py-2.5 px-4 rounded-xl border font-black text-xs text-center flex items-center justify-center gap-2 transition active:scale-[0.98] mb-3 ${
+                          isDark 
+                            ? 'bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-650/30' 
+                            : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700'
+                        }`}
+                      >
+                        <BookOpen className="w-3.5 h-3.5 animate-bounce shrink-0" />
+                        <span>📖 د دې ناول عمومي پېژندنه او د ټولو څپرکو بېله پاڼه کتل</span>
+                      </button>
+                    )}
+
+                    {/* Chapters Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                      {relatedParts.map((part, index) => {
+                        const isCurrent = part.id === selectedPost.id;
+                        const partHashtags = getHashtags(part.text || '');
+                        const isPartProfile = partHashtags.some(tag => 
+                          tag.includes('پروفایل') || 
+                          tag.includes('پروفايل') || 
+                          tag.includes('profile') || 
+                          tag.includes('پېژندنه') || 
+                          tag.includes('پیژندنه')
+                        );
+                        
+                        let partLabel = `برخه ${index + 1}`;
+                        if (isPartProfile) {
+                          partLabel = "🖼️ عمومي پروفایل";
+                        } else {
+                          const partMatch = (part.text || '').match(/برخه\s*(\d+)/i) || (part.text || '').match(/برخه\s*([۰-۹]+)/i) || (part.text || '').match(/برخه\s*(\w+)/);
+                          if (partMatch) {
+                            partLabel = `برخه ${partMatch[1]}`;
+                          }
+                        }
+
+                        return (
+                          <button
+                            key={part.id}
+                            onClick={() => {
+                              setSelectedPost(part);
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className={`p-2 rounded-xl text-[10.5px] font-sans font-black border text-center transition active:scale-95 flex flex-col items-center justify-center gap-1 ${
+                              isCurrent
+                                ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                                : isDark
+                                  ? 'bg-slate-950/60 border-slate-800 text-slate-300 hover:bg-slate-900 hover:text-white'
+                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="truncate max-w-full font-bold">{partLabel}</span>
+                            {!isPartProfile && (
+                              <span className="text-[8px] opacity-70">
+                                {part.hasAudio ? '🔊 غږیز' : '✍️ لیکل شوی'}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Copy, Like, WhatsApp & Share Action Buttons Row (د شعر د کاپي، خوښولو، واټساپ او شریکولو ښکلي بټنې) */}
               {selectedPost.text && selectedPost.text.trim() !== '' && (
@@ -4439,7 +5748,8 @@ export default function App() {
               </span>
             </div>
           </article>
-        ) : isReelsOpen ? (
+        )
+      ) : isReelsOpen ? (
           /* ==========================================================
              REELS / SHORTS VIEW (د ټک ټاک او شارټس په ډیزاین د ویډیوګانو بېله زړه پورې پاڼه)
              ========================================================== */
@@ -4494,8 +5804,8 @@ export default function App() {
                   {/* Floating Action Glass Back navigation button, positioned top-right for high ergonomics */}
                   <button
                     onClick={() => setIsReelsOpen(false)}
-                    style={{ cursor: 'pointer' }}
-                    className="absolute top-5 right-5 z-40 px-4 py-2.5 rounded-full bg-black/60 hover:bg-white/10 border border-white/10 text-white shadow-2xl active:scale-95 transition backdrop-blur-md flex items-center gap-2 font-sans font-bold text-xs"
+                    style={{ top: 'calc(1.25rem + env(safe-area-inset-top, 0px))', right: '1.25rem', cursor: 'pointer' }}
+                    className="absolute z-40 px-4 py-2.5 rounded-full bg-black/60 hover:bg-white/10 border border-white/10 text-white shadow-2xl active:scale-95 transition backdrop-blur-md flex items-center gap-2 font-sans font-bold text-xs"
                     title="کورپاڼې ته شاته لاړ شئ"
                   >
                     <ArrowRight className="w-4 h-4 text-white" />
@@ -4616,7 +5926,7 @@ export default function App() {
                         <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
 
                         {/* 5. TOP FLOATING REELS STATS BAR */}
-                        <div className="absolute top-6 left-6 right-6 flex items-center justify-between z-20 text-white">
+                        <div className="absolute left-6 right-6 flex items-center justify-between z-20 text-white" style={{ top: 'calc(1.5rem + env(safe-area-inset-top, 0px))' }}>
                           {/* Left: Indicator of reel progress */}
                           <span className="text-[11px] font-mono font-black bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
                             {activeReelIndex + 1} / {reelsList.length}
@@ -5205,7 +6515,7 @@ export default function App() {
                       </p>
                     </div>
                   ) : (
-                    /* Search results posts */
+                    /* Search results posts list */
                     <div className="flex flex-col gap-3">
                       {filteredHomePosts.slice(0, 40).map((post) => {
                         const isRead = readPostIds.includes(post.id);
@@ -5220,69 +6530,493 @@ export default function App() {
                               setSelectedPost(post);
                             }}
                             style={{ cursor: 'pointer' }}
-                            className={`${isDark ? 'bg-slate-950/40 border-slate-900 hover:bg-slate-900/60' : 'bg-white border-slate-201 hover:bg-slate-50 shadow-xs'} border p-3.5 rounded-xl flex items-center gap-3.5 transition group select-none text-right ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45 hover:opacity-100 dark:hover:opacity-100 transition-opacity duration-300' : ''}`}
+                            className={`${isDark ? 'bg-slate-950/40 border-slate-900 hover:bg-slate-900/60' : 'bg-white border-slate-200 hover:bg-slate-50 shadow-xs'} border p-3.5 rounded-xl flex items-center gap-3.5 transition group select-none text-right ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45 hover:opacity-100 dark:hover:opacity-100' : ''}`}
                           >
-                          {/* Right: thumbnail image */}
-                          {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
-                            post.photoUrl && (!post.photoUrls || post.photoUrls.length <= 1) ? (
+                            {/* Right side teaser */}
+                            {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
                               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                                <CachedImage
-                                  src={post.photoUrl || ''}
+                                <img
+                                  src={post.photoUrl || post.videoThumbUrl || "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=100&auto=format&fit=crop&q=80"}
+                                  alt="Search item cover"
+                                  referrerPolicy="no-referrer"
                                   className="w-full h-full object-cover"
-                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                 />
                                 {post.hasVideo && (
                                   <span className="absolute inset-0 flex items-center justify-center bg-black/35">
-                                    <PlayCircle className="w-5 h-5 text-indigo-400" />
+                                    <Play className="w-4 h-4 text-indigo-400" />
                                   </span>
                                 )}
                               </div>
-                            ) : post.videoThumbUrl ? (
-                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                                <img
-                                  src={post.videoThumbUrl || null}
-                                  referrerPolicy="no-referrer"
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                />
-                                <span className="absolute inset-0 flex items-center justify-center bg-black/35">
-                                  <PlayCircle className="w-5 h-5 text-indigo-400" />
-                                </span>
-                              </div>
-                            ) : post.hasVideo ? (
-                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950/60 flex items-center justify-center shrink-0">
-                                <Video className="w-6 h-6 text-indigo-400" />
-                              </div>
-                            ) : null
-                          )}
+                            )}
 
-                          {/* Snippet text */}
-                          <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5">
-                            <div>
-                              <div className="flex items-center gap-1.5 text-[9px] text-slate-500 mb-1 font-sans">
-                                {isRead && (
-                                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8px] font-bold flex items-center gap-0.5 border border-emerald-500/10 whitespace-nowrap scale-[0.85] origin-right">
-                                    <Check className="w-2.5 h-2.5 text-emerald-500" />
-                                    <span>لوستل شوی</span>
-                                  </span>
-                                )}
-                                <span>{getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}</span>
-                              </div>
-                              <BeautifulTelegramText 
-                                text={getPostTextWithFallback(post)}
-                                isDark={isDark}
-                                fs={{ body: 'text-[11.5px] sm:text-xs font-semibold' }}
-                                limitLines={3}
-                              />
+                            {/* Center-Left information */}
+                            <div className="flex-grow min-w-0 text-right">
+                              <span className="text-[9.5px] text-slate-500 block font-sans mb-1">
+                                {getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}
+                              </span>
+                              <p className={`text-xs font-bold leading-relaxed line-clamp-2 ${isDark ? 'text-slate-250' : 'text-slate-750'}`}>
+                                {post.text ? post.text.slice(0, 150) + '...' : 'پوسټ پايلې'}
+                              </p>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               )}
+
+            </div>
+          </div>
+        ) : isNovelsPageOpen ? (
+          /* ==========================================================
+             D2. NOVELS & STORIES CHANNEL BROWSER (د پښتو کیسو او ناولونو برخه - انلاین مجله)
+             ========================================================== */
+          <div className="space-y-6 animate-fade-in text-right">
+            <div className={`p-4 sm:p-5 rounded-3xl ${cardBg} border-0 shadow-lg text-right relative overflow-hidden backdrop-blur-md`}>
+              
+              {/* Header inside card */}
+              <div className={`px-4.5 py-3.5 ${isDark ? 'bg-slate-900/60' : 'bg-slate-50/80'} border-0 flex items-center justify-between rounded-2xl mb-7 shadow-xs`}>
+                <button
+                  onClick={() => setIsNovelsPageOpen(false)}
+                  style={{ cursor: 'pointer' }}
+                  className={`px-3.5 py-1.8 rounded-xl transition-all duration-250 text-xs font-black ${isDark ? 'text-slate-200 bg-slate-800/80 hover:bg-slate-750' : 'text-slate-700 bg-white hover:bg-slate-100'} flex items-center gap-1.5 shrink-0 shadow-sm`}
+                  title="شاته"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                  <span>شا ته لاسرسی</span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs sm:text-[13px] font-black ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
+                    د کیسو او ناولونو مډرن بايسکل
+                  </span>
+                  <div className="p-1.5 rounded-xl bg-indigo-500/10 text-indigo-500 shrink-0">
+                    <Sparkles className="w-4 h-4 animate-pulse" />
+                  </div>
+                </div>
+              </div>
+
+              {/* CONTENT MODULES CONTROLLER */}
+              {isNovelsLoading && !novelsFeedData ? (
+                /* LOADING SHIMMER SKEL */
+                <div className="space-y-4 py-12 text-center flex flex-col items-center justify-center auto-fade-in">
+                  <div className="w-10 h-10 rounded-full border-4 border-violet-550 border-t-transparent animate-spin mb-2" />
+                  <p className="text-xs text-slate-400 font-bold font-sans">د پښتو کیسو او رومانټیکو ناولونو غوړ او رنګین ارشيف پورته کېږي...</p>
+                </div>
+              ) : novelsErrorMsg ? (
+                /* ERROR HANDLING FRAME */
+                <div className="p-6 text-center border border-dashed border-red-500/20 bg-red-500/5 rounded-2xl flex flex-col items-center justify-center gap-3">
+                  <AlertCircle className="w-8 h-8 text-red-400 animate-bounce" />
+                  <p className="text-xs text-slate-300 font-bold leading-relaxed">{novelsErrorMsg}</p>
+                  <button
+                    onClick={() => fetchNovelsChannelData(true)}
+                    style={{ cursor: 'pointer' }}
+                    className="mt-2 px-4 py-1.5 bg-violet-600 hover:bg-violet-550 text-white font-sans text-xs font-bold rounded-lg transition"
+                  >
+                    بیاځلي هڅه وکړئ (Retry)
+                  </button>
+                </div>
+              ) : (() => {
+                // Deconstruct our 4 core arrays directly from live feed data
+                const audioStories = filterNovelsPosts(false, true);
+                const audioNovels = filterNovelsPosts(true, true);
+                const writtenStories = filterNovelsPosts(false, false);
+                const writtenNovels = filterNovelsPosts(true, false);
+
+                const totalResolvedCount = audioStories.length + audioNovels.length + writtenStories.length + writtenNovels.length;
+
+                // Simple helper to render a horizontal scrolling list section with gorgeous compact card layout
+                const renderHorizontalCarouselSection = (
+                  titlePashto: string,
+                  subtitlePashto: string,
+                  postsList: any[],
+                  styleType: 'story' | 'novel',
+                  accentGradient: string,
+                  iconComponent: React.ReactNode
+                ) => {
+                  return (
+                    <div className="space-y-4 mb-8 pb-3 text-right font-sans" style={{ direction: 'rtl' }}>
+                      {/* Section Title with luxury badgified icon and counter */}
+                      <div className="flex flex-row-reverse items-center justify-between text-right px-2 pb-1.5 select-none">
+                        <div className="flex flex-row-reverse items-center gap-3 text-right">
+                          <div className={`p-2 rounded-xl bg-gradient-to-br ${accentGradient} text-white shrink-0 shadow-md shadow-indigo-500/10`}>
+                            {iconComponent}
+                          </div>
+                          <div className="flex flex-col items-start text-right">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[8.5px] font-black tracking-wider ${
+                              isDark 
+                                ? 'bg-slate-900 text-indigo-400 border border-indigo-950/60' 
+                                : 'bg-indigo-50 text-indigo-700 border border-indigo-100/60'
+                            }`}>
+                              {titlePashto === "غږیزې کیسې" ? "غږیز ادب 🔊" :
+                               titlePashto === "غږیز ناولونه" ? "غږیز رومانونه 🎙️" :
+                               titlePashto === "لیکلې کیسې" ? "قلمي داستانونه ✍️" :
+                               "ادبي شهکارونه 📚"}
+                            </span>
+                            <h3 className={`text-sm sm:text-base font-sans font-black tracking-tight mt-1 ${
+                              isDark ? 'text-white' : 'text-slate-900'
+                            }`}>
+                              {titlePashto}
+                            </h3>
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl transition-colors duration-200 ${
+                          isDark 
+                            ? 'bg-slate-900/95 text-indigo-400 border border-slate-800' 
+                            : 'bg-indigo-50/60 text-indigo-700 border border-indigo-100/50'
+                        } font-sans shadow-2xs`}>
+                          {postsList.length} توکي
+                        </span>
+                      </div>
+
+                      {/* Horizontal Scrolling wrapper */}
+                      {postsList.length === 0 ? (
+                        <div className="py-8 text-center border border-dashed border-slate-500/10 rounded-2xl flex flex-col items-center justify-center bg-black/10 dark:bg-black/20">
+                          <BookOpen className="w-5 h-5 text-slate-600 opacity-40 mb-1" />
+                          <p className="text-[10px] text-slate-500 font-bold font-sans">تر اوسه په دې برخه کې هیڅ کیسه یا ناول نشته.</p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-row-reverse gap-3.5 overflow-x-auto pb-3 snap-x snap-mandatory scrollbar-none">
+                          {postsList.map((post) => {
+                            const isRead = readPostIds.includes(post.id);
+                            
+                            const coverImg = post.photoUrl || (
+                              styleType === 'story' 
+                                ? "https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=200&auto=format&fit=crop&q=80"
+                                : "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=200&auto=format&fit=crop&q=80"
+                            );
+
+                            // Clean tags out of text
+                            const cleanText = post.text 
+                              ? post.text.replace(/#کیسه|#ناول|#داستان|#کیسې|#رومان|#غږیز|#صوتي|#کتاب|#داستانونه/g, '').trim()
+                              : 'بې سرلیکه اثر';
+
+                            // Determine if post has audio
+                            const isAudioType = post.hasAudio || post.audioUrl || (post.audioList && post.audioList.length > 0);
+                            const typeLabel = styleType === 'novel' ? 'ناول' : 'کیسه';
+                            const typeIcon = isAudioType 
+                              ? <Volume2 className="w-2.5 h-2.5 text-pink-400" /> 
+                              : <BookOpen className="w-2.5 h-2.5 text-emerald-400" />;
+
+                            return (
+                              <button
+                                key={post.id}
+                                onClick={() => {
+                                  setSelectedPost(post);
+                                  if (styleType === 'story') {
+                                    updateNovelReadingProgress(post, 10);
+                                  }
+                                }}
+                                style={{ cursor: 'pointer' }}
+                                className={`w-[115px] sm:w-[135px] aspect-[2/3.1] shrink-0 snap-start rounded-2xl border-0 transition-all duration-350 relative overflow-hidden flex flex-col text-right hover:scale-[1.04] active:scale-[0.97] ${
+                                  isDark 
+                                    ? 'shadow-[0_8px_18px_rgba(0,0,0,0.55)] hover:shadow-violet-650/15' 
+                                    : 'shadow-[0_8px_16px_rgba(99,102,241,0.06)] hover:shadow-[0_12px_24px_rgba(99,102,241,0.12)]'
+                                } group`}
+                              >
+                                {/* Book Spine Overlay decoration (Elegant 3D curved wrapper) */}
+                                <div className="absolute left-0 inset-y-0 w-2 sm:w-2.5 bg-gradient-to-r from-black/50 via-black/15 to-transparent z-15 pointer-events-none" />
+                                <div className="absolute left-[0.8px] inset-y-0 w-[0.8px] bg-white/10 z-16 pointer-events-none" />
+
+                                {/* Full cover image in the background */}
+                                <img 
+                                  src={coverImg} 
+                                  alt="novel-cover" 
+                                  referrerPolicy="no-referrer"
+                                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-600 group-hover:scale-105 group-hover:rotate-0.5"
+                                />
+                                
+                                {/* Dark vignette gradients to protect text contrast */}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
+                                
+                                {/* Top Floating Badge: Type and Icon */}
+                                <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/75 backdrop-blur-md px-1.5 py-0.5 rounded-lg border border-white/5 text-white text-[7.5px] font-black shadow-xs z-11">
+                                  {typeIcon}
+                                  <span>{typeLabel}</span>
+                                </div>
+
+                                {/* Title/Name at the bottom */}
+                                <div className="absolute inset-x-0 bottom-0 p-2 sm:p-2.5 pb-2.5 line-clamp-2 text-right z-12 flex flex-col justify-end">
+                                  <p className="text-[9.5px] sm:text-[10.5px] font-black leading-snug text-white font-sans line-clamp-2 drop-shadow-md">
+                                    {cleanText}
+                                  </p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                };
+
+                return (
+                  <div className="space-y-4">
+                    {/* Continue Reading and Liked Collection items definition */}
+                    {(() => {
+                      const likedNovelsAndStories = [...audioStories, ...audioNovels, ...writtenStories, ...writtenNovels].filter(post => 
+                        favoritePostIds.includes(post.id)
+                      );
+
+                      return (
+                        <>
+                          {/* د مطالعې ادامه (Continue Reading) Section */}
+                          {novelReadingProgressList.length > 0 && (
+                            <div className="space-y-4 mb-8 pb-3 text-right font-sans border-b border-dashed border-slate-500/10" style={{ direction: 'rtl' }}>
+                              <div className="flex flex-row-reverse items-center justify-between text-right px-2 pb-1.5 select-none">
+                                <div className="flex flex-row-reverse items-center gap-3 text-right">
+                                  <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 via-indigo-650 to-indigo-700 text-white shrink-0 shadow-md shadow-indigo-500/10">
+                                    <History className="w-3.5 h-3.5" />
+                                  </div>
+                                  <div className="flex flex-col items-start text-right">
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[8.5px] font-black tracking-wider ${
+                                      isDark 
+                                        ? 'bg-slate-900 text-indigo-400 border border-indigo-950/60' 
+                                        : 'bg-indigo-50 text-indigo-700 border border-indigo-100/60'
+                                    }`}>
+                                      د منځپانګې بیا میشتیدنه 📖
+                                    </span>
+                                    <h3 className={`text-xs sm:text-sm font-sans font-black tracking-tight mt-1 ${
+                                      isDark ? 'text-white' : 'text-slate-900'
+                                    }`}>
+                                      د مطالعې ادامه (لوستلو نښه)
+                                    </h3>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-row-reverse gap-3.5 overflow-x-auto pb-3 snap-x snap-mandatory scrollbar-none">
+                                {novelReadingProgressList.map((item) => {
+                                  const post = item.post;
+                                  const coverImg = post.photoUrl || (
+                                    post.text?.includes('#ناول')
+                                      ? "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=200&auto=format&fit=crop&q=80"
+                                      : "https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=200&auto=format&fit=crop&q=80"
+                                  );
+
+                                  return (
+                                    <div
+                                      key={item.id}
+                                      onClick={() => resumeReadingItem(item)}
+                                      style={{ cursor: 'pointer' }}
+                                      className={`w-[130px] sm:w-[150px] shrink-0 snap-start rounded-2xl p-2.5 border transition-all duration-300 relative overflow-hidden flex flex-col text-right hover:scale-[1.03] active:scale-[0.98] ${
+                                        isDark 
+                                          ? 'bg-slate-905/70 border-slate-805/75 text-white hover:border-indigo-550/30' 
+                                          : 'bg-white border-slate-200 text-slate-900 hover:border-indigo-550/30 shadow-xs'
+                                      } group`}
+                                    >
+                                      <button
+                                        onClick={(e) => removeReadingProgress(e, item.id)}
+                                        style={{ cursor: 'pointer' }}
+                                        className="absolute top-1.5 left-1.5 p-1 rounded-lg bg-black/65 backdrop-blur-md text-slate-300 hover:text-red-400 border border-white/5 z-15 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        title="لرې کول"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+
+                                      <div className="w-full aspect-[4/3] rounded-xl overflow-hidden relative mb-2 shadow-inner">
+                                        <img 
+                                          src={coverImg} 
+                                          alt="cover" 
+                                          referrerPolicy="no-referrer"
+                                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
+                                        
+                                        <span className="absolute bottom-1 right-1.5 text-[8px] font-black bg-indigo-600/95 text-white px-1.5 py-0.5 rounded-md">
+                                          {item.progress}% لوستل شوی
+                                        </span>
+                                      </div>
+
+                                      <span className={`text-[8px] font-black tracking-wider uppercase mb-0.5 block ${isDark ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                                        {item.parentPost ? "څپرکی / غاړه" : "بشپړ اثر"}
+                                      </span>
+                                      <h4 className={`text-[10.5px] sm:text-[11px] font-black line-clamp-1 mb-2 ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                                        {item.title}
+                                      </h4>
+
+                                      <div className={`w-full h-1.5 ${isDark ? 'bg-slate-900' : 'bg-slate-100'} rounded-full overflow-hidden relative shadow-inner mt-auto`}>
+                                        <div 
+                                          className="absolute inset-y-0 right-0 bg-gradient-to-l from-indigo-500 to-pink-500 h-full rounded-full transition-all duration-150"
+                                          style={{ width: `${item.progress}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* زما خوښ شوي اثار (Liked Collection) */}
+                          {(likedNovelsAndStories.length > 0 || likedChaptersList.length > 0) && (
+                            <div className="space-y-4 mb-8 pb-3 text-right font-sans border-b border-dashed border-slate-500/10" style={{ direction: 'rtl' }}>
+                              <div className="flex flex-row-reverse items-center justify-between text-right px-2 pb-1.5 select-none">
+                                <div className="flex flex-row-reverse items-center gap-3 text-right">
+                                  <div className="p-2 rounded-xl bg-gradient-to-br from-rose-500 via-rose-600 to-pink-650 text-white shrink-0 shadow-md shadow-rose-500/10">
+                                    <Heart className="w-3.5 h-3.5 fill-rose-500 animate-pulse text-white" />
+                                  </div>
+                                  <div className="flex flex-col items-start text-right">
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[8.5px] font-black tracking-wider ${
+                                      isDark 
+                                        ? 'bg-slate-900 text-rose-400 border border-rose-950/60' 
+                                        : 'bg-rose-50 text-rose-700 border border-rose-100/60'
+                                    }`}>
+                                      ستاسو د خوښې رومانونه او داستانونه 💖
+                                    </span>
+                                    <h3 className={`text-xs sm:text-sm font-sans font-black tracking-tight mt-1 ${
+                                      isDark ? 'text-white' : 'text-slate-900'
+                                    }`}>
+                                      زما خوښ شوي اثار
+                                    </h3>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-row-reverse gap-3.5 overflow-x-auto pb-3 snap-x snap-mandatory scrollbar-none">
+                                {/* 1. Loved stories & novels */}
+                                {likedNovelsAndStories.map((post) => {
+                                  const coverImg = post.photoUrl || (
+                                    post.text?.includes('#ناول')
+                                      ? "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=200&auto=format&fit=crop&q=80"
+                                      : "https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=200&auto=format&fit=crop&q=80"
+                                  );
+                                  const cleanText = post.text 
+                                    ? post.text.replace(/#کیسه|#ناول|#داستان|#کیسې|#رومان|#غږیز|#صوتي|#کتاب|#داستانونه/g, '').trim()
+                                    : 'بې سرلیکه اثر';
+
+                                  return (
+                                    <div
+                                      key={post.id}
+                                      onClick={() => setSelectedPost(post)}
+                                      style={{ cursor: 'pointer' }}
+                                      className={`w-[115px] sm:w-[135px] aspect-[2/3.1] shrink-0 snap-start rounded-2xl border-0 transition-all duration-350 relative overflow-hidden flex flex-col text-right hover:scale-[1.04] active:scale-[0.97] ${
+                                        isDark 
+                                          ? 'shadow-[0_8px_18px_rgba(0,0,0,0.55)] hover:shadow-rose-650/15' 
+                                          : 'shadow-[0_8px_16px_rgba(244,63,94,0.06)] hover:shadow-[0_12px_24px_rgba(244,63,94,0.12)]'
+                                      } group`}
+                                    >
+                                      <div className="absolute left-0 inset-y-0 w-2 sm:w-2.5 bg-gradient-to-r from-black/50 via-black/15 to-transparent z-15 pointer-events-none" />
+                                      <img 
+                                        src={coverImg} 
+                                        alt="liked-cover" 
+                                        referrerPolicy="no-referrer"
+                                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-600 group-hover:scale-105"
+                                      />
+                                      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
+                                      
+                                      <div className="absolute top-2 right-2 flex items-center gap-1 bg-rose-600/90 backdrop-blur-md px-1.5 py-0.5 rounded-lg text-white text-[7px] font-black shadow-xs z-11">
+                                        <Heart className="w-2 h-2 fill-white text-white" />
+                                        <span>خوښ شوی اثار</span>
+                                      </div>
+
+                                      <div className="absolute inset-x-0 bottom-0 p-2 sm:p-2.5 pb-2.5 text-right z-12">
+                                        <p className="text-[9.5px] sm:text-[10.5px] font-black leading-snug text-white font-sans line-clamp-2">
+                                          {cleanText}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+
+                                {/* 2. Loved chapters */}
+                                {likedChaptersList.map((item) => {
+                                  const post = item.post;
+                                  const coverImg = post.photoUrl || item.parentPost?.photoUrl || (
+                                    post.text?.includes('#ناول')
+                                      ? "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=200&auto=format&fit=crop&q=80"
+                                      : "https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=200&auto=format&fit=crop&q=80"
+                                  );
+
+                                  return (
+                                    <div
+                                      key={item.id}
+                                      onClick={() => {
+                                        if (item.parentPost) {
+                                          setSelectedPost(item.parentPost);
+                                          setActiveNovelTextChapter(item.post);
+                                        } else {
+                                          setActiveNovelTextChapter(item.post);
+                                        }
+                                      }}
+                                      style={{ cursor: 'pointer' }}
+                                      className={`w-[115px] sm:w-[135px] aspect-[2/3.1] shrink-0 snap-start rounded-2xl border-0 transition-all duration-350 relative overflow-hidden flex flex-col text-right hover:scale-[1.04] active:scale-[0.97] ${
+                                        isDark 
+                                          ? 'shadow-[0_8px_18px_rgba(0,0,0,0.55)] hover:shadow-cyan-650/15' 
+                                          : 'shadow-[0_8px_16px_rgba(6,182,212,0.06)] hover:shadow-[0_12px_24px_rgba(6,182,212,0.12)]'
+                                      } group`}
+                                    >
+                                      <div className="absolute left-0 inset-y-0 w-2 sm:w-2.5 bg-gradient-to-r from-black/50 via-black/15 to-transparent z-15 pointer-events-none" />
+                                      <img 
+                                        src={coverImg} 
+                                        alt="liked-chapter-cover" 
+                                        referrerPolicy="no-referrer"
+                                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-600 group-hover:scale-105"
+                                      />
+                                      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
+                                      
+                                      <div className="absolute top-2 right-2 flex items-center gap-1 bg-cyan-600/95 backdrop-blur-md px-1.5 py-0.5 rounded-lg text-white text-[7px] font-black shadow-xs z-11">
+                                        <Heart className="w-2 h-2 fill-white text-white" />
+                                        <span>خوښ شوی پورشن</span>
+                                      </div>
+
+                                      <div className="absolute inset-x-0 bottom-0 p-2 sm:p-2.5 pb-2.5 text-right z-12">
+                                        <span className="text-[7.5px] font-black tracking-wider text-cyan-300 block mb-0.5 uppercase line-clamp-1">
+                                          {item.parentPost?.text?.split('\n')[0]?.replace(/#[^\s]+/g, '').trim().substring(0, 16) || 'رومان'}
+                                        </span>
+                                        <p className="text-[9.5px] sm:text-[10.5px] font-black leading-snug text-white font-sans line-clamp-2">
+                                          {item.title}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+
+                    {/* Horizontal 4 Lists */}
+                    {renderHorizontalCarouselSection(
+                      "غږیزې کیسې",
+                      "",
+                      audioStories,
+                      'story',
+                      'from-violet-600 to-indigo-605',
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+
+                    {renderHorizontalCarouselSection(
+                      "غږیز ناولونه",
+                      "",
+                      audioNovels,
+                      'novel',
+                      'from-purple-650 to-pink-655',
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+
+                    {renderHorizontalCarouselSection(
+                      "لیکلې کیسې",
+                      "",
+                      writtenStories,
+                      'story',
+                      'from-emerald-600 to-teal-605',
+                      <BookOpen className="w-3.5 h-3.5" />
+                    )}
+
+                    {renderHorizontalCarouselSection(
+                      "لیکلي ناولونه",
+                      "",
+                      writtenNovels,
+                      'novel',
+                      'from-amber-500 to-orange-655',
+                      <BookOpen className="w-3.5 h-3.5" />
+                    )}
+                  </div>
+                );
+              })()}
 
             </div>
           </div>
@@ -6067,7 +7801,47 @@ export default function App() {
 
             </div>
 
-            {/* 2.5. BEAUTIFUL DYNAMIC INFO & CONTACT NAVIGATION LINKS (زمونږ په اړه او تماس بټنې) */}
+            {/* د کیسو او ناولونو برخه (Special Stories & Novels Banner Button) */}
+            <div 
+              id="dewa-novels-stories-banner"
+              onClick={() => {
+                setIsNovelsPageOpen(true);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              style={{ cursor: 'pointer' }}
+              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 flex flex-row-reverse items-center justify-between gap-3 transition-all duration-350 transform hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.985] border border-fuchsia-400/35 bg-gradient-to-r from-indigo-600 via-fuchsia-600 to-pink-600 animate-gradient-shift shadow-[0_6px_22px_rgba(219,39,119,0.22)] hover:shadow-[0_12px_32px_rgba(219,39,119,0.42)] group text-white select-none cursor-pointer mt-3 mb-2"
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent)] pointer-events-none" />
+              <BookOpen className="absolute -left-3 -bottom-3 w-16 h-16 text-white/10 pointer-events-none transform rotate-12 group-hover:scale-115 transition-all duration-500 ease-out" />
+              
+              <div className="flex flex-row-reverse items-center gap-2.5 z-10 text-right min-w-0">
+                <div className="shrink-0 w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-md group-hover:bg-white/25 group-hover:rotate-6 transition duration-300">
+                  <Sparkles className="w-4 h-4 sm:w-4.5 sm:h-4.5 animate-pulse text-amber-300" />
+                </div>
+                <div className="min-w-0 flex flex-col justify-center text-right">
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span className="bg-rose-550 text-white text-[7.5px] xs:text-[8px] px-1.5 py-0.5 rounded-md font-sans font-black select-none animate-bounce">
+                      نوی
+                    </span>
+                    <h3 className="text-xs sm:text-sm font-black tracking-tight font-sans text-white">
+                      د کیسو او ناولونو غني جهان ✨
+                    </h3>
+                  </div>
+                  <p className="text-[9.5px] sm:text-[10.5px] text-white/85 font-medium font-sans mt-0.5" style={{ direction: 'rtl' }}>
+                    غږیزې او لیکل شوې کیسې او په زړه پورې رومانونه 🎧📖
+                  </p>
+                </div>
+              </div>
+              
+              <div className="shrink-0 flex items-center justify-end z-10">
+                <div className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white border border-white/20 font-sans font-black text-[9.5px] sm:text-[10.5px] flex items-center justify-center gap-1 shadow-md group-hover:scale-105 active:scale-95 transition-all duration-300">
+                  <span>ورننوځئ</span>
+                  <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
+                </div>
+              </div>
+            </div>
+
+            {/* 2.5. BEAUTIVER DYNAMIC INFO & CONTACT NAVIGATION LINKS (زمونږ په اړه او تماس بټنې) */}
             <div id="dewa-quick-info-section" className="grid grid-cols-2 gap-3" style={{ direction: 'rtl' }}>
               {/* زمونږ په اړه مینو د غوړ پرمختللو حرکتونو سره */}
               <motion.div
@@ -6155,6 +7929,7 @@ export default function App() {
                   const categoriesBase = [
                     { id: 'all', label: 'ټول', icon: Layers, activeClass: 'cat-btn-all-active' },
                     ...(storiesList.length > 0 ? [{ id: 'stories', label: 'سټوريانې', icon: Sparkles, activeClass: 'bg-gradient-to-r from-pink-500 via-fuchsia-600 to-rose-500 border-transparent shadow-[0_4px_12px_rgba(236,72,153,0.35)]' }] : []),
+                    { id: 'novels', label: 'ناولونه', icon: BookOpen, activeClass: 'bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-500 border-transparent shadow-[0_4px_12px_rgba(99,102,241,0.35)]' },
                     { id: 'writings_plain', label: 'ليکنې', icon: FileText, activeClass: 'cat-btn-writings-active' },
                     { id: 'poems', label: 'شعرونه', icon: Feather, activeClass: 'cat-btn-poems-active' },
                     { id: 'videos', label: 'ويډيويي', icon: Video, activeClass: 'cat-btn-videos-active' },
@@ -6333,6 +8108,111 @@ export default function App() {
             <div className="space-y-3">
               {homePosts.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs">پوسټونه نشته.</div>
+              ) : selectedCategory === 'novels' ? (
+                /* GORGEOUS 3-COLUMN GRID DESIGN FOR NOVELS (ناولونه) */
+                <div className="grid grid-cols-3 gap-3 md:gap-5" style={{ direction: 'rtl' }}>
+                  {homePosts.map((post) => {
+                    const isRead = readPostIds.includes(post.id);
+                    const coverImg = post.photoUrl || "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=350&auto=format&fit=crop&q=80";
+                    
+                    const cleanText = post.text 
+                      ? post.text.replace(/#کیسه|#ناول|#داستان|#کیسې|#رومان|#غږیز|#صوتي|#کتاب|#داستانونه/g, '').trim()
+                      : 'بې سرلیکه اثر';
+                      
+                    const firstLine = cleanText.split('\n')[0]?.trim() || 'بې نومه اثر';
+                    const shortTitle = firstLine.length > 30 ? firstLine.slice(0, 27) + '...' : firstLine;
+
+                    const isAudioType = post.hasAudio || post.audioUrl || (post.audioList && post.audioList.length > 0) || (post.text || '').toLowerCase().includes('audio') || (post.text || '').toLowerCase().includes('mp3') || (post.text || '').includes('آډیو') || (post.text || '').includes('غږیز');
+
+                    const isFavorite = favoritePostIds.includes(post.id);
+
+                    return (
+                      <motion.div
+                        key={post.id}
+                        layoutId={`novel-card-${post.id}`}
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        onClick={() => {
+                          const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                          if (currentScroll > 0) {
+                            detailScrollPosRef.current = currentScroll;
+                          }
+                          setSelectedPost(post);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className={`group relative flex flex-col aspect-[2/3.2] rounded-2xl overflow-hidden border transition-all duration-350 select-none ${
+                          isDark 
+                            ? 'bg-slate-900/90 border-slate-805 hover:border-violet-550/40 hover:shadow-2xl hover:shadow-violet-950/20' 
+                            : 'bg-white border-slate-205 hover:border-violet-400/40 hover:shadow-xl hover:shadow-violet-100/30'
+                        }`}
+                      >
+                        {/* Book Spine Overlay decoration */}
+                        <div className="absolute left-0 inset-y-0 w-2.5 sm:w-3.5 bg-gradient-to-r from-black/45 via-black/10 to-transparent z-15 pointer-events-none" />
+                        <div className="absolute left-[2px] sm:left-[3px] inset-y-0 w-[1px] bg-white/15 z-16 pointer-events-none" />
+
+                        {/* Covered page background */}
+                        <div className="absolute inset-0 bg-slate-950">
+                          <img 
+                            src={coverImg} 
+                            alt={shortTitle}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.08] group-hover:rotate-1"
+                          />
+                        </div>
+
+                        {/* Curved page 3D book shadow */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent pointer-events-none z-10" />
+
+                        {/* Custom floating luxury badge */}
+                        <div className="absolute top-2 right-2 m-0.5 z-12 flex items-center gap-1 bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded-lg border border-white/10 text-white text-[8px] sm:text-[9.5px] font-black shadow-lg">
+                          {isAudioType ? (
+                            <>
+                              <Volume2 className="w-2.5 h-2.5 sm:w-3 text-pink-400" />
+                              <span className="font-sans">غږیز</span>
+                            </>
+                          ) : (
+                            <>
+                              <BookOpen className="w-2.5 h-2.5 sm:w-3 text-emerald-400" />
+                              <span className="font-sans">لیکلی</span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Favorite icon on top left */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(post.id);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                          className="absolute top-2 left-2 z-12 w-6.5 h-6.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 hover:bg-black/95 flex items-center justify-center transition active:scale-90"
+                        >
+                          <Heart className={`w-3 h-3 ${isFavorite ? 'text-rose-500 fill-rose-500' : 'text-white'}`} />
+                        </button>
+
+                        {/* Floating title block */}
+                        <div className="absolute inset-x-0 bottom-0 p-2 sm:p-3 pb-3 sm:pb-4 bg-gradient-to-t from-black via-black/90 to-transparent text-right z-11 flex flex-col justify-end">
+                          <h4 className="text-[10.5px] sm:text-[13px] font-black font-sans leading-snug text-white line-clamp-2 drop-shadow-md">
+                            {shortTitle}
+                          </h4>
+                          
+                          <div className="flex items-center justify-between mt-1.5 border-t border-white/10 pt-1.5">
+                            <span className="text-[7.5px] sm:text-[9px] text-indigo-300 font-sans font-bold flex items-center gap-0.5 leading-none">
+                              <Sparkles className="w-2 h-2 text-indigo-300 shrink-0" />
+                              کتل پیل کړئ
+                            </span>
+                            {isRead && (
+                              <span className="text-[7.5px] sm:text-[9px] text-emerald-400 font-sans font-black flex items-center gap-0.5 leading-none">
+                                <Check className="w-2.5 h-2.5" />
+                                لوستل شوی
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
               ) : (
                   <div className={`
                     ${homeLayout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5'}
@@ -6502,12 +8382,15 @@ export default function App() {
 
                                 {post.audioList && post.audioList.length > 0 ? (
                                   <div className="space-y-2.5">
-                                    {post.audioList.map((audioItem, idx) => (
-                                      <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                                    ))}
+                                    {post.audioList.map((audioItem, idx) => {
+                                      const cleanTitle = getBeautifulAudioTitle(audioItem.title, post.title, getPostTextWithFallback(post), idx);
+                                      return (
+                                        <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                      );
+                                    })}
                                   </div>
                                 ) : post.hasAudio && post.audioUrl ? (
-                                  <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                                  <BeautifulAudioPlayer url={post.audioUrl} title={getBeautifulAudioTitle(post.audioTitle, post.title, getPostTextWithFallback(post))} duration={post.audioDuration} isDark={isDark} tc={tc} />
                                 ) : null}
 
                                 {getIsBook(post) && (
@@ -6679,12 +8562,15 @@ export default function App() {
                                 )}
                                 {post.audioList && post.audioList.length > 0 ? (
                                   <div className="space-y-2.5">
-                                    {post.audioList.map((audioItem, idx) => (
-                                      <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                                    ))}
+                                    {post.audioList.map((audioItem, idx) => {
+                                      const cleanTitle = getBeautifulAudioTitle(audioItem.title, post.title, getPostTextWithFallback(post), idx);
+                                      return (
+                                        <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                      );
+                                    })}
                                   </div>
                                 ) : post.hasAudio && post.audioUrl ? (
-                                  <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                                  <BeautifulAudioPlayer url={post.audioUrl} title={getBeautifulAudioTitle(post.audioTitle, post.title, getPostTextWithFallback(post))} duration={post.audioDuration} isDark={isDark} tc={tc} />
                                 ) : null}
 
                                 {getIsBook(post) && (
@@ -6727,13 +8613,16 @@ export default function App() {
                               </span>
                               {post.audioList && post.audioList.length > 0 ? (
                                 <div className="mt-1.5 max-w-xs scale-95 origin-right space-y-1.5">
-                                  {post.audioList.map((audioItem, idx) => (
-                                    <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                                  ))}
+                                  {post.audioList.map((audioItem, idx) => {
+                                    const cleanTitle = getBeautifulAudioTitle(audioItem.title, post.title, getPostTextWithFallback(post), idx);
+                                    return (
+                                      <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                    );
+                                  })}
                                 </div>
                               ) : post.hasAudio && post.audioUrl ? (
                                 <div className="mt-1.5 max-w-xs scale-95 origin-right">
-                                  <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                                  <BeautifulAudioPlayer url={post.audioUrl} title={getBeautifulAudioTitle(post.audioTitle, post.title, getPostTextWithFallback(post))} duration={post.audioDuration} isDark={isDark} tc={tc} />
                                 </div>
                               ) : null}
 
@@ -6802,12 +8691,15 @@ export default function App() {
                               />
                               {post.audioList && post.audioList.length > 0 ? (
                                 <div className="space-y-2.5">
-                                  {post.audioList.map((audioItem, idx) => (
-                                    <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                                  ))}
+                                  {post.audioList.map((audioItem, idx) => {
+                                    const cleanTitle = getBeautifulAudioTitle(audioItem.title, post.title, getPostTextWithFallback(post), idx);
+                                    return (
+                                      <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                    );
+                                  })}
                                 </div>
                               ) : post.hasAudio && post.audioUrl ? (
-                                <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                                <BeautifulAudioPlayer url={post.audioUrl} title={getBeautifulAudioTitle(post.audioTitle, post.title, getPostTextWithFallback(post))} duration={post.audioDuration} isDark={isDark} tc={tc} />
                               ) : null}
 
                               {getIsBook(post) && (
@@ -6854,12 +8746,15 @@ export default function App() {
                             />
                             {post.audioList && post.audioList.length > 0 ? (
                               <div className="space-y-2.5">
-                                {post.audioList.map((audioItem, idx) => (
-                                  <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                                ))}
+                                {post.audioList.map((audioItem, idx) => {
+                                  const cleanTitle = getBeautifulAudioTitle(audioItem.title, post.title, getPostTextWithFallback(post), idx);
+                                  return (
+                                    <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                  );
+                                })}
                               </div>
                             ) : post.hasAudio && post.audioUrl ? (
-                              <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                              <BeautifulAudioPlayer url={post.audioUrl} title={getBeautifulAudioTitle(post.audioTitle, post.title, getPostTextWithFallback(post))} duration={post.audioDuration} isDark={isDark} tc={tc} />
                             ) : null}
 
                             {getIsBook(post) && (
@@ -6887,9 +8782,25 @@ export default function App() {
 
             {/* SHIMMER EFFECT WHEN LOADING MORE POSTS (متحرک ښکلي شیمر پوستونه د غوښتنې پر مهال) */}
             {isAutoloadingMore && (
-              <div className={`mt-3 ${homeLayout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5'}`}>
-                {[1, 2, 3, 4].map((item) => (
-                  homeLayout === 'grid' ? (
+              selectedCategory === 'novels' ? (
+                <div className="mt-3 grid grid-cols-3 gap-3 md:gap-5">
+                  {[1, 2, 3].map((item) => (
+                    <div
+                      key={item}
+                      className={`${cardBg} rounded-2xl aspect-[2/3.2] overflow-hidden flex flex-col border border-slate-500/5 animate-pulse text-right relative`}
+                    >
+                      <div className="absolute inset-0 bg-slate-400/10 dark:bg-slate-800/40" />
+                      <div className="absolute inset-x-0 bottom-0 p-3 space-y-2 bg-gradient-to-t from-black/80 to-transparent">
+                        <div className="h-4 bg-slate-400/25 dark:bg-slate-800/40 rounded w-11/12" />
+                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-2/3" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={`mt-3 ${homeLayout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5'}`}>
+                  {[1, 2, 3, 4].map((item) => (
+                    homeLayout === 'grid' ? (
                     <div
                       key={item}
                       className={`${cardBg} rounded-xl overflow-hidden flex flex-col border border-slate-500/5 animate-pulse text-right`}
@@ -6914,9 +8825,10 @@ export default function App() {
                         <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-1/2" />
                       </div>
                     </div>
-                  )
-                ))}
-              </div>
+                    )
+                  ))}
+                </div>
+              )
             )}
 
             {/* INFINITE SCROLL SENTINEL & MANUAL OVERRIDE (د غبرکون سینټینل او نور وګورئ بټن) */}
@@ -7060,13 +8972,16 @@ export default function App() {
 
                       {post.audioList && post.audioList.length > 0 ? (
                         <div className="space-y-2.5 mt-2">
-                          {post.audioList.map((audioItem, idx) => (
-                            <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                          ))}
+                          {post.audioList.map((audioItem, idx) => {
+                            const cleanTitle = getBeautifulAudioTitle(audioItem.title, post.title, getPostTextWithFallback(post), idx);
+                            return (
+                              <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                            );
+                          })}
                         </div>
                       ) : post.hasAudio && post.audioUrl ? (
                         <div className="mt-2">
-                          <BeautifulAudioPlayer url={post.audioUrl} title={post.audioTitle || 'غږیز فایل خپرونه'} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                          <BeautifulAudioPlayer url={post.audioUrl} title={getBeautifulAudioTitle(post.audioTitle, post.title, getPostTextWithFallback(post))} duration={post.audioDuration} isDark={isDark} tc={tc} />
                         </div>
                       ) : null}
 
@@ -8330,9 +10245,12 @@ export default function App() {
                 {/* Optional items such as audios within bottom sheet */}
                 {bottomSheetPost.audioList && bottomSheetPost.audioList.length > 0 && (
                   <div className="space-y-2.5 pt-3 border-t border-white/5">
-                    {bottomSheetPost.audioList.map((audioItem, idx) => (
-                      <BeautifulAudioPlayer key={idx} url={audioItem.url} title={audioItem.title || 'غږیز فایل خپرونه'} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                    ))}
+                    {bottomSheetPost.audioList.map((audioItem, idx) => {
+                      const cleanTitle = getBeautifulAudioTitle(audioItem.title, bottomSheetPost.title, getPostTextWithFallback(bottomSheetPost), idx);
+                      return (
+                        <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -8635,86 +10553,162 @@ export default function App() {
 // Global Floating Dynamic Control Player (د هیواد په کچه خوځنده غږیز کنټرول)
 function GlobalFloatingAudioPlayer({ isDark, tc }: { isDark: boolean; tc: any }) {
   const globalAudio = useGlobalAudio();
+  const [isHovered, setIsHovered] = useState(false);
+  const [showText, setShowText] = useState(true);
+
+  // Auto-hide title after 8 seconds of playing, but show on hover
+  useEffect(() => {
+    if (globalAudio.url) {
+      setShowText(true);
+      const timer = setTimeout(() => {
+        setShowText(false);
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [globalAudio.url]);
 
   // If there's no audio active, return null
   if (!globalAudio.url) return null;
 
+  // Circle path math
+  const radius = 28;
+  const strokeWidth = 3.5;
+  const circ = 2 * Math.PI * radius;
+  const strokeDashoffset = circ * (1 - globalAudio.progress / 100);
+
   return (
     <AnimatePresence>
+      {/* Wave ripples Keyframe Injector */}
+      <style key="music-ripple-style">{`
+        @keyframes musicRipple1 {
+          0% { transform: scale(0.95); opacity: 0.8; }
+          100% { transform: scale(1.6); opacity: 0; }
+        }
+        @keyframes musicRipple2 {
+          0% { transform: scale(0.95); opacity: 0.5; }
+          100% { transform: scale(2.2); opacity: 0; }
+        }
+        .music-ripple-1 {
+          animation: musicRipple1 2.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+        }
+        .music-ripple-2 {
+          animation: musicRipple2 3.0s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+        }
+      `}</style>
+
       <motion.div
-        initial={{ y: 90, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 90, opacity: 0 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="fixed bottom-[18px] left-1/2 -translate-x-1/2 w-[calc(100%-24px)] sm:w-[440px] z-[9999] shadow-[0_15px_40px_rgba(0,0,0,0.55)]"
+        key="global-audio-fab"
+        initial={{ y: 50, opacity: 0, scale: 0.9 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 50, opacity: 0, scale: 0.9 }}
+        transition={{ type: 'spring', damping: 20, stiffness: 220 }}
+        className="fixed bottom-6 right-6 z-[99999] flex items-center gap-3 select-none flex-row-reverse"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
-        <div className={`backdrop-blur-2xl ${isDark ? 'bg-slate-950/85 border-slate-800/80 shadow-[0_12px_36px_rgba(0,0,0,0.4)]' : 'bg-white/90 border-slate-200/90 shadow-[0_12px_36px_rgba(0,0,0,0.06)]'} border rounded-2xl p-3.5 flex flex-col gap-2.5 w-full text-right transition-colors duration-200`}>
-          <div className="flex items-center justify-between gap-3">
-            {/* Play/Pause & Stop Controls */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  if (globalAudio.isPlaying) {
-                    pauseGlobalAudio();
-                  } else {
-                    playGlobalAudio(globalAudio.url, globalAudio.title, globalAudio.duration);
-                  }
-                }}
-                className={`w-9 h-9 rounded-full ${tc.bg} ${tc.hoverBg} text-white flex items-center justify-center shadow transition active:scale-95`}
-                style={{ cursor: 'pointer' }}
-                title={globalAudio.isPlaying ? "ودروئ / Pause" : "غږول / Play"}
-              >
-                {globalAudio.isPlaying ? (
-                  <svg className="w-3.5 h-3.5 fill-current text-white" viewBox="0 0 24 24">
-                    <rect x="6" y="4" width="4" height="16" rx="1" />
-                    <rect x="14" y="4" width="4" height="16" rx="1" />
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5 fill-current text-white translate-x-[0.5px]" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                )}
-              </button>
-              
-              <button
-                onClick={stopAndCloseGlobalAudio}
-                className={`p-2 rounded-xl border ${isDark ? 'border-slate-800 hover:bg-slate-900 text-slate-400 hover:text-rose-450' : 'border-slate-200 hover:bg-slate-100 text-slate-500 hover:text-rose-600'} transition active:scale-95`}
-                title="غږ بند کړئ او مینو وتړئ"
-                style={{ cursor: 'pointer' }}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+        
+        {/* THE MAIN FAB CONTAINER WITH WAVES AND CIRCULAR PROGRESS */}
+        <div className="relative w-[72px] h-[72px] flex items-center justify-center shrink-0">
+          
+          {/* Wave/Pulse Waves (wave څپې) behind the FAB button */}
+          {globalAudio.isPlaying && (
+            <>
+              <div className="absolute inset-0 rounded-full bg-indigo-500/20 pointer-events-none music-ripple-1" />
+              <div className="absolute inset-0 rounded-full bg-indigo-500/10 pointer-events-none music-ripple-2" />
+            </>
+          )}
 
-            {/* Title / Info */}
-            <div className="flex-1 min-w-0 pr-1 text-right">
-              <span className={`text-[11.5px] font-bold block truncate leading-snug ${isDark ? 'text-white' : 'text-slate-950'}`}>
-                {globalAudio.title || 'فعال غږ د غږېدو په حال کې...'}
-              </span>
-              <div className="flex items-center gap-1.5 justify-end mt-0.5 select-none">
-                <span className="text-[9px] text-slate-400 font-medium">په شالید (بیکګرانډ) کې غږېږي</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-              </div>
-            </div>
-          </div>
+          {/* Circular Seeker/Progress Ring (دايروي سيګار) */}
+          <svg className="absolute inset-0 -rotate-90 w-full h-full pointer-events-none z-10" viewBox="0 0 72 72">
+            {/* Base/Track Circle */}
+            <circle
+              cx="36"
+              cy="36"
+              r={radius}
+              className={`${isDark ? 'stroke-slate-800/80' : 'stroke-slate-200/90'}`}
+              strokeWidth={strokeWidth}
+              fill="transparent"
+            />
+            {/* Active Progress Circle */}
+            <motion.circle
+              cx="36"
+              cy="36"
+              r={radius}
+              className="stroke-indigo-500"
+              strokeWidth={strokeWidth}
+              fill="transparent"
+              strokeDasharray={circ}
+              animate={{ strokeDashoffset }}
+              transition={{ duration: 0.1, ease: 'linear' }}
+              strokeLinecap="round"
+            />
+          </svg>
 
-          {/* Progress Tracker Bar */}
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[9.5px] text-slate-500 font-mono shrink-0 select-none">{globalAudio.currentTime}</span>
-            <div className="flex-grow relative flex items-center">
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="0.5"
-                value={globalAudio.progress}
-                onChange={(e) => seekGlobalAudio(parseFloat(e.target.value))}
-                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none"
-              />
-            </div>
-            <span className="text-[9.5px] text-slate-500 font-mono shrink-0 select-none">{globalAudio.totalDuration}</span>
-          </div>
+          {/* Central Play/Pause Action Button (سټاپ او شروع) */}
+          <button
+            onClick={() => {
+              if (globalAudio.isPlaying) {
+                pauseGlobalAudio();
+              } else {
+                playGlobalAudio(globalAudio.url, globalAudio.title, globalAudio.duration);
+              }
+            }}
+            className={`relative z-20 w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all duration-300 shadow-md ${
+              isDark 
+                ? 'bg-slate-900 border border-slate-800 text-indigo-400 hover:text-indigo-300 hover:bg-slate-850' 
+                : 'bg-white border border-slate-100 text-indigo-600 hover:text-indigo-500 hover:bg-slate-50'
+            } active:scale-90`}
+            style={{ cursor: 'pointer' }}
+            title={globalAudio.isPlaying ? "وقف کړئ / Pause" : "وغږوئ / Play"}
+          >
+            {globalAudio.isPlaying ? (
+              <Pause className="w-5 h-5 fill-current text-indigo-500" />
+            ) : (
+              <Play className="w-5 h-5 fill-current text-indigo-500 translate-x-[1px]" />
+            )}
+          </button>
+
+          {/* Elegant Tiny Close Badge (Dismiss) */}
+          <button
+            onClick={stopAndCloseGlobalAudio}
+            className="absolute -top-1 -right-1 z-30 w-5 h-5 rounded-full flex items-center justify-center border bg-rose-500 hover:bg-rose-600 border-white/20 text-white shadow-sm transition active:scale-95"
+            style={{ cursor: 'pointer' }}
+            title="بندول"
+          >
+            <X className="w-3 h-3" />
+          </button>
         </div>
+
+        {/* SLIDING INFO PANEL (Next to FAB, to explain the title/progress) */}
+        <AnimatePresence>
+          {(showText || isHovered) && (
+            <motion.div
+              initial={{ opacity: 0, x: 25, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 25, scale: 0.95 }}
+              transition={{ type: 'spring', damping: 18, stiffness: 220 }}
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-[22px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] border backdrop-blur-md max-w-[200px] sm:max-w-[280px] text-right ${
+                isDark 
+                  ? 'bg-slate-950/90 border-slate-800/80 text-white shadow-slate-950/50' 
+                  : 'bg-white/95 border-slate-200/90 text-slate-900 shadow-slate-100/50'
+              }`}
+            >
+              <div className="flex-1 min-w-0">
+                <span className={`text-[11px] font-black block truncate mb-0.5 ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                  {globalAudio.title || 'اصلي غږیزه برخه'}
+                </span>
+                
+                <div className="flex items-center justify-end gap-1.5 select-none mt-0.5">
+                  <span className="text-[9.5px] font-mono font-black text-slate-400">
+                    {globalAudio.currentTime} / {globalAudio.totalDuration}
+                  </span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${globalAudio.isPlaying ? 'bg-indigo-500 animate-pulse' : 'bg-slate-400'}`} />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </motion.div>
     </AnimatePresence>
   );
