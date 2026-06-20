@@ -91,14 +91,55 @@ jobs:
           echo "    }" >> build.gradle
           echo "}" >> build.gradle
 
-      - name: Build Android APK
+      - name: Build Android APK (Debug & Release)
         run: |
           cd android
           chmod +x gradlew
+          # ۱. د ډیبګ اپلیکیشن فایل جوړول
           ./gradlew assembleDebug
+          # ۲. د رسمي ریلیز اپلیکیشن فایل جوړول
+          ./gradlew assembleRelease
 
-      - name: Upload APK
+      - name: Sign Release APK with Custom Keystore
+        run: |
+          # د یو ځانګړي او بېساري لاسلیک (Unique Custom Keystore) جوړول
+          keytool -genkeypair -v -keystore release.keystore \
+            -alias love-key \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "AmanMediaLove123" \
+            -keypass "AmanMediaLove123" \
+            -dname "CN=Aman Media, OU=Mobile, O=Aman Media, L=Kabul, S=Kabul, C=AF"
+          
+          # په منډه د apksigner اوزار لاره معلومول
+          apksigner_path=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          echo "Using apksigner at: $apksigner_path"
+          
+          # په ریلیز فولډر کې د جوړ شوي ناامضا شوي APK فایل اتوماتیک موندل
+          unsigned_apk=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$unsigned_apk" ]; then
+            echo "Error: Unsigned release APK not found!"
+            exit 1
+          fi
+          echo "Found unsigned release APK: $unsigned_apk"
+          
+          # رسماً لاسلیک کول (Signing)
+          $apksigner_path sign --ks release.keystore \
+            --ks-key-alias love-key \
+            -ks-pass pass:AmanMediaLove123 \
+            --key-pass pass:AmanMediaLove123 \
+            --out android/app/build/outputs/apk/release/app-release-signed.apk \
+            "$unsigned_apk"
+          
+          # د لاسلیک تاییدول (Verify Signature)
+          $apksigner_path verify android/app/build/outputs/apk/release/app-release-signed.apk
+          echo "Release APK successfully signed!"
+
+      - name: Upload Signed and Debug APKs
         uses: actions/upload-artifact@v4
         with:
-          name: Minedewa-App-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Minedewa-App-APKs
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/release/app-release-signed.apk
