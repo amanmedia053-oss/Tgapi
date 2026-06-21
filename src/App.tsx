@@ -71,7 +71,8 @@ import {
   LogOut,
   Hash,
   Bookmark,
-  BookmarkCheck
+  BookmarkCheck,
+  RotateCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -236,6 +237,55 @@ function toPashtoNumber(num: number): string {
   const pashtoDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
   return num.toString().replace(/\d/g, (d) => pashtoDigits[parseInt(d)]);
 }
+
+interface PashtoVerse {
+  couplet: string;
+  author: string;
+  meaning: string;
+}
+
+const pashtoVersesList: PashtoVerse[] = [
+  {
+    couplet: "که مې مخ ته لمر خاته هم مخ لولم\nبې له ستا د مخ ليدو نه مې لمر څه؟",
+    author: "خوشحال خان خټک",
+    meaning: "له ځانګړې او حقیقي مینې او ښکلا پرته، حتی د لمر روښنايي هم بې ګټې برېښي."
+  },
+  {
+    couplet: "زه رحمان په خپله عاجزي کښې پاچا یم\nما ته سر د کبرجنو زنګیدلی وي",
+    author: "عبدالرحمن بابا",
+    meaning: "هر څوک چې عاجزي او ریښتینی تواضع غوره کړي، په زړونو باندې راج کوي."
+  },
+  {
+    couplet: "وایي اغیار چې د دوزخ ژبه ده\nزه به جنت ته د پښتو سره ځم",
+    author: "امیر حمزه خان شینواری",
+    meaning: "د خپل کلتور، ژبې او باوقاره هویت سره ژوره او د زړه له تلې غښتلې مینه."
+  },
+  {
+    couplet: "ستا د سترګو د کتو په بیه ګرانه\nکه زما نه څوک دا ټول جهان غواړي، ویې غواړه!",
+    author: "غني خان",
+    meaning: "مینه تر بل هر مادي او معنوي شتمنۍ ارزښتمنه او لوړه ده."
+  },
+  {
+    couplet: "د وطن مینه په هر زړه کې نڅیږي\nلکه مینه چې د مور په ځیګر کې وي",
+    author: "ملنګ جان",
+    meaning: "د هیواد مینه مقدسه او لکه د مور د غېږې غوندې بې حده بې غرضه وي."
+  },
+  {
+    couplet: "که په غره باندې سيلاب د مصیبت راشي\nمخ اړول د پښتون لاره نه ده",
+    author: "پښتو متل / شعر",
+    meaning: "په سختیو او ازمېښتونو کې صبر، همت، مېړانه او د زړورتوب عالي فلسفه."
+  },
+  {
+    couplet: "ګل به د بلبل په سر زنګیږي خوشحالي به وي\nسوله چې په کلي کې زموږ غېږه خپره کړي",
+    author: "ولسي شعر",
+    meaning: "د خپلو خلکو لپاره تلپاتې سوله، همغږي او د صمیمیت غوښتنه."
+  },
+  {
+    couplet: "چې په خپله مینه پاکه پاچاهي کا\nد جهان تخت ورته هیڅ په نظر نه راځي",
+    author: "رحمان بابا",
+    meaning: "اصلي شتمني قناعت او د زړه د پاکۍ او ریښتنې مینې احساس دی."
+  }
+];
 
 function getRelativeTimeInPashto(dateStr: string | undefined | null, fallbackLabel: string): string {
   if (!dateStr) return fallbackLabel || 'وروستی';
@@ -868,6 +918,8 @@ function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride, autoPl
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [showControls, setShowControls] = useState(true);
+  const [videoLoading, setVideoLoading] = useState(true);
+  const [videoError, setVideoError] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const controlsTimeoutRef = useRef<any>(null);
@@ -1039,9 +1091,52 @@ function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride, autoPl
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={() => setIsPlaying(false)}
+        onWaiting={() => setVideoLoading(true)}
+        onPlaying={() => setVideoLoading(false)}
+        onCanPlay={() => setVideoLoading(false)}
+        onLoadStart={() => { setVideoLoading(true); setVideoError(false); }}
+        onError={() => { setVideoLoading(false); setVideoError(true); }}
         preload="auto"
         playsInline
       />
+      
+      {/* 1. Video Loading Shimmer Overlay */}
+      {videoLoading && !videoError && (
+        <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center pointer-events-none z-10 animate-fade-in">
+          {/* Shimmering backdrop simulating the thumbnail loading */}
+          <div className="absolute inset-0 shimmer opacity-40" />
+          {/* Stylish loading center spinner */}
+          <div className="relative flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin shadow-lg" />
+            <span className="text-[10px] font-sans font-bold text-slate-400">ويډيو بارګیري کېږي...</span>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Video Error / Offline state */}
+      {videoError && (
+        <div className="absolute inset-0 bg-slate-950 border border-slate-900 flex flex-col items-center justify-center p-4 text-center z-15 select-none">
+          <div className="p-3 rounded-full bg-indigo-950/40 border border-indigo-900/30 text-indigo-400 mb-2.5 animate-pulse shrink-0">
+            <AlertCircle className="w-6 h-6 text-indigo-400" />
+          </div>
+          <h4 className="text-xs font-black text-white">ويډيو پورته نشوه</h4>
+          <p className="text-[10px] text-slate-400 max-w-xs mt-1 leading-relaxed">د ويډیو د فایل خلاصولو کې تېروتنه رامنځته شوه. شونې ده چې انټرنیټ وصل نه وي.</p>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setVideoError(false);
+              setVideoLoading(true);
+              if (videoRef.current) {
+                videoRef.current.load();
+              }
+            }}
+            className="mt-2.5 px-3 py-1.5 text-[9px] font-black rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/10 transition active:scale-95 cursor-pointer border border-indigo-500/20"
+          >
+            بيا هڅه وکړئ
+          </button>
+        </div>
+      )}
       
       {/* Big Pause/Play Center Overlay Indicator Icon */}
       {!isPlaying && (
@@ -1364,12 +1459,64 @@ function useCachedUrl(url: string | undefined | null): string {
 
 interface CachedImageProps {
   src: string;
+  className?: string;
+  alt?: string;
   [key: string]: any;
 }
 
-function CachedImage({ src, ...props }: CachedImageProps) {
+function CachedImage({ src, className, alt = 'image-display', ...props }: CachedImageProps) {
   const cachedSrc = useCachedUrl(src);
-  return <img src={cachedSrc || src} {...props} referrerPolicy="no-referrer" />;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(false);
+  }, [src]);
+
+  return (
+    <div className={`relative overflow-hidden ${className || ''}`} style={props.style}>
+      {/* 1. Shimmer effect during loading */}
+      {loading && !error && (
+        <div className="absolute inset-0 bg-slate-900/90 flex items-center justify-center z-10">
+          <div className="w-full h-full shimmer opacity-60" />
+        </div>
+      )}
+
+      {/* 2. Error Fallback state */}
+      {error && (
+        <div className="absolute inset-0 bg-slate-900 border border-slate-800/60 flex flex-col items-center justify-center p-3 text-center z-15">
+          <AlertCircle className="w-6 h-6 text-indigo-500 animate-pulse mb-1 shrink-0" />
+          <span className="text-[10px] font-sans font-bold text-slate-400">انځور لوډ نشو (آفلاین یا خرابه شبکه)</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setError(false);
+              setLoading(true);
+            }}
+            className="mt-1 px-2.5 py-1 text-[8px] font-black rounded bg-indigo-650/40 hover:bg-indigo-650 border border-indigo-500/35 text-indigo-200 transition active:scale-95 cursor-pointer"
+          >
+            بيا هڅه وکړئ
+          </button>
+        </div>
+      )}
+
+      {/* 3. Real Image */}
+      <img
+        src={cachedSrc || src}
+        alt={alt}
+        {...props}
+        className={`w-full h-full object-cover transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}
+        referrerPolicy="no-referrer"
+        onLoad={() => setLoading(false)}
+        onError={() => {
+          setLoading(false);
+          setError(true);
+        }}
+      />
+    </div>
+  );
 }
 
 function preloadPostMedia(post: any) {
@@ -1608,6 +1755,20 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Inject mobile safe area fallback custom properties to support edge-to-edge layout bounds
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (window as any).Capacitor;
+    const isAndroid = /Android/i.test(navigator.userAgent) || ((window as any).Capacitor && (window as any).Capacitor.getPlatform() === 'android');
+    const root = document.documentElement;
+    if (isMobile) {
+      root.style.setProperty('--safe-top-fallback', isAndroid ? '28px' : '44px');
+      root.style.setProperty('--safe-bottom-fallback', isAndroid ? '16px' : '24px');
+    } else {
+      root.style.setProperty('--safe-top-fallback', '0px');
+      root.style.setProperty('--safe-bottom-fallback', '0px');
+    }
+  }, []);
+
+  useEffect(() => {
     if (selectedPost && selectedPost.id) {
       markPostAsRead(selectedPost.id);
     }
@@ -1616,6 +1777,10 @@ export default function App() {
   const [visibleHomeCount, setVisibleHomeCount] = useState(30);
   const [isAutoloadingMore, setIsAutoloadingMore] = useState(false);
   const [featuredIndex, setFeaturedIndex] = useState(0);
+  const [currentVerseIndex, setCurrentVerseIndex] = useState<number>(() => {
+    return new Date().getDate() % pashtoVersesList.length;
+  });
+  const [carouselActiveIndex, setCarouselActiveIndex] = useState<number>(0);
 
   // Pagination states for all posts list (starts with 5, loads 5 more automatically)
   const [visibleFullCount, setVisibleFullCount] = useState(5);
@@ -3748,6 +3913,14 @@ export default function App() {
     setFeaturedIndex((prev) => (prev - 1 + featuredPosts.length) % featuredPosts.length);
   };
 
+  const rotateCarouselNext = () => {
+    setCarouselActiveIndex((prev) => (prev + 1) % 6);
+  };
+
+  const rotateCarouselPrev = () => {
+    setCarouselActiveIndex((prev) => (prev - 1 + 6) % 6);
+  };
+
   // Swipe mechanics for Featured Slider
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
@@ -3779,6 +3952,7 @@ export default function App() {
   const [reelMuted, setReelMuted] = useState(false);
   const [reelProgress, setReelProgress] = useState(0);
   const [reelLoading, setReelLoading] = useState(false);
+  const [reelError, setReelError] = useState(false);
   const reelVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const [showCenterIcon, setShowCenterIcon] = useState(false);
@@ -3812,6 +3986,38 @@ export default function App() {
     if (!feedData?.posts) return [];
     return feedData.posts.filter(isStoryPost);
   }, [feedData?.posts]);
+
+  // Home dynamic 6-tab carousel items
+  const homeCarouselItems = React.useMemo(() => {
+    if (!allPosts || allPosts.length === 0) return null;
+
+    // 1. Daily Prose / Writing
+    const dailyWriting = allPosts.find(p => !p.hasVideo && !p.hasAudio && !p.photoUrl && !isStoryPost(p) && !getIsNovelOrNovelPart(p) && p.text && p.text.length > 40) || allPosts[0];
+
+    // 2. Daily Poetry
+    const dailyPoetry = pashtoVersesList[currentVerseIndex];
+
+    // 3. Highlighted Video Post
+    const videoPost = allPosts.find(p => p.hasVideo || p.videoUrl || p.videoThumbUrl) || allPosts[0];
+
+    // 4. Highlighted Image Post
+    const imagePost = allPosts.find(p => p.photoUrl || (p.photoUrls && p.photoUrls.length > 0)) || allPosts[0];
+
+    // 5. Featured Novel Chapter/Part
+    const novelPost = (novelsFeedData?.posts || []).find(p => getIsNovelOrNovelPart(p)) || allPosts.find(p => getIsNovelOrNovelPart(p)) || allPosts[0];
+
+    // 6. Featured Story Post
+    const storyPost = storiesList[0] || allPosts.find(p => isStoryPost(p)) || allPosts[0];
+
+    return {
+      writing: dailyWriting,
+      poetry: dailyPoetry,
+      video: videoPost,
+      image: imagePost,
+      novel: novelPost,
+      story: storyPost
+    };
+  }, [allPosts, novelsFeedData, storiesList, currentVerseIndex]);
 
   const [isStoryViewerOpen, setIsStoryViewerOpen] = useState(false);
   const [activeStoryIndex, setActiveStoryIndex] = useState(0);
@@ -3947,6 +4153,7 @@ export default function App() {
     setReelPlaying(true);
     setReelProgress(0);
     setReelLoading(true);
+    setReelError(false);
 
     const video = reelVideoRef.current;
     if (video) {
@@ -4089,10 +4296,12 @@ export default function App() {
   }, [isPhotoReelsOpen, activePhotoReelIndex, photoReelsList.length]);
 
   useEffect(() => {
-    if (featuredPosts.length === 0) return;
     const interval = setInterval(() => {
-      nextFeatured();
-    }, 6000);
+      if (featuredPosts.length > 0) {
+        nextFeatured();
+      }
+      setCarouselActiveIndex((prev) => (prev + 1) % 6);
+    }, 7000);
     return () => clearInterval(interval);
   }, [featuredPosts.length]);
 
@@ -5804,7 +6013,7 @@ export default function App() {
                   {/* Floating Action Glass Back navigation button, positioned top-right for high ergonomics */}
                   <button
                     onClick={() => setIsReelsOpen(false)}
-                    style={{ top: 'calc(1.25rem + env(safe-area-inset-top, 0px))', right: '1.25rem', cursor: 'pointer' }}
+                    style={{ top: 'calc(1.25rem + var(--safe-top))', right: '1.25rem', cursor: 'pointer' }}
                     className="absolute z-40 px-4 py-2.5 rounded-full bg-black/60 hover:bg-white/10 border border-white/10 text-white shadow-2xl active:scale-95 transition backdrop-blur-md flex items-center gap-2 font-sans font-bold text-xs"
                     title="کورپاڼې ته شاته لاړ شئ"
                   >
@@ -5863,23 +6072,23 @@ export default function App() {
                             preload="auto"
                             onClick={() => {
                               if (reelVideoRef.current) {
-                                if (reelPlaying) {
-                                  reelVideoRef.current.pause();
-                                  setReelPlaying(false);
-                                  flashCenterIcon('pause');
-                                } else {
-                                  pauseGlobalAudio();
-                                  const playPromise = reelVideoRef.current.play();
-                                  if (playPromise !== undefined) {
-                                    playPromise.catch((err) => {
-                                      if (err.name !== 'AbortError') {
-                                        console.warn("Reel play failed on click:", err);
-                                      }
-                                    });
+                                  if (reelPlaying) {
+                                    reelVideoRef.current.pause();
+                                    setReelPlaying(false);
+                                    flashCenterIcon('pause');
+                                  } else {
+                                    pauseGlobalAudio();
+                                    const playPromise = reelVideoRef.current.play();
+                                    if (playPromise !== undefined) {
+                                      playPromise.catch((err) => {
+                                        if (err.name !== 'AbortError') {
+                                          console.warn("Reel play failed on click:", err);
+                                        }
+                                      });
+                                    }
+                                    setReelPlaying(true);
+                                    flashCenterIcon('play');
                                   }
-                                  setReelPlaying(true);
-                                  flashCenterIcon('play');
-                                }
                               }
                             }}
                             onTimeUpdate={() => {
@@ -5889,14 +6098,48 @@ export default function App() {
                                 setReelProgress((cur / dur) * 100);
                               }
                             }}
+                            onWaiting={() => setReelLoading(true)}
+                            onPlaying={() => setReelLoading(false)}
+                            onCanPlay={() => setReelLoading(false)}
+                            onLoadStart={() => { setReelLoading(true); setReelError(false); }}
+                            onError={() => { setReelLoading(false); setReelError(true); }}
                             className="w-full h-full object-contain cursor-pointer"
                           />
                         </div>
 
                         {/* 2. LOADING SPIN OVERLAY */}
-                        {reelLoading && (
-                          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-25 pointer-events-none">
-                            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                        {reelLoading && !reelError && (
+                          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center z-25 pointer-events-none">
+                            <div className="absolute inset-0 shimmer opacity-25" />
+                            <div className="relative flex flex-col items-center gap-3">
+                              <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                              <span className="text-[10px] font-sans font-bold text-indigo-300">ويډيو پورته کېږي...</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2.1 REEL ERROR FALLBACK */}
+                        {reelError && (
+                          <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center z-25 select-none">
+                            <div className="p-3.5 rounded-full bg-rose-950/40 border border-rose-900/40 text-rose-500 mb-3 animate-pulse shrink-0">
+                              <AlertCircle className="w-7 h-7 text-rose-500" />
+                            </div>
+                            <h4 className="text-sm font-black text-white">ویډیو لوډ نشوه</h4>
+                            <p className="text-[11px] text-slate-400 max-w-xs mt-1 leading-relaxed">د شارټ ویډیو د پورته کولو پر مهال کومه ستونزه وه ځکه انټرنیټ یا شبکه فعاله نه ده.</p>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReelError(false);
+                                setReelLoading(true);
+                                if (reelVideoRef.current) {
+                                  reelVideoRef.current.load();
+                                }
+                              }}
+                              className="mt-4 px-4 py-2 text-[10px] font-black rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg transition active:scale-95 cursor-pointer border border-indigo-500/20"
+                            >
+                              بیا هڅه وکړئ
+                            </button>
                           </div>
                         )}
 
@@ -5926,7 +6169,7 @@ export default function App() {
                         <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
 
                         {/* 5. TOP FLOATING REELS STATS BAR */}
-                        <div className="absolute left-6 right-6 flex items-center justify-between z-20 text-white" style={{ top: 'calc(1.5rem + env(safe-area-inset-top, 0px))' }}>
+                        <div className="absolute left-6 right-6 flex items-center justify-between z-20 text-white" style={{ top: 'calc(1.5rem + var(--safe-top))' }}>
                           {/* Left: Indicator of reel progress */}
                           <span className="text-[11px] font-mono font-black bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
                             {activeReelIndex + 1} / {reelsList.length}
@@ -5941,7 +6184,8 @@ export default function App() {
 
                         {/* 6. CONTROL BUTTONS IN THE BOTTOM RIGHT CORNER (د ويډیو لپاره کاپي، غږ او نور عمده تڼۍ په لاندې ښي اړخ کې) */}
                         <div 
-                          className="absolute bottom-24 right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
+                          className="absolute right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
+                          style={{ bottom: 'calc(6rem + var(--safe-bottom))' }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           {/* Like / Heart Button (د ويډيو خوښول) */}
@@ -6052,7 +6296,9 @@ export default function App() {
                         </div>
 
                         {/* 7. BOTTOM POETRY OVERLAY CAPTION BLOCK */}
-                        <div className="absolute bottom-6 right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2">
+                        <div className="absolute right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2"
+                          style={{ bottom: 'calc(1.5rem + var(--safe-bottom))' }}
+                        >
                           <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
                             <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
                               پښتو ادبي خزانه
@@ -6228,11 +6474,10 @@ export default function App() {
                       >
                         {/* 1. IMMERSIVE PHOTO ELEMENT */}
                         <div className="absolute inset-0 flex items-center justify-center bg-black/95">
-                          <img
-                            src={cachedActivePhotoReelUrl || activePhotoReel.photoUrl}
+                          <CachedImage
+                            src={activePhotoReel.photoUrl}
                             alt="photo reel display"
                             className="w-full h-full object-contain select-none max-h-screen"
-                            referrerPolicy="no-referrer"
                           />
                         </div>
 
@@ -6256,7 +6501,8 @@ export default function App() {
 
                         {/* 4. CONTROL BUTTONS IN THE BOTTOM RIGHT CORNER */}
                         <div 
-                          className="absolute bottom-24 right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
+                          className="absolute right-5 sm:right-7 flex flex-col gap-4.5 z-25 items-center select-none" 
+                          style={{ bottom: 'calc(6rem + var(--safe-bottom))' }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           {/* Like / Heart Button (د انځور خوښول) */}
@@ -6343,7 +6589,9 @@ export default function App() {
                         </div>
 
                         {/* 5. BOTTOM POETRY OVERLAY CAPTION BLOCK */}
-                        <div className="absolute bottom-6 right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2">
+                        <div className="absolute right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2"
+                          style={{ bottom: 'calc(1.5rem + var(--safe-bottom))' }}
+                        >
                           <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
                             <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
                               پښتو ادبي خزانه
@@ -6897,10 +7145,9 @@ export default function App() {
                                       } group`}
                                     >
                                       <div className="absolute left-0 inset-y-0 w-2 sm:w-2.5 bg-gradient-to-r from-black/50 via-black/15 to-transparent z-15 pointer-events-none" />
-                                      <img 
+                                      <CachedImage 
                                         src={coverImg} 
                                         alt="liked-cover" 
-                                        referrerPolicy="no-referrer"
                                         className="absolute inset-0 w-full h-full object-cover transition-transform duration-600 group-hover:scale-105"
                                       />
                                       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
@@ -6947,10 +7194,9 @@ export default function App() {
                                       } group`}
                                     >
                                       <div className="absolute left-0 inset-y-0 w-2 sm:w-2.5 bg-gradient-to-r from-black/50 via-black/15 to-transparent z-15 pointer-events-none" />
-                                      <img 
+                                      <CachedImage 
                                         src={coverImg} 
                                         alt="liked-chapter-cover" 
-                                        referrerPolicy="no-referrer"
                                         className="absolute inset-0 w-full h-full object-cover transition-transform duration-600 group-hover:scale-105"
                                       />
                                       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
@@ -7384,12 +7630,12 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Main settings body layout */}
+              {/* Settings Content */}
               <div className="space-y-6 text-right font-sans">
                 
                 {/* 1. HOME LAYOUTS */}
-                <div className="space-y-2.5">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-707'} font-bold flex items-center justify-start gap-1 px-1`}>
+                <div className="space-y-2">
+                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-705'} font-bold flex items-center justify-start gap-1 px-1`}>
                     <Layers className={`w-3.5 h-3.5 ${tc.text}`} />
                     <span>{tr.homeLayout}</span>
                   </label>
@@ -7399,10 +7645,10 @@ export default function App() {
                         key={layout}
                         onClick={() => setHomeLayout(layout)}
                         style={{ cursor: 'pointer' }}
-                        className={`py-2.5 px-2 rounded-xl border text-[11px] font-semibold transition flex items-center justify-start gap-1.5 ${
+                        className={`py-2 px-1.5 rounded-xl border text-[10.5px] font-semibold transition flex items-center justify-start gap-1.5 ${
                           homeLayout === layout
                             ? `${tc.bg} ${tc.border} text-white shadow-xs`
-                            : `${isDark ? 'bg-slate-950/60 border-slate-850 text-slate-300 hover:bg-slate-805' : 'bg-slate-100 border-slate-205 text-slate-707 hover:bg-slate-150'}`
+                            : `${isDark ? 'bg-slate-950/60 border-slate-855 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 border-slate-205 text-slate-707 hover:bg-slate-150'}`
                         }`}
                       >
                         <span className="shrink-0">{homeLayout === layout ? '●' : '○'}</span>
@@ -7413,8 +7659,8 @@ export default function App() {
                 </div>
 
                 {/* 2. THEME MODE */}
-                <div className="space-y-2.5 border-t border-slate-500/10 pt-4">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-707'} font-bold flex items-center justify-start gap-1 px-1`}>
+                <div className="space-y-2 border-t border-slate-500/10 pt-3">
+                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-705'} font-bold flex items-center justify-start gap-1 px-1`}>
                     {isDark ? <Moon className={`w-3.5 h-3.5 ${tc.text}`} /> : <Sun className={`w-3.5 h-3.5 ${tc.text}`} />}
                     <span>{tr.themeMode}</span>
                   </label>
@@ -7422,7 +7668,7 @@ export default function App() {
                     <button
                       onClick={() => setThemeMode('dark')}
                       style={{ cursor: 'pointer' }}
-                      className={`py-2.5 px-3 rounded-xl border text-[11px] font-bold transition flex items-center justify-center gap-2 ${
+                      className={`py-2 px-3 rounded-xl border text-[11px] font-bold transition flex items-center justify-center gap-2 ${
                         isDark
                           ? `${tc.bg} ${tc.border} text-white shadow-md`
                           : 'bg-slate-100 border-slate-205 text-slate-707 hover:bg-slate-150'
@@ -7434,10 +7680,10 @@ export default function App() {
                     <button
                       onClick={() => setThemeMode('light')}
                       style={{ cursor: 'pointer' }}
-                      className={`py-2.5 px-3 rounded-xl border text-[11px] font-bold transition flex items-center justify-center gap-2 ${
+                      className={`py-2 px-3 rounded-xl border text-[11px] font-bold transition flex items-center justify-center gap-2 ${
                         !isDark
                           ? `${tc.bg} ${tc.border} text-white shadow-md`
-                          : 'bg-slate-950/60 border-slate-855 text-slate-305 hover:bg-slate-850'
+                          : 'bg-slate-950/60 border-slate-855 text-slate-300 hover:bg-slate-800'
                       }`}
                     >
                       <Sun className="w-3.5 h-3.5" />
@@ -7446,9 +7692,9 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 3. COLOR THEME PRESETS */}
-                <div className="space-y-2.5 border-t border-slate-500/10 pt-4">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-707'} font-bold flex items-center justify-start gap-1 px-1`}>
+                {/* 3. Color Themes */}
+                <div className="space-y-2 border-t border-slate-500/10 pt-3">
+                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-705'} font-bold flex items-center justify-start gap-1 px-1`}>
                     <Palette className={`w-3.5 h-3.5 ${tc.text}`} />
                     <span>{tr.colorThemes}</span>
                   </label>
@@ -7480,7 +7726,7 @@ export default function App() {
                         >
                           <span
                             style={{ backgroundColor: config.hex }}
-                            className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 shadow-md ${
+                            className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-90 shadow-md ${
                               isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 border border-black/45' : 'opacity-85 hover:opacity-100 border border-slate-500/25'
                             }`}
                           >
@@ -7497,7 +7743,7 @@ export default function App() {
 
                 {/* 4. TEXT SIZE CONTROLS */}
                 <div className="space-y-2 border-t border-slate-500/10 pt-3">
-                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-707'} font-bold flex items-center justify-start gap-1 px-1`}>
+                  <label className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-705'} font-bold flex items-center justify-start gap-1 px-1`}>
                     <Type className={`w-3.5 h-3.5 ${tc.text}`} />
                     <span>{tr.textColor}</span>
                   </label>
@@ -7510,7 +7756,7 @@ export default function App() {
                         className={`py-2 px-1 rounded-xl border text-[10.5px] font-bold transition flex items-center justify-center gap-1 ${
                           textSizeClass === sz
                             ? `${tc.bg} ${tc.border} text-white shadow-md`
-                            : `${isDark ? 'bg-slate-950/60 border-slate-855 text-slate-305 hover:bg-slate-850' : 'bg-slate-100 border-slate-205 text-slate-707 hover:bg-slate-150'}`
+                            : `${isDark ? 'bg-slate-950/60 border-slate-855 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 border-slate-205 text-slate-707 hover:bg-slate-150'}`
                         }`}
                       >
                         {textSizeClass === sz && <Check className="w-3 h-3 text-white shrink-0" />}
@@ -7525,14 +7771,28 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* 6. NOTIFICATIONS TOGGLE */}
+                <div className="flex items-center justify-between p-3.5 bg-slate-500/5 rounded-xl border border-slate-500/10 text-right font-sans pt-1 mt-1">
+                  <div className="flex items-center gap-1.5 text-right">
+                    {notificationsEnabled ? <Bell className={`w-4 h-4 ${tc.text}`} /> : <BellOff className="w-4 h-4 text-slate-500" />}
+                    <span className={`text-[11px] ${isDark ? 'text-slate-200' : 'text-slate-855'} font-bold`}>{tr.notifications}:</span>
+                  </div>
+                  <button
+                    onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                    style={{ cursor: 'pointer' }}
+                    className={`py-1.5 px-3 rounded-lg text-[10px] font-black tracking-wide uppercase transition ${
+                      notificationsEnabled ? 'bg-emerald-500/15 border border-emerald-500/25 text-emerald-450 dark:text-emerald-400' : 'bg-slate-500/10 border border-slate-500/20 text-slate-500'
+                    }`}
+                  >
+                    {notificationsEnabled ? tr.enabled : tr.disabled}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         ) : !isFullFeedOpen ? (
-          /* ==========================================================
-             F. HOME MAIN SCREEN (کورپاڼه)
-             ========================================================== */
-          <div className="space-y-5 animate-fade-in">
+          <div className="space-y-5 animate-fade-in text-right">
+
             {/* 0. STORIES HORIZONTAL SYSTEM TRAY (سټوري برخه د رنګیني حلقې او ځانګړو پیغامونو سره) */}
             {storiesList.length > 0 && (
               <div className="relative p-1 bg-slate-500/5 dark:bg-slate-900/10 rounded-2xl border border-slate-500/10" style={{ direction: 'rtl' }}>
@@ -7607,90 +7867,415 @@ export default function App() {
               </div>
             )}
 
-{/* 1. FEATURED POSTS SLIDER (ښکلی او متحرک سلائیډر د شعرونو) */}
-            {featuredPosts.length > 0 && (
+            {/* ۱. الهام بښونکی او ځانګړی ملوټي میډیا کروسرول (Custom Multi-Media & Literature Slider) */}
+            {homeCarouselItems && (
               <div 
-                onTouchStart={onTouchStart}
-                onTouchMove={onTouchMove}
-                onTouchEnd={onTouchEnd}
-                className="relative h-44 sm:h-52 rounded-2xl xs:rounded-3xl overflow-hidden shadow-lg border border-slate-500/10 group flex flex-col justify-end p-4 sm:p-5 text-white/95"
+                className={`relative rounded-[2rem] overflow-hidden border transition-all duration-300 shadow-2xl ${
+                  isDark 
+                    ? 'bg-slate-950/70 border-indigo-500/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)]'
+                    : 'bg-white border-slate-200/80 shadow-[0_10px_30px_rgba(148,163,184,0.08)]'
+                }`}
+                style={{ direction: 'rtl' }}
               >
-                {/* Background image layer */}
-                {(() => {
-                  const fPost = featuredPosts[featuredIndex];
-                  if (!fPost) return null;
-                  
-                  // Priority check for image
-                  const imgUrl = fPost.photoUrl || (fPost.photoUrls && fPost.photoUrls[0]);
-                  
-                  return (
-                    <div className="absolute inset-0 z-0">
-                      {imgUrl ? (
-                        <img 
-                          src={imgUrl} 
-                          alt="featured" 
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover brightness-[0.45] group-hover:scale-105 transition-all duration-700 ease-out"
-                        />
-                      ) : (
-                        <div className={`w-full h-full bg-gradient-to-br ${tc.gradient} opacity-85 group-hover:brightness-105 transition duration-500`} />
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/95 via-slate-950/30 to-transparent" />
-                      
-                      {/* Swipe / Navigation buttons */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          prevFeatured();
-                        }}
-                        style={{ cursor: 'pointer' }}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition border border-white/10 opacity-0 group-hover:opacity-100 font-bold"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          nextFeatured();
-                        }}
-                        style={{ cursor: 'pointer' }}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition border border-white/10 opacity-0 group-hover:opacity-100 font-bold"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
+                {/* Visual glow element behind premium carousel */}
+                <div className="absolute -right-24 -top-24 w-48 h-48 rounded-full bg-indigo-550/10 blur-3xl pointer-events-none" />
+                <div className="absolute -left-24 -bottom-24 w-48 h-48 rounded-full bg-pink-500/10 blur-3xl pointer-events-none" />
 
-                      {/* Content Info */}
-                      <div 
+                {/* 1. Top pill selector tabs for Carousel (No emoji, custom lucide icons and colors) */}
+                <div className={`flex items-center gap-2 overflow-x-auto scrollbar-none p-2.5 border-b ${
+                  isDark ? 'bg-slate-900/40 border-slate-800/60' : 'bg-slate-50 border-slate-100'
+                }`}>
+                  {[
+                    { label: 'ورځنی شعر', id: 0, Icon: Feather, activeColor: 'bg-gradient-to-r from-fuchsia-500 to-pink-600 font-black shadow-lg text-white' },
+                    { label: 'ادبي لیکنه', id: 1, Icon: FileText, activeColor: 'bg-gradient-to-r from-indigo-500 to-violet-600 font-black shadow-lg text-white' },
+                    { label: 'ځانګړې ویډیو', id: 2, Icon: Video, activeColor: 'bg-gradient-to-r from-red-500 to-rose-600 font-black shadow-lg text-white' },
+                    { label: 'غوره انځور', id: 3, Icon: ImageIcon, activeColor: 'bg-gradient-to-r from-emerald-500 to-teal-600 font-black shadow-lg text-white' },
+                    { label: 'رومانونه', id: 4, Icon: BookOpen, activeColor: 'bg-gradient-to-r from-purple-600 to-indigo-700 font-black shadow-lg text-white' },
+                    { label: 'لنډه کیسه', id: 5, Icon: Sparkles, activeColor: 'bg-gradient-to-r from-pink-600 to-fuchsia-700 font-black shadow-lg text-white' }
+                  ].map((tab) => {
+                    const isActive = carouselActiveIndex === tab.id;
+                    const TabIcon = tab.Icon;
+                    return (
+                      <button
+                        key={tab.id}
                         onClick={() => {
-                          const currentScroll = window.scrollY || document.documentElement.scrollTop;
-                          if (currentScroll > 0) {
-                            detailScrollPosRef.current = currentScroll;
-                          }
-                          setSelectedPost(fPost);
+                          setCarouselActiveIndex(tab.id);
                         }}
                         style={{ cursor: 'pointer' }}
-                        className="absolute inset-x-0 bottom-0 z-5 flex flex-col justify-end p-4 text-right space-y-1"
+                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-[11px] sm:text-[12px] font-bold transition-all duration-300 shrink-0 select-none ${
+                          isActive
+                            ? `${tab.activeColor} scale-[1.03]`
+                            : isDark
+                              ? 'bg-slate-950/30 border border-slate-800/40 text-slate-400 hover:text-slate-100 hover:bg-slate-800/40'
+                              : 'bg-slate-100 border border-slate-200/50 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
+                        }`}
                       >
-                        <div className="flex items-center gap-2 self-end justify-end text-[10px] text-slate-300 font-sans">
-                          <span>{getRelativeTimeInPashto(fPost.date, fPost.timeLabel || 'وروستی')}</span>
+                        <TabIcon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+                        <span>{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* 2. Main content block inside slider */}
+                <div className="relative min-h-[190px] sm:min-h-[210px] flex flex-col justify-between p-5 sm:p-6 text-right overflow-hidden group">
+                  <AnimatePresence mode="wait">
+                    {carouselActiveIndex === 0 && (
+                      <motion.div 
+                        key="poetry"
+                        initial={{ opacity: 0, scale: 0.98, y: 5 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.98, y: -5 }}
+                        transition={{ duration: 0.25 }}
+                        className="flex-1 flex flex-col justify-between h-full space-y-4 z-10 w-full"
+                      >
+                        <div className="space-y-2 w-full text-center relative py-1">
+                          <Quote className={`absolute w-16 h-16 opacity-[0.04] -top-3 -right-3 pointer-events-none ${
+                            isDark ? 'text-white' : 'text-indigo-600'
+                          }`} />
+                          
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="flex items-center gap-1 text-[9px] font-sans font-black tracking-wider text-pink-500 bg-pink-500/10 px-2.5 py-0.5 rounded-full border border-pink-500/10 uppercase">
+                              <Feather className="w-2.5 h-2.5" />
+                              <span>د نن ورځې الهام بښونکی کلام و شعر</span>
+                            </span>
+                          </div>
+                          
+                          <h4 className={`text-base sm:text-lg font-black leading-relaxed font-sans pt-2 max-w-xl mx-auto whitespace-pre-line tracking-wide ${
+                            isDark ? 'text-slate-100' : 'text-slate-900'
+                          }`}>
+                            {homeCarouselItems.poetry.couplet}
+                          </h4>
+
+                          {homeCarouselItems.poetry.meaning && (
+                            <p className={`text-[10px] sm:text-[11px] font-medium max-w-lg mx-auto italic leading-relaxed pt-1 opacity-80 ${
+                              isDark ? 'text-slate-450' : 'text-slate-550'
+                            }`}>
+                              {homeCarouselItems.poetry.meaning}
+                            </p>
+                          )}
                         </div>
-                        <h4 className="text-sm sm:text-base font-black font-sans leading-snug line-clamp-2 text-right">
-                          {getPostTextWithFallback(fPost)}
-                        </h4>
+
+                        <div className="flex items-center justify-between border-t border-slate-500/5 pt-3 w-full">
+                          <span className="text-[10.5px] font-black text-slate-450 flex items-center gap-1">
+                            <Feather className="w-3 h-3 text-fuchsia-500" />
+                            <span>د {homeCarouselItems.poetry.author} اثر</span>
+                          </span>
+                          
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                const textToCopy = `"${homeCarouselItems.poetry.couplet}"\n- د ${homeCarouselItems.poetry.author} اثر\n\nوړاندې کونکی: د مېنې ډېوه اپلیکیشن`;
+                                navigator.clipboard.writeText(textToCopy);
+                                setOverlayActiveText("شعر په بریالیتوب سره کاپي شو! ✅");
+                              }}
+                              className={`p-1.5 rounded-xl text-[9px] flex items-center gap-1 border transition-all ${
+                                isDark 
+                                  ? 'bg-slate-950/20 text-indigo-400 border-slate-800 hover:bg-slate-900 hover:text-white' 
+                                  : 'bg-white text-indigo-700 border-slate-200 hover:bg-indigo-50 hover:border-indigo-200'
+                              }`}
+                              style={{ cursor: 'pointer' }}
+                              title="کاپي"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>کاپي</span>
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                if (navigator.share) {
+                                  navigator.share({
+                                    title: 'د نن ورځې کلام',
+                                    text: `"${homeCarouselItems.poetry.couplet}"\n- د ${homeCarouselItems.poetry.author} اثر`,
+                                    url: window.location.href,
+                                  }).catch(() => {});
+                                } else {
+                                  const textToCopy = `"${homeCarouselItems.poetry.couplet}"\n- د ${homeCarouselItems.poetry.author} اثر\n\nوړاندې کونکی: د مېنې ډېوه اپلیکیشن`;
+                                  navigator.clipboard.writeText(textToCopy);
+                                  setOverlayActiveText("شعر کاپي شو، ملګرو ته یې واستوئ! ✉️");
+                                }
+                              }}
+                              className={`p-1.5 rounded-xl text-[9px] flex items-center gap-1 border transition-all ${
+                                isDark 
+                                  ? 'bg-slate-950/20 text-purple-400 border-slate-800 hover:bg-slate-900 hover:text-white' 
+                                  : 'bg-white text-purple-700 border-slate-200 hover:bg-purple-50 hover:border-purple-200'
+                              }`}
+                              style={{ cursor: 'pointer' }}
+                              title="شریکول"
+                            >
+                              <Share2 className="w-3 h-3" />
+                              <span>شریکول</span>
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {carouselActiveIndex === 1 && (
+                      <motion.div 
+                        key="writing"
+                        initial={{ opacity: 0, scale: 0.98, y: 5 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.98, y: -5 }}
+                        transition={{ duration: 0.25 }}
+                        className="flex-1 flex flex-col justify-between h-full space-y-3 z-10 w-full"
+                        onClick={() => {
+                          if (homeCarouselItems.writing) {
+                            setSelectedPost(homeCarouselItems.writing);
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div className="space-y-2 w-full">
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 text-[9px] font-sans font-black text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-full border border-indigo-500/10">
+                              <FileText className="w-2.5 h-2.5 text-indigo-400" />
+                              <span>ورځنۍ په زړه پورې ادبي لیکنه</span>
+                            </span>
+                            {homeCarouselItems.writing?.date && (
+                              <span className="text-[7.5px] text-slate-400 font-sans">
+                                {getRelativeTimeInPashto(homeCarouselItems.writing.date, 'اوسمهال')}
+                              </span>
+                            )}
+                          </div>
+                          
+                          <p className={`text-xs sm:text-sm font-medium leading-relaxed font-sans mt-1 line-clamp-3 ${
+                            isDark ? 'text-slate-200' : 'text-slate-800'
+                          }`}>
+                            {getPostTextWithFallback(homeCarouselItems.writing).replace(/#[^\s]+/g, '').trim()}
+                          </p>
+                        </div>
                         
-                        {/* Pagination Dots */}
-                        <div className="flex gap-1 justify-center pt-2">
-                          {featuredPosts.map((_, i) => (
-                            <span 
-                              key={i} 
-                              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === featuredIndex ? 'bg-indigo-400 w-3.5' : 'bg-white/45'}`} 
-                            />
-                          ))}
+                        <div className="flex items-center justify-between border-t border-slate-500/5 pt-3 mt-2 w-full">
+                          <span className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 flex items-center gap-1">
+                            <span>جزییات او تبصرې ومومئ</span>
+                            <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
+                          </span>
+                          <span className="text-[8px] text-slate-400 font-sans">پلټنه وکړۍ 📖</span>
                         </div>
-                      </div>
+                      </motion.div>
+                    )}
+
+                    {carouselActiveIndex === 2 && (() => {
+                      const pv = homeCarouselItems.video;
+                      const hasVideoImg = pv && (pv.photoUrl || (pv.photoUrls && pv.photoUrls[0]) || pv.videoThumbUrl);
+                      
+                      return (
+                        <motion.div 
+                          key="video"
+                          initial={{ opacity: 0, scale: 0.98, y: 5 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.98, y: -5 }}
+                          transition={{ duration: 0.25 }}
+                          className="absolute inset-0 z-0 flex flex-col justify-end w-full"
+                          onClick={() => {
+                            if (pv && pv.videoUrl) {
+                              openReelWithVideoUrl(pv.videoUrl);
+                            } else if (pv) {
+                              setSelectedPost(pv);
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {/* Image backdrop or colored grid */}
+                          {hasVideoImg ? (
+                            <img 
+                              src={hasVideoImg} 
+                              alt="video backdrop" 
+                              referrerPolicy="no-referrer"
+                              className="absolute inset-0 w-full h-full object-cover brightness-[0.25] group-hover:scale-102 transition duration-500"
+                            />
+                          ) : (
+                            <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-purple-950 to-slate-900 brightness-35 w-full" />
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent w-full" />
+
+                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+                            <span className="w-12 h-12 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-white/20 flex items-center justify-center text-white shadow-xl hover:scale-110 active:scale-90 transition duration-300">
+                              <Play className="w-5 h-5 fill-white text-white ml-0.5 animate-pulse" />
+                            </span>
+                          </div>
+
+                          <div className="p-5 z-10 space-y-1.5 relative w-full">
+                            <span className="flex items-center gap-1 text-[8.5px] font-black text-rose-100 bg-rose-600/35 border border-rose-500/30 px-2.5 py-0.5 rounded-full font-sans self-start inline-flex">
+                              <Video className="w-2.5 h-2.5" />
+                              <span>شاخص ویډیو (Video Highlights)</span>
+                            </span>
+                            <h4 className="text-xs sm:text-sm font-black line-clamp-1 text-white text-right mt-1 font-sans">
+                              {pv ? getPostTextWithFallback(pv).substring(0, 70) : 'په زړه پورې غږیز او کلیپونه'}
+                            </h4>
+                          </div>
+                        </motion.div>
+                      );
+                    })()}
+
+                    {carouselActiveIndex === 3 && (() => {
+                      const pi = homeCarouselItems.image;
+                      const hasPic = pi && (pi.photoUrl || (pi.photoUrls && pi.photoUrls[0]));
+                      return (
+                        <motion.div 
+                          key="image"
+                          initial={{ opacity: 0, scale: 0.98, y: 5 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.98, y: -5 }}
+                          transition={{ duration: 0.25 }}
+                          className="absolute inset-0 z-0 flex flex-col justify-end w-full"
+                          onClick={() => {
+                            if (pi) setSelectedPost(pi);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {hasPic ? (
+                            <img 
+                              src={hasPic} 
+                              alt="featured background" 
+                              referrerPolicy="no-referrer"
+                              className="absolute inset-0 w-full h-full object-cover brightness-[0.32] group-hover:scale-102 transition duration-500"
+                            />
+                          ) : (
+                            <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-slate-900 to-emerald-950 brightness-35 w-full" />
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent w-full" />
+
+                          <div className="p-4 z-10 space-y-1 relative w-full">
+                            <span className="text-[8.5px] font-black text-emerald-100 bg-emerald-600/35 border border-emerald-500/35 px-2 py-0.5 rounded-md font-sans inline-block">
+                              🖼️ د انځورونو ځانګړی البوم
+                            </span>
+                            <h4 className="text-xs sm:text-sm font-black line-clamp-1 text-white text-right mt-1 font-sans">
+                              {pi ? getPostTextWithFallback(pi).substring(0, 60) : 'الهام بښونکي او ځانګړي انځورونه'}
+                            </h4>
+                          </div>
+                        </motion.div>
+                      );
+                    })()}
+
+                    {carouselActiveIndex === 4 && (() => {
+                      const pn = homeCarouselItems.novel;
+                      return (
+                        <motion.div 
+                          key="novel"
+                          initial={{ opacity: 0, scale: 0.98, y: 5 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.98, y: -5 }}
+                          transition={{ duration: 0.25 }}
+                          className="flex-1 flex flex-col justify-between h-full space-y-3 z-10 w-full"
+                          onClick={() => {
+                            setIsNovelsPageOpen(true);
+                            if (pn) {
+                              setSelectedPost(pn);
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="space-y-1.5 w-full">
+                            <span className="text-[8.5px] font-black text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-md font-sans">
+                              📖 د افغان رومانونو او داستانونو غني برخه
+                            </span>
+                            <h4 className={`text-sm sm:text-base font-black leading-snug font-sans mt-1 line-clamp-2 text-right ${
+                              isDark ? 'text-violet-100' : 'text-slate-900'
+                            }`}>
+                              {pn ? getPostTextWithFallback(pn).replace(/#[^\s]+/g, '').trim().substring(0, 85) : 'د ښکلو رومانټیکو او تاریخي ناولونو لوستل پیل کړئ.'}
+                            </h4>
+                          </div>
+
+                          <div className="flex items-center justify-between border-t border-slate-500/5 pt-2.5 mt-2 w-full">
+                            <span className="text-[9.5px] font-black text-violet-500 flex items-center gap-1">
+                              <span>دلته ناول پیل کړئ</span>
+                              <ChevronLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
+                            </span>
+                            <span className="text-[8px] text-slate-400 font-sans">د مېنې ډېوه 📚</span>
+                          </div>
+                        </motion.div>
+                      );
+                    })()}
+
+                    {carouselActiveIndex === 5 && (() => {
+                      const ps = homeCarouselItems.story;
+                      return (
+                        <motion.div 
+                          key="story"
+                          initial={{ opacity: 0, scale: 0.98, y: 5 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.98, y: -5 }}
+                          transition={{ duration: 0.25 }}
+                          className="flex-1 flex flex-col justify-between h-full space-y-3 z-10 w-full"
+                          onClick={() => {
+                            if (ps) {
+                              setSelectedPost(ps);
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="space-y-1.5 w-full">
+                            <span className="text-[8.5px] font-black text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded-md font-sans">
+                              🍁 ځانګړې لنډه کیسه او حکایات
+                            </span>
+                            <h4 className={`text-sm sm:text-base font-black leading-snug mt-1 line-clamp-2 text-right ${
+                              isDark ? 'text-pink-100' : 'text-slate-900'
+                            }`}>
+                              {ps ? getPostTextWithFallback(ps).replace(/#[^\s]+/g, '').trim().substring(0, 85) : 'پښتو صمیمي او د پند نه ډکې لنډې کیسې'}
+                            </h4>
+                          </div>
+
+                          <div className="flex items-center justify-between border-t border-slate-500/5 pt-2.5 mt-2 w-full">
+                            <span className="text-[9.5px] font-black text-fuchsia-600 flex items-center gap-1">
+                              <span>کیسې ته ورننوځئ</span>
+                              <ChevronLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
+                            </span>
+                            <span className="text-[8px] text-slate-400 font-sans">ادبي ارشیف ✨</span>
+                          </div>
+                        </motion.div>
+                      );
+                    })()}
+                  </AnimatePresence>
+
+                  {/* 3. Slider navigation controls & indicators */}
+                  <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-500/5 relative z-10 w-full">
+                    <div className="flex gap-1.5 justify-center">
+                      {[0, 1, 2, 3, 4, 5].map((idx) => (
+                        <button 
+                          key={idx} 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCarouselActiveIndex(idx);
+                          }}
+                          className={`w-2 h-2 rounded-full transition-all duration-300 ${idx === carouselActiveIndex ? 'bg-indigo-500 w-4.5' : 'bg-slate-400/40'}`} 
+                        />
+                      ))}
                     </div>
-                  );
-                })()}
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          rotateCarouselPrev();
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className={`w-6 h-6 rounded-md flex items-center justify-center transition border ${
+                          isDark 
+                            ? 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-white' 
+                            : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          rotateCarouselNext();
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className={`w-6 h-6 rounded-md flex items-center justify-center transition border ${
+                          isDark 
+                            ? 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-white' 
+                            : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -7801,7 +8386,7 @@ export default function App() {
 
             </div>
 
-            {/* د کیسو او ناولونو برخه (Special Stories & Novels Banner Button) */}
+            {/* د کیسو او ناولونو یو نوی، ښکلی او د پام وړ کمپیګټ بټن (Sleek Interactive Novels & Stories Button) */}
             <div 
               id="dewa-novels-stories-banner"
               onClick={() => {
@@ -7809,34 +8394,36 @@ export default function App() {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               style={{ cursor: 'pointer' }}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 flex flex-row-reverse items-center justify-between gap-3 transition-all duration-350 transform hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.985] border border-fuchsia-400/35 bg-gradient-to-r from-indigo-600 via-fuchsia-600 to-pink-600 animate-gradient-shift shadow-[0_6px_22px_rgba(219,39,119,0.22)] hover:shadow-[0_12px_32px_rgba(219,39,119,0.42)] group text-white select-none cursor-pointer mt-3 mb-2"
+              className="relative overflow-hidden rounded-2xl p-2.5 px-3.5 flex flex-row-reverse items-center justify-between gap-3 transition-all duration-500 transform hover:scale-[1.015] hover:-translate-y-0.5 active:scale-[0.985] border border-white/20 bg-gradient-to-r from-red-550 via-pink-600 via-fuchsia-600 to-indigo-600 bg-[size:200%_200%] animate-gradient-shift shadow-[0_4px_18px_rgba(219,39,119,0.3)] hover:shadow-[0_8px_28px_rgba(219,39,119,0.55)] group text-white select-none cursor-pointer mt-3.5 mb-2.5"
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent)] pointer-events-none" />
-              <BookOpen className="absolute -left-3 -bottom-3 w-16 h-16 text-white/10 pointer-events-none transform rotate-12 group-hover:scale-115 transition-all duration-500 ease-out" />
+              {/* Dynamic diagonal sweep shimmer line */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -translate-x-full group-hover:animate-shimmer pointer-events-none" />
+              <BookOpen className="absolute -left-2 -bottom-2 w-12 h-12 text-white/10 pointer-events-none transform -rotate-12 group-hover:scale-115 transition-all duration-500 ease-out" />
               
               <div className="flex flex-row-reverse items-center gap-2.5 z-10 text-right min-w-0">
-                <div className="shrink-0 w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-md group-hover:bg-white/25 group-hover:rotate-6 transition duration-300">
-                  <Sparkles className="w-4 h-4 sm:w-4.5 sm:h-4.5 animate-pulse text-amber-300" />
+                <div className="shrink-0 w-7 h-7 rounded-lg bg-white/20 border border-white/25 flex items-center justify-center text-white shadow-sm group-hover:rotate-6 transition duration-300">
+                  <Sparkles className="w-3.5 h-3.5 animate-pulse text-amber-300" />
                 </div>
                 <div className="min-w-0 flex flex-col justify-center text-right">
                   <div className="flex items-center gap-1.5 justify-end">
-                    <span className="bg-rose-550 text-white text-[7.5px] xs:text-[8px] px-1.5 py-0.5 rounded-md font-sans font-black select-none animate-bounce">
-                      نوی
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                     </span>
-                    <h3 className="text-xs sm:text-sm font-black tracking-tight font-sans text-white">
-                      د کیسو او ناولونو غني جهان ✨
+                    <h3 className="text-xs font-black tracking-tight font-sans text-white">
+                      د رومان غني برخه (کیسې او ناولونه)
                     </h3>
                   </div>
-                  <p className="text-[9.5px] sm:text-[10.5px] text-white/85 font-medium font-sans mt-0.5" style={{ direction: 'rtl' }}>
-                    غږیزې او لیکل شوې کیسې او په زړه پورې رومانونه 🎧📖
+                  <p className="text-[9px] sm:text-[10px] text-white/90 font-medium font-sans mt-0.5" style={{ direction: 'rtl' }}>
+                    په زړه پورې غږیز او لیکلي رومانونه دلته ولولئ 🎧📖
                   </p>
                 </div>
               </div>
               
               <div className="shrink-0 flex items-center justify-end z-10">
-                <div className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white border border-white/20 font-sans font-black text-[9.5px] sm:text-[10.5px] flex items-center justify-center gap-1 shadow-md group-hover:scale-105 active:scale-95 transition-all duration-300">
-                  <span>ورننوځئ</span>
-                  <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
+                <div className="px-2.5 py-1 rounded-lg bg-black/25 hover:bg-black/35 text-white border border-white/10 font-sans font-black text-[9px] sm:text-[10px] flex items-center justify-center gap-1 shadow-sm transition duration-300">
+                  <span>دلته کلیک کړئ ⚡</span>
+                  <ArrowLeft className="w-2.5 h-2.5 group-hover:-translate-x-0.5 transition-transform" />
                 </div>
               </div>
             </div>
@@ -8634,9 +9221,9 @@ export default function App() {
                             </div>
                             {post.photoUrl && (
                               <div className="w-8 h-8 rounded-md bg-slate-950 overflow-hidden shrink-0 relative">
-                                <img src={post.photoUrl} className="w-full h-full object-cover" />
+                                <CachedImage src={post.photoUrl} className="w-full h-full object-cover" />
                                 {post.photoUrls && post.photoUrls.length > 1 && (
-                                  <span className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-[8px] font-black">
+                                  <span className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-[8px] font-black z-10">
                                     +{post.photoUrls.length - 1}
                                   </span>
                                 )}
@@ -10391,7 +10978,7 @@ export default function App() {
               </div>
 
               {/* Top Navigation Bar */}
-              <div className="relative z-20 w-full pt-4 px-4 pb-2 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex flex-col gap-3">
+              <div className="relative z-20 w-full px-4 pb-2 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex flex-col gap-3" style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
                 
                 {/* 1. Progress indicators */}
                 <div className="flex gap-1.5 w-full">
@@ -10516,7 +11103,7 @@ export default function App() {
               </div>
 
               {/* Premium Share Footer */}
-              <div className="relative z-20 w-full pb-8 pt-4 px-4 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-center gap-3">
+              <div className="relative z-20 w-full pt-4 px-4 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-center gap-3" style={{ paddingBottom: 'calc(1.5rem + var(--safe-bottom))' }}>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -10602,7 +11189,8 @@ function GlobalFloatingAudioPlayer({ isDark, tc }: { isDark: boolean; tc: any })
         animate={{ y: 0, opacity: 1, scale: 1 }}
         exit={{ y: 50, opacity: 0, scale: 0.9 }}
         transition={{ type: 'spring', damping: 20, stiffness: 220 }}
-        className="fixed bottom-6 right-6 z-[99999] flex items-center gap-3 select-none flex-row-reverse"
+        className="fixed right-6 z-[99999] flex items-center gap-3 select-none flex-row-reverse"
+        style={{ bottom: 'calc(1.5rem + var(--safe-bottom))' }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
