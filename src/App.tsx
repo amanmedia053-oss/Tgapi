@@ -1799,6 +1799,40 @@ export default function App() {
   const [novelsFeedData, setNovelsFeedData] = useState<FeedResponse | null>(null);
   const [activeNovelTextChapter, setActiveNovelTextChapter] = useState<any | null>(null);
   const [novelScrollProgress, setNovelScrollProgress] = useState(0);
+
+  // Novel reader settings with persistence
+  const [readerFontSize, setReaderFontSize] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('dewa_reader_font_size');
+      return saved ? parseInt(saved) : 16;
+    } catch {
+      return 16;
+    }
+  });
+  const [readerLineHeight, setReaderLineHeight] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('dewa_reader_line_height');
+      return saved ? parseFloat(saved) : 2.3;
+    } catch {
+      return 2.3;
+    }
+  });
+
+  const changeReaderFontSize = (newSize: number) => {
+    const size = Math.max(12, Math.min(26, newSize));
+    setReaderFontSize(size);
+    try {
+      localStorage.setItem('dewa_reader_font_size', size.toString());
+    } catch (e) {}
+  };
+
+  const changeReaderLineHeight = (newLineHeight: number) => {
+    const lh = parseFloat(Math.max(1.8, Math.min(3.2, newLineHeight)).toFixed(1));
+    setReaderLineHeight(lh);
+    try {
+      localStorage.setItem('dewa_reader_line_height', lh.toString());
+    } catch (e) {}
+  };
   
   // Custom states and handlers for continuing reading and liked chapters/novels
   const [novelReadingProgressList, setNovelReadingProgressList] = useState<any[]>(() => {
@@ -5058,7 +5092,7 @@ export default function App() {
                 </div>
 
                 {/* Modern Interactive Scroll Progress Bar & Info */}
-                <div className="space-y-2.5 select-none px-1 pb-2 border-b border-slate-500/10">
+                <div className="space-y-3 select-none px-1 pb-3 border-b border-slate-500/10">
                   <div className="flex flex-row-reverse items-center justify-between text-[11.5px] font-extrabold font-sans">
                     <span className={`${isDark ? 'text-indigo-400' : 'text-indigo-650'} flex items-center gap-1.5`}>
                       <Sparkles className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
@@ -5073,6 +5107,75 @@ export default function App() {
                       className="absolute inset-y-0 right-0 bg-gradient-to-l from-indigo-500 via-purple-600 to-pink-500 h-full rounded-full transition-all duration-150"
                       style={{ width: `${novelScrollProgress}%` }}
                     />
+                  </div>
+
+                  {/* Elegant Interactive Typography Controls */}
+                  <div className={`mt-3 p-3 rounded-2xl ${isDark ? 'bg-slate-900/40 border-slate-800/60' : 'bg-slate-100/50 border-slate-200'} border flex flex-col sm:flex-row items-center justify-between gap-3 text-right`}>
+                    <div className="flex items-center gap-2.5">
+                      <span className={`text-[11px] font-black ${isDark ? 'text-slate-300' : 'text-slate-700'} font-sans`}>
+                        ↔️ د کرښو عمودي فاصله (فاصله):
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => changeReaderLineHeight(readerLineHeight - 0.1)}
+                          style={{ cursor: 'pointer' }}
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-black transition ${
+                            isDark ? 'bg-slate-850 hover:bg-slate-750 text-white border border-slate-800' : 'bg-white hover:bg-slate-200 text-slate-800 border border-slate-250'
+                          }`}
+                          title="کمول"
+                        >
+                          -
+                        </button>
+                        <span className="min-w-[34px] text-center font-mono font-black text-xs text-indigo-400">
+                          {toPashtoNumber(readerLineHeight.toFixed(1))}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => changeReaderLineHeight(readerLineHeight + 0.1)}
+                          style={{ cursor: 'pointer' }}
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-black transition ${
+                            isDark ? 'bg-slate-850 hover:bg-slate-750 text-white border border-slate-800' : 'bg-white hover:bg-slate-200 text-slate-800 border border-slate-250'
+                          }`}
+                          title="زیاتول"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                      <span className={`text-[11px] font-black ${isDark ? 'text-slate-300' : 'text-slate-700'} font-sans`}>
+                        🔎 د هورفونو/متن اندازه:
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => changeReaderFontSize(readerFontSize - 1)}
+                          style={{ cursor: 'pointer' }}
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-black transition ${
+                            isDark ? 'bg-slate-850 hover:bg-slate-750 text-white border border-slate-800' : 'bg-white hover:bg-slate-200 text-slate-800 border border-slate-250'
+                          }`}
+                          title="کوچنی کول"
+                        >
+                          A-
+                        </button>
+                        <span className="min-w-[34px] text-center font-mono font-black text-xs text-indigo-400">
+                          {toPashtoNumber(readerFontSize.toString())}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => changeReaderFontSize(readerFontSize + 1)}
+                          style={{ cursor: 'pointer' }}
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-black transition ${
+                            isDark ? 'bg-slate-850 hover:bg-slate-750 text-white border border-slate-800' : 'bg-white hover:bg-slate-200 text-slate-800 border border-slate-250'
+                          }`}
+                          title="لوی کول"
+                        >
+                          A+
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -5105,7 +5208,7 @@ export default function App() {
                   style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
                 >
                   <div 
-                    className={`text-right font-sans leading-relaxed text-[13.5px] sm:text-[14px] ${isDark ? 'text-slate-200' : 'text-slate-800'} space-y-4`}
+                    className={`text-right font-sans ${isDark ? 'text-slate-200' : 'text-slate-800'} space-y-6 sm:space-y-7`}
                     style={{ direction: 'rtl', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
                   >
                     {removeHashtagsOnly(activeNovelTextChapter.text || '')
@@ -5128,7 +5231,7 @@ export default function App() {
                             id={`para-${idx}`}
                             onClick={() => toggleBookmark(activeNovelTextChapter.id, activeNovelTextChapter, selectedPost, idx, trimmedPara)}
                             style={{ cursor: 'pointer' }}
-                            className={`group relative p-3 rounded-2xl transition-all duration-200 text-right flex items-start gap-3 select-none border border-transparent ${
+                            className={`group relative p-3.5 sm:p-4 rounded-2.5xl transition-all duration-200 text-right flex items-start gap-3 select-none border border-transparent ${
                               isBookmarked 
                                 ? isDark 
                                   ? 'bg-indigo-950/20 border-indigo-500/20 shadow-[0_2px_12px_rgba(99,102,241,0.08)]' 
@@ -5137,11 +5240,14 @@ export default function App() {
                             }`}
                           >
                             <div className="flex-1 text-right min-w-0">
-                              <p className={`font-medium whitespace-pre-wrap leading-relaxed text-[13px] sm:text-[13.5px] ${
-                                isBookmarked 
-                                  ? isDark ? 'text-indigo-200' : 'text-indigo-950 font-black' 
-                                  : isDark ? 'text-slate-200' : 'text-slate-800'
-                              }`}>
+                              <p 
+                                className={`font-medium whitespace-pre-wrap ${
+                                  isBookmarked 
+                                    ? isDark ? 'text-indigo-200' : 'text-indigo-950 font-black' 
+                                    : isDark ? 'text-slate-200' : 'text-slate-800'
+                                }`}
+                                style={{ fontSize: `${readerFontSize}px`, lineHeight: readerLineHeight }}
+                              >
                                 {trimmedPara}
                               </p>
                             </div>
@@ -5263,7 +5369,7 @@ export default function App() {
                       <BeautifulTelegramText 
                         text={removeHashtagsOnly(selectedPost.text || '')} 
                         isDark={isDark} 
-                        fs={{ body: 'text-[12.5px] sm:text-[13px] text-right font-medium leading-relaxed' }} 
+                        fs={{ body: 'text-[13.5px] sm:text-[14px] text-right font-medium leading-[2.1] sm:leading-[2.3]' }} 
                         limitLines={15} 
                         showExpander={false} 
                       />
