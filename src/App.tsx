@@ -366,8 +366,11 @@ function BeautifulTelegramText({
   const [expanded, setExpanded] = useState(false);
   if (!text) return null;
 
-  // 1. Normalize literal \n, double escaped \\n, HTML line breaks, and empty lines
-  const cleanText = text
+  // 1. Format the text beautifully to ensure proper spacing on clumped/glued texts, keeping hashtags
+  const formattedText = beautifullyFormatPashtoText(text, true);
+
+  // 2. Normalize literal \n, double escaped \\n, HTML line breaks, and empty lines
+  const cleanText = formattedText
     .replace(/\\n/g, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/\r\n/g, '\n')
@@ -1579,8 +1582,82 @@ export function getPostHashtags(text: string): string[] {
 /* Global helper function for stripping hashtags entirely */
 export function removeHashtagsOnly(text: string): string {
   if (!text) return '';
-  const withRemoved = text.replace(/#[^\s#\.,'\?\!\"🗺️✨🎙️🎵📚✍️():؛،«»\-]+/g, '');
-  return withRemoved.split('\n').map(line => line.trim()).filter(line => line !== '').join('\n');
+  return beautifullyFormatPashtoText(text, false);
+}
+
+/* Helper to format clumped/glued Pashto text into beautiful, spaced paragraphs, dialogue stanzas, and metadata lines */
+export function beautifullyFormatPashtoText(text: string, keepHashtags: boolean = false): string {
+  if (!text) return '';
+
+  let clean = text;
+  if (!keepHashtags) {
+    // Strips hashtag words but retains punctuation or non-hashtag characters
+    clean = clean.replace(/#[^\s#\.,'\?\!\"🗺️✨🎙️🎵📚✍️():؛،«»\-]+/g, '');
+  }
+
+  // Normalize all escaped/literal forms of newline and HTML breaks
+  clean = clean
+    .replace(/\\n/g, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+
+  // Inject logical paragraph breaks before and after clear metadata lines (emoji prefixes)
+  // so they are guaranteed to stand out on separate lines from previous and future text blocks.
+  const markers = [
+    { pattern: /(📘\s*(کتاب|کتابونه|ناول)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(📚\s*(موضوع|موضوعات|برخه)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(✍️\s*(ليکوال|لیکوال|ژباړن|شاعر)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(🎤\s*(غږ|راوي|انځورګر)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(🎙️\s*(وړاندې\s*کوونکی|ویاند)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(📖\s*(برخه|لوستل|سرلیک|څپرکی)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(✨\s*(څپرکی|ځانګړتیاوې|خوندور)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(📌\s*(د\s*دې\s*اثر\s*خلاصه\s*او\s*پېژندنه|پېژندنه|پیژندنه|نوټ|خلاصه)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(👇\s*(په\s*دې\s*برخه\s*کې|لاندې\s*برخه\s*کې|اورېدل|لوستل|تړون)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(📁\s*(ډلبندي|کټګوري)\s*:?)/gi, replaceWith: '\n\n$1' },
+    { pattern: /(🔗\s*(تړون|رابطه|لینک)\s*:?)/gi, replaceWith: '\n\n$1' }
+  ];
+
+  markers.forEach(({ pattern, replaceWith }) => {
+    clean = clean.replace(pattern, replaceWith);
+  });
+
+  // Split into lines to clean up and insert spacing for narrative dialogues
+  const lines = clean.split('\n');
+  const processed: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      if (processed.length > 0 && processed[processed.length - 1] !== '') {
+        processed.push('');
+      }
+      continue;
+    }
+
+    // Story Dialogues: often start with symbols like —, -, or are enclosed in quotes « ... »
+    // Dialogue lines are extremely important to represent on clean separate lines to avoid clumped novels
+    const isDialogue = line.startsWith('—') || line.startsWith('-') || line.startsWith('«');
+    
+    if (isDialogue) {
+      // If previous line wasn't empty, inject an empty line to start a fresh dialogue paragraph
+      if (processed.length > 0 && processed[processed.length - 1] !== '') {
+        processed.push('');
+      }
+      processed.push(line);
+      continue;
+    }
+
+    processed.push(line);
+  }
+
+  // Collapse 3 or more consecutive empty lines into exactly one empty line
+  const merged = processed.join('\n').replace(/\n{3,}/g, '\n\n');
+  return merged.trim();
 }
 
 /* Global helper function for getting unique novel identification-tag */
