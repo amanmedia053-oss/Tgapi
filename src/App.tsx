@@ -475,15 +475,26 @@ function BeautifulTelegramText({
   };
 
   return (
-    <div className="space-y-1 text-right w-full">
-      <div 
-        className={`${fs?.body || 'text-[12.5px] sm:text-[13px]'} ${
-          isDark ? 'text-slate-200' : 'text-slate-800'
-        } whitespace-pre-wrap break-words leading-[2.1] sm:leading-[2.25] pr-1 font-medium font-sans select-text`}
-        style={{ direction: 'rtl' }}
-      >
-        {renderWithHashtags(displayedText, needsTruncation)}
-      </div>
+    <div className="space-y-2.5 text-right w-full select-text" style={{ direction: 'rtl' }}>
+      {(() => {
+        const linesToRender = displayedText.split('\n');
+        return linesToRender.map((line, idx) => {
+          if (line.trim() === '') {
+            return <div key={idx} className="h-1.5 sm:h-2" />;
+          }
+          const isLastLine = idx === linesToRender.length - 1;
+          return (
+            <p 
+              key={idx}
+              className={`${fs?.body || 'text-[12.5px] sm:text-[13px]'} ${
+                isDark ? 'text-slate-200' : 'text-slate-800'
+              } break-words leading-[2.1] sm:leading-[2.25] pr-1 font-medium font-sans text-right`}
+            >
+              {renderWithHashtags(line, isLastLine && needsTruncation)}
+            </p>
+          );
+        });
+      })()}
       {needsTruncation && !expanded && onReadMoreClick && (
         <button
           onClick={(e) => {
@@ -5245,7 +5256,7 @@ export default function App() {
                           onClick={() => changeReaderFontSize(readerFontSize + 1)}
                           style={{ cursor: 'pointer' }}
                           className={`w-7 h-7 rounded-lg flex items-center justify-center font-black transition ${
-                            isDark ? 'bg-slate-850 hover:bg-slate-750 text-white border border-slate-800' : 'bg-white hover:bg-slate-200 text-slate-800 border border-slate-250'
+                            isDark ? 'bg-slate-850 hover:bg-slate-755 text-white border border-slate-800' : 'bg-white hover:bg-slate-200 text-slate-800 border border-slate-250'
                           }`}
                           title="لوی کول"
                         >
@@ -5285,7 +5296,7 @@ export default function App() {
                   style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
                 >
                   <div 
-                    className={`text-right font-sans ${isDark ? 'text-slate-200' : 'text-slate-800'} space-y-6 sm:space-y-7`}
+                    className={`text-right font-sans ${isDark ? 'text-slate-200' : 'text-slate-800'} space-y-2 sm:space-y-2.5`}
                     style={{ direction: 'rtl', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
                   >
                     {(() => {
@@ -5842,10 +5853,25 @@ export default function App() {
               </div>
 
               {selectedPost.htmlText ? (
-                <div
-                  className={`${isDark ? 'text-slate-200' : 'text-slate-800 font-medium'} text-[15.5px] sm:text-[17px] leading-[1.85] sm:leading-[1.95] space-y-2.5 font-sans break-words telegram-styles text-right pr-1 whitespace-pre-wrap`}
-                  dangerouslySetInnerHTML={{ __html: makeHtmlHashtagsClickable(selectedPost.htmlText) }}
-                />
+                <div className="space-y-3.5 sm:space-y-4 select-text" style={{ direction: 'rtl' }}>
+                  {(() => {
+                    // Split raw htmlText into individual pieces on HTML line breaks
+                    const htmlParagraphs = selectedPost.htmlText.split(/<br\s*\/?>/gi);
+                    return htmlParagraphs.map((htmlPara, idx) => {
+                      const cleanPara = htmlPara.trim();
+                      if (!cleanPara) {
+                        return <div key={idx} className="h-1.5 sm:h-2" />;
+                      }
+                      return (
+                        <div
+                          key={idx}
+                          className={`${isDark ? 'text-slate-200' : 'text-slate-800 font-medium'} text-[15.5px] sm:text-[17px] leading-[1.85] sm:leading-[1.95] font-sans break-words telegram-styles text-right pr-1`}
+                          dangerouslySetInnerHTML={{ __html: makeHtmlHashtagsClickable(cleanPara) }}
+                        />
+                      );
+                    });
+                  })()}
+                </div>
               ) : (
                 <BeautifulTelegramText 
                   text={getPostTextWithFallback(selectedPost)} 
