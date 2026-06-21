@@ -5259,8 +5259,8 @@ export default function App() {
                 {/* Chapter Title */}
                 <div className="text-center py-2 border-b border-slate-500/10 pb-4">
                   <h2 className={`text-base sm:text-lg font-black ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
-                    {activeNovelTextChapter.text 
-                      ? activeNovelTextChapter.text.replace(/#[^\s]+/g, '').split('\n').filter((l: string) => l.trim() !== '')[0] || 'بې سرلیکه برخه'
+                    {getPostTextWithFallback(activeNovelTextChapter) 
+                      ? getPostTextWithFallback(activeNovelTextChapter).replace(/#[^\s]+/g, '').split('\n').filter((l: string) => l.trim() !== '')[0] || 'بې سرلیکه برخه'
                       : 'بې سرلیکه برخه'
                     }
                   </h2>
@@ -5288,14 +5288,18 @@ export default function App() {
                     className={`text-right font-sans ${isDark ? 'text-slate-200' : 'text-slate-800'} space-y-6 sm:space-y-7`}
                     style={{ direction: 'rtl', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
                   >
-                    {removeHashtagsOnly(activeNovelTextChapter.text || '')
-                      .split('\n')
-                      .filter((line, i) => {
-                        const firstLineRaw = activeNovelTextChapter.text.split('\n')[0] || '';
-                        const firstLineClean = firstLineRaw.replace(/#[^\s]+/g, '').trim();
-                        return i > 0 || (line.trim() !== firstLineClean && line.trim() !== '');
-                      })
-                      .map((para, idx) => {
+                    {(() => {
+                      const chapterFullText = getPostTextWithFallback(activeNovelTextChapter);
+                      const cleanedText = removeHashtagsOnly(chapterFullText);
+                      const lines = cleanedText.split('\n');
+                      const firstLineRaw = chapterFullText.split('\n')[0] || '';
+                      const firstLineClean = firstLineRaw.replace(/#[^\s]+/g, '').trim();
+
+                      return lines
+                        .filter((line, i) => {
+                          return i > 0 || (line.trim() !== firstLineClean && line.trim() !== '');
+                        })
+                        .map((para, idx) => {
                         const trimmedPara = para.trim();
                         if (!trimmedPara) return null;
 
@@ -5350,7 +5354,7 @@ export default function App() {
                             </button>
                           </div>
                         );
-                      })
+                      })})()
                     }
                   </div>
                 </div>
@@ -5433,21 +5437,18 @@ export default function App() {
                           {selectedPost.views || '0'} کتنې
                         </span>
                       </div>
-                      <h2 className={`text-base sm:text-xl font-black ${isDark ? 'text-white' : 'text-slate-900'} leading-tight tracking-tight mt-1.5 font-sans`}>
-                        {selectedPost.text ? selectedPost.text.replace(/#کیسه|#ناول|#داستان|#کیسې|#رومان|#غږیز|#صوتي|#کتاب|#داستانونه/g, '').split('\n')[0].trim() : 'بې نومه اثر'}
-                      </h2>
                     </div>
 
                     {/* Overview text (HASHTAGS INVISIBLE - د ناول پېژندنې معلومات بې له هشټاګونو) */}
-                    <div className={`p-4 rounded-2.5xl border ${isDark ? 'bg-slate-950/40 border-slate-805/70' : 'bg-slate-50 border-slate-100'} w-full`}>
+                    <div className={`p-4 rounded-2.5xl border ${isDark ? 'bg-slate-950/40 border-transparent' : 'bg-slate-50 border-slate-100'} w-full`}>
                       <h3 className="text-xs font-black text-indigo-400 mb-2 font-sans flex items-center gap-1">
                         <span>📌 د دې اثر خلاصه او پېژندنه:</span>
                       </h3>
                       <BeautifulTelegramText 
-                        text={removeHashtagsOnly(selectedPost.text || '')} 
+                        text={removeHashtagsOnly(getPostTextWithFallback(selectedPost))} 
                         isDark={isDark} 
                         fs={{ body: 'text-[13.5px] sm:text-[14px] text-right font-medium leading-[2.1] sm:leading-[2.3]' }} 
-                        limitLines={15} 
+                        limitLines={250} 
                         showExpander={false} 
                       />
                     </div>
@@ -5842,12 +5843,12 @@ export default function App() {
 
               {selectedPost.htmlText ? (
                 <div
-                  className={`${isDark ? 'text-slate-200' : 'text-slate-800 font-medium'} text-[15.5px] sm:text-[17px] leading-[1.85] sm:leading-[1.95] space-y-2.5 font-sans break-words telegram-styles text-right pr-1`}
+                  className={`${isDark ? 'text-slate-200' : 'text-slate-800 font-medium'} text-[15.5px] sm:text-[17px] leading-[1.85] sm:leading-[1.95] space-y-2.5 font-sans break-words telegram-styles text-right pr-1 whitespace-pre-wrap`}
                   dangerouslySetInnerHTML={{ __html: makeHtmlHashtagsClickable(selectedPost.htmlText) }}
                 />
               ) : (
                 <BeautifulTelegramText 
-                  text={selectedPost.text} 
+                  text={getPostTextWithFallback(selectedPost)} 
                   isDark={isDark} 
                   fs={{ body: 'text-[15.5px] sm:text-[17px]' }} 
                   limitLines={250} 
