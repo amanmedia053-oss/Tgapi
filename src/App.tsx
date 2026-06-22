@@ -72,7 +72,8 @@ import {
   Hash,
   Bookmark,
   BookmarkCheck,
-  RotateCw
+  RotateCw,
+  Archive
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -167,7 +168,7 @@ function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: 
               onClick={(e) => e.stopPropagation()}
               className={`relative w-full max-w-md rounded-t-[32px] sm:rounded-b-[28px] sm:mb-6 p-6 pb-10 sm:pb-6 border text-right font-sans shadow-2xl transition-colors duration-200 ${
                 isDark 
-                  ? 'bg-gradient-to-b from-slate-900 to-slate-950 border-slate-805 text-slate-100 shadow-slate-950/90' 
+                  ? 'bg-gradient-to-b from-slate-900 to-slate-950 border-slate-800 text-slate-100 shadow-slate-950/90' 
                   : 'bg-white border-slate-250 text-slate-800 shadow-slate-300/40'
               }`}
             >
@@ -242,6 +243,7 @@ interface PashtoVerse {
   couplet: string;
   author: string;
   meaning: string;
+  postRef?: any;
 }
 
 const pashtoVersesList: PashtoVerse[] = [
@@ -380,8 +382,8 @@ function BeautifulTelegramText({
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
 
-  // Enforce exactly 2 lines limit if onReadMoreClick is provided, otherwise standard 3 lines
-  const actualLimit = onReadMoreClick ? 2 : (showExpander ? 3 : limitLines);
+  // Enforce exactly 2 lines limit if onReadMoreClick is provided or if showExpander is true to keep list texts at two rows
+  const actualLimit = onReadMoreClick ? 2 : (showExpander ? 2 : limitLines);
 
   // Split by newline to respect visual poetry stanzas and empty line spacing
   let lines = cleanText.split('\n');
@@ -442,37 +444,14 @@ function BeautifulTelegramText({
           </span>
         );
       }
-
-      // Extract all hashtags from complete cleanText and find those that are currently hidden
-      const allHashtags = Array.from(new Set(cleanText.match(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g) || []));
-      const displayedHashtags = Array.from(new Set(rawText.match(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g) || []));
-      const missingHashtags = allHashtags.filter(tag => !displayedHashtags.includes(tag));
-
-      if (missingHashtags.length > 0) {
-        elements.push(
-          <div key="missing-tags-container" className="mt-2 bg-indigo-500/5 py-1 px-2.5 rounded-lg text-right text-[11px] font-medium leading-relaxed max-w-full flex flex-wrap gap-1 items-center justify-start border border-indigo-400/5" style={{ direction: 'rtl' }}>
-            <span className="text-slate-400/95 ml-1 select-none font-sans text-[10.5px]">هشتګونه:</span>
-            {missingHashtags.map((tag, idx) => (
-              <span
-                key={`missing-${idx}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if ((window as any).handleHashtagClickGlobal) {
-                    (window as any).handleHashtagClickGlobal(tag);
-                  }
-                }}
-                className="text-indigo-400 hover:text-indigo-350 font-extrabold cursor-pointer transition select-none hover:underline"
-                title={`پلټنه: ${tag}`}
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        );
-      }
     }
     return elements;
   };
+
+  // Extract all hashtags from complete cleanText and find those that are currently hidden
+  const allHashtags = Array.from(new Set(cleanText.match(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g) || []));
+  const displayedHashtags = Array.from(new Set(displayedText.match(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g) || []));
+  const missingHashtags = (needsTruncation && !expanded) ? allHashtags.filter(tag => !displayedHashtags.includes(tag)) : [];
 
   return (
     <div className="space-y-2.5 text-right w-full select-text" style={{ direction: 'rtl' }}>
@@ -495,6 +474,28 @@ function BeautifulTelegramText({
           );
         });
       })()}
+
+      {missingHashtags.length > 0 && (
+        <div key="missing-tags-container" className="mt-2 bg-indigo-500/5 py-1 px-2.5 rounded-lg text-right text-[11px] font-medium leading-relaxed max-w-full flex flex-wrap gap-1 items-center justify-start border border-indigo-400/5" style={{ direction: 'rtl' }}>
+          <span className="text-slate-400/95 ml-1 select-none font-sans text-[10.5px]">هشتګونه:</span>
+          {missingHashtags.map((tag, idx) => (
+            <span
+              key={`missing-${idx}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if ((window as any).handleHashtagClickGlobal) {
+                  (window as any).handleHashtagClickGlobal(tag);
+                }
+              }}
+              className="text-indigo-400 hover:text-indigo-350 font-extrabold cursor-pointer transition select-none hover:underline"
+              title={`پلټنه: ${tag}`}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
       {needsTruncation && !expanded && onReadMoreClick && (
         <button
           onClick={(e) => {
@@ -844,7 +845,7 @@ function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { key?: any;
       style={{ direction: 'rtl' }}
       className={`p-3.5 rounded-3xl border select-none transition-all duration-300 mt-2.5 w-full flex items-center gap-3.5 text-right ${
         isDark 
-          ? 'bg-slate-900/80 border-slate-805/70 shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-slate-850/90' 
+          ? 'bg-slate-900/80 border-slate-800/70 shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-slate-850/90' 
           : 'bg-slate-50/90 border-slate-205/85 shadow-[0_4px_12px_rgba(0,0,0,0.02)] hover:bg-slate-100/90'
       }`}
     >
@@ -1164,7 +1165,7 @@ function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride, autoPl
                 togglePlay(e);
               }
             }}
-            className="w-12 h-12 rounded-full bg-slate-905/80 backdrop-blur border border-white/20 flex items-center justify-center text-white scale-100 hover:scale-105 active:scale-95 transition cursor-pointer pointer-events-auto shadow-lg"
+            className="w-12 h-12 rounded-full bg-slate-900/80 backdrop-blur border border-white/20 flex items-center justify-center text-white scale-100 hover:scale-105 active:scale-95 transition cursor-pointer pointer-events-auto shadow-lg"
           >
             <Play className="w-5 h-5 text-indigo-400 fill-indigo-400 translate-x-0.5" />
           </div>
@@ -1475,10 +1476,11 @@ interface CachedImageProps {
   src: string;
   className?: string;
   alt?: string;
+  simple?: boolean;
   [key: string]: any;
 }
 
-function CachedImage({ src, className, alt = 'image-display', ...props }: CachedImageProps) {
+function CachedImage({ src, className, alt = 'image-display', simple = false, ...props }: CachedImageProps) {
   const cachedSrc = useCachedUrl(src);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -1488,47 +1490,48 @@ function CachedImage({ src, className, alt = 'image-display', ...props }: Cached
     setError(false);
   }, [src]);
 
+  const isCircle = className?.includes('rounded-full');
+
   return (
     <div className={`relative overflow-hidden ${className || ''}`} style={props.style}>
       {/* 1. Shimmer effect during loading */}
       {loading && !error && (
-        <div className="absolute inset-0 bg-slate-900/90 flex items-center justify-center z-10">
-          <div className="w-full h-full shimmer opacity-60" />
+        <div className="absolute inset-0 bg-slate-900/90 flex items-center justify-center z-10 w-full h-full">
+          <div className="w-full h-full shimmer opacity-65" />
         </div>
       )}
 
       {/* 2. Error Fallback state */}
       {error && (
-        <div className="absolute inset-0 bg-slate-900 border border-slate-800/60 flex flex-col items-center justify-center p-3 text-center z-15">
-          <AlertCircle className="w-6 h-6 text-indigo-500 animate-pulse mb-1 shrink-0" />
-          <span className="text-[10px] font-sans font-bold text-slate-400">انځور لوډ نشو (آفلاین یا خرابه شبکه)</span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setError(false);
-              setLoading(true);
-            }}
-            className="mt-1 px-2.5 py-1 text-[8px] font-black rounded bg-indigo-650/40 hover:bg-indigo-650 border border-indigo-500/35 text-indigo-200 transition active:scale-95 cursor-pointer"
-          >
-            بيا هڅه وکړئ
-          </button>
+        <div className="absolute inset-0 bg-slate-950 flex items-center justify-center z-10 w-full h-full">
+          <div className="w-full h-full shimmer opacity-80 bg-gradient-to-tr from-slate-900 to-slate-950 flex flex-col items-center justify-center p-2 text-center select-none">
+            {isCircle ? (
+              <Feather className="w-4 h-4 text-slate-600/60 animate-pulse" />
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-1">
+                <Feather className="w-6 h-6 text-slate-600/40 animate-pulse" />
+                <span className="text-[9px] font-sans font-black tracking-widest text-slate-550/50 uppercase">د مېنې ډېوه</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* 3. Real Image */}
-      <img
-        src={cachedSrc || src}
-        alt={alt}
-        {...props}
-        className={`w-full h-full object-cover transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}
-        referrerPolicy="no-referrer"
-        onLoad={() => setLoading(false)}
-        onError={() => {
-          setLoading(false);
-          setError(true);
-        }}
-      />
+      {!error && (
+        <img
+          src={cachedSrc || src}
+          alt={alt}
+          {...props}
+          className={`w-full h-full object-cover transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}
+          referrerPolicy="no-referrer"
+          onLoad={() => setLoading(false)}
+          onError={() => {
+            setLoading(false);
+            setError(true);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1559,6 +1562,29 @@ export function isStoryPost(post: any) {
   if (!post || !post.text) return false;
   const lowerText = post.text.toLowerCase();
   return lowerText.includes('#سټوري') || lowerText.includes('#ستوری') || lowerText.includes('#story') || lowerText.includes('#سټوريانې');
+}
+
+/* Global helper function to get high-density premium video thumbnails */
+export function getVideoThumbnail(post: any | null): string {
+  if (!post) {
+    return "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?w=600&auto=format&fit=crop&q=80";
+  }
+  if (post.videoThumbUrl) return post.videoThumbUrl;
+  if (post.photoUrl) return post.photoUrl;
+  if (post.photoUrls && post.photoUrls[0]) return post.photoUrls[0];
+  
+  // Select beautiful cinematographic Unsplash fallbacks based on ID string
+  const fallbacks = [
+    "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?w=600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=600&auto=format&fit=crop&q=80"
+  ];
+  
+  const idStr = String(post.id || '');
+  const charSum = idStr.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return fallbacks[charSum % fallbacks.length];
 }
 
 /* Global helper function for identifying novels and their parts */
@@ -1692,6 +1718,455 @@ export function isPostNovelProfileGlobal(post: any | null): boolean {
     tag === '#ناول_پروفایل' || 
     tag === '#ناول_پروفايل' || 
     tag === '#profile_novel'
+  );
+}
+
+function ShimmerPageLoader({ isDark, viewKey = 'dashboard' }: { isDark: boolean; viewKey?: string }) {
+  const shimmerClass = isDark ? 'shimmer' : 'shimmer-light';
+  const cardBgClass = isDark ? 'bg-slate-900/35 border-slate-850/40' : 'bg-white border-slate-100 shadow-sm';
+
+  // 1. STORY/NOVEL INDIVIDUAL CHAPTER TEXT READER PAGE SHIMMER
+  if (viewKey.startsWith('chapter_')) {
+    return (
+      <div className="space-y-6 w-full text-right font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Header bar mimic */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-lg ${shimmerClass} shrink-0`} />
+            <div className={`h-3 w-32 rounded-full ${shimmerClass}`} />
+          </div>
+          <div className="flex gap-2">
+            <div className={`w-7 h-7 rounded-lg ${shimmerClass}`} />
+            <div className={`w-24 h-7 rounded-sm ${shimmerClass}`} />
+          </div>
+        </div>
+
+        {/* Scroll details progress bar */}
+        <div className="space-y-2 px-1">
+          <div className="flex items-center justify-between">
+            <div className={`h-3 w-24 rounded-full ${shimmerClass}`} />
+            <div className={`h-3 w-16 rounded-full ${shimmerClass}`} />
+          </div>
+          <div className={`w-full h-2 rounded-full ${shimmerClass}`} />
+        </div>
+
+        {/* Typography settings panel wrapper */}
+        <div className={`p-4 rounded-2xl border ${isDark ? 'bg-slate-900/30 border-slate-800/40' : 'bg-slate-50 border-slate-200'} flex items-center justify-between gap-3`}>
+          <div className="flex gap-2">
+            <div className={`w-14 h-8 rounded-xl ${shimmerClass}`} />
+            <div className={`w-14 h-8 rounded-xl ${shimmerClass}`} />
+          </div>
+          <div className="flex gap-1.5">
+            <div className={`w-7 h-7 rounded-full ${shimmerClass}`} />
+            <div className={`w-7 h-7 rounded-full ${shimmerClass}`} />
+            <div className={`w-7 h-7 rounded-full ${shimmerClass}`} />
+          </div>
+        </div>
+
+        {/* Dense readable story paragraphs blocks */}
+        <div className={`p-5 rounded-3xl border ${cardBgClass} space-y-4`}>
+          <div className="space-y-2.5">
+            <div className={`h-3.5 w-full rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-11/12 rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-full rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-[96.5%] rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-10/12 rounded-full ${shimmerClass}`} />
+          </div>
+          <div className="pt-3 space-y-2.5">
+            <div className={`h-3.5 w-full rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-11/12 rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-[94%] rounded-full ${shimmerClass}`} />
+            <div className={`h-3 w-1/3 rounded-full ${shimmerClass}`} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. DETAILED POST SCREEN / NOVEL INDEX PROFILE DISPLAY SHIMMER
+  if (viewKey.startsWith('post_')) {
+    return (
+      <div className="space-y-6 w-full text-right font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Back navigation header line */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className={`w-8 h-8 rounded-lg ${shimmerClass}`} />
+          <div className={`h-3 w-36 rounded-full ${shimmerClass}`} />
+        </div>
+
+        {/* Cover widescreen picture poster */}
+        <div className={`w-full aspect-[16/9] sm:h-56 rounded-3xl ${shimmerClass}`} />
+
+        {/* Description body card */}
+        <div className={`p-5 rounded-3xl border ${cardBgClass} space-y-4`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-full ${shimmerClass} shrink-0`} />
+            <div className="space-y-1.5 flex-1">
+              <div className={`h-3.5 w-32 rounded-full ${shimmerClass}`} />
+              <div className={`h-2.5 w-16 rounded-full ${shimmerClass}`} />
+            </div>
+          </div>
+
+          <div className="space-y-2.5 pt-2">
+            <div className={`h-3.5 w-[94%] rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-[98%] rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-[85%] rounded-full ${shimmerClass}`} />
+          </div>
+        </div>
+
+        {/* Audio players skeleton rows */}
+        <div className="space-y-3">
+          <div className={`p-4 rounded-2xl border ${isDark ? 'bg-slate-950/40 border-slate-900' : 'bg-slate-50 border-slate-200'} flex items-center gap-4`}>
+            <div className={`w-10 h-10 rounded-full ${shimmerClass} shrink-0`} />
+            <div className="space-y-2 flex-1">
+              <div className={`h-3 w-2/5 rounded-full ${shimmerClass}`} />
+              <div className={`h-2 w-full rounded-full ${shimmerClass}`} />
+            </div>
+          </div>
+        </div>
+
+        {/* Chapters list layout block */}
+        <div className="space-y-3 pt-3">
+          <div className={`h-3 w-28 rounded-full ${shimmerClass}`} />
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className={`p-3.5 rounded-2xl border ${isDark ? 'bg-slate-900/20 border-slate-800/40' : 'bg-slate-50/60 border-slate-200'} flex items-center justify-between`}>
+                <div className={`w-5 h-5 rounded-md ${shimmerClass}`} />
+                <div className={`h-3 w-16 rounded-full ${shimmerClass}`} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. NOVELS & STORIES CHANNEL BROWSER SHIMMER
+  if (viewKey === 'novels') {
+    return (
+      <div className="space-y-6 w-full text-right font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Navigation header row */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className={`w-24 h-7 rounded-xl ${shimmerClass}`} />
+          <div className="flex items-center gap-2">
+            <div className={`h-3.5 w-36 rounded-full ${shimmerClass}`} />
+            <div className={`w-8 h-8 rounded-xl ${shimmerClass}`} />
+          </div>
+        </div>
+
+        {/* Multiple Carousel rows with book shape covers */}
+        {[1, 2].map((secIndex) => (
+          <div key={secIndex} className="space-y-4">
+            {/* Horizontal heading row */}
+            <div className="flex items-center justify-between px-2">
+              <div className={`h-3.5 w-[8rem] rounded-full ${shimmerClass}`} />
+              <div className="flex items-center gap-2.5">
+                <div className={`h-3.5 w-24 rounded-full ${shimmerClass}`} />
+                <div className={`w-7 h-7 rounded-lg ${shimmerClass}`} />
+              </div>
+            </div>
+
+            {/* Book cards horizontal scrolling stream */}
+            <div className="flex flex-row gap-3.5 overflow-hidden">
+              {[1, 2, 3].map((cardId) => (
+                <div 
+                  key={cardId} 
+                  className={`w-[115px] sm:w-[135px] aspect-[2/3.1] shrink-0 rounded-2xl ${shimmerClass} relative flex flex-col justify-end p-3`}
+                >
+                  <div className="space-y-1.5">
+                    <div className="h-3.5 w-11/12 bg-black/35 rounded-full" />
+                    <div className="h-2 w-3/5 bg-black/20 rounded-full" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // 4. APP SETTINGS PAGE SHIMMER
+  if (viewKey === 'settings') {
+    return (
+      <div className="space-y-6 w-full text-right font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Header navigation bar */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className={`w-16 h-7 rounded-xl ${shimmerClass}`} />
+          <div className={`h-3.5 w-28 rounded-full ${shimmerClass}`} />
+        </div>
+
+        {/* Interactive sliders & preferences panel */}
+        <div className={`p-5 rounded-3xl border ${cardBgClass} space-y-6`}>
+          <div className="space-y-4">
+            <div className={`h-3 w-20 rounded-full ${shimmerClass}`} />
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="flex items-center justify-between pt-1">
+                <div className={`w-10 h-5 rounded-full ${shimmerClass}`} />
+                <div className="space-y-1.5 flex-1 pr-4">
+                  <div className={`h-3.5 w-28 rounded-full ${shimmerClass}`} />
+                  <div className={`h-2 w-20 rounded-full ${shimmerClass}`} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className={`h-[1px] w-full ${isDark ? 'bg-slate-800/40' : 'bg-slate-100'}`} />
+
+          <div className="space-y-4">
+            <div className={`h-3 w-24 rounded-full ${shimmerClass}`} />
+            <div className="grid grid-cols-3 gap-2">
+              <div className={`h-10 rounded-xl ${shimmerClass}`} />
+              <div className={`h-10 rounded-xl ${shimmerClass}`} />
+              <div className={`h-10 rounded-xl ${shimmerClass}`} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 5. ABOUT APP INFORMATION PAGE SHIMMER
+  if (viewKey === 'about') {
+    return (
+      <div className="space-y-6 w-full text-right font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Header bar */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className={`w-16 h-7 rounded-xl ${shimmerClass}`} />
+          <div className={`h-3.5 w-24 rounded-full ${shimmerClass}`} />
+        </div>
+
+        {/* Profile container card */}
+        <div className={`p-6 rounded-3xl border ${cardBgClass} flex flex-col items-center text-center space-y-5`}>
+          <div className={`w-24 h-24 rounded-full ${shimmerClass} border-2 border-indigo-500/25`} />
+          <div className="space-y-2 flex flex-col items-center">
+            <div className={`h-4 w-40 rounded-full ${shimmerClass}`} />
+            <div className={`h-2.5 w-48 rounded-full ${shimmerClass}`} />
+          </div>
+
+          <div className="flex flex-wrap justify-center gap-2 w-full pt-2">
+            <div className={`h-8 w-44 rounded-xl ${shimmerClass}`} />
+            <div className={`h-8 w-48 rounded-xl ${shimmerClass}`} />
+          </div>
+
+          {/* Biography paragraph text */}
+          <div className="w-full space-y-3 pt-4 border-t border-slate-500/10 text-right">
+            <div className={`h-3.5 w-full rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-11/12 rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-9/12 rounded-full ${shimmerClass}`} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 6. CONTACT AND FEEDBACK CHANNELS PAGE SHIMMER
+  if (viewKey === 'contact') {
+    return (
+      <div className="space-y-6 w-full text-right font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Header */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className={`w-16 h-7 rounded-xl ${shimmerClass}`} />
+          <div className={`h-3.5 w-24 rounded-full ${shimmerClass}`} />
+        </div>
+
+        {/* Direct contact telegram banner */}
+        <div className={`p-5 rounded-2xl ${shimmerClass} h-16 w-full`} />
+
+        {/* Full-width messaging form fields */}
+        <div className={`p-5 rounded-3xl border ${cardBgClass} space-y-4`}>
+          <div className="space-y-2">
+            <div className={`h-3.5 w-24 rounded-full ${shimmerClass}`} />
+            <div className={`h-11 w-full rounded-2xl ${shimmerClass}`} />
+          </div>
+          <div className="space-y-2">
+            <div className={`h-3.5 w-28 rounded-full ${shimmerClass}`} />
+            <div className={`h-24 w-full rounded-2xl ${shimmerClass}`} />
+          </div>
+
+          <div className={`h-12 w-full rounded-2xl ${shimmerClass} mt-4`} />
+        </div>
+      </div>
+    );
+  }
+
+  // 7. POETRY CATEGORIES / DYNAMIC HASHTAGS BROWSER SHIMMER
+  if (viewKey === 'category') {
+    return (
+      <div className="space-y-6 w-full text-right font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Header */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className={`w-16 h-7 rounded-xl ${shimmerClass}`} />
+          <div className={`h-3.5 w-28 rounded-full ${shimmerClass}`} />
+        </div>
+
+        {/* Instant Category search line */}
+        <div className={`h-11 w-full rounded-xl ${shimmerClass}`} />
+
+        {/* Grid of beautifully-spaced pills matching hashtags category screen */}
+        <div className={`p-5 rounded-3xl border ${cardBgClass} space-y-4`}>
+          <div className={`h-3 w-36 rounded-full ${shimmerClass}`} />
+          <div className="flex flex-wrap gap-2.5">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => (
+              <div 
+                key={i} 
+                className={`h-9 rounded-xl ${shimmerClass}`} 
+                style={{ width: `${60 + (i * 7) % 70}px` }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 8. LIVE SEARCH SEARCH ENGINE INPUT SCREEN SHIMMER
+  if (viewKey === 'search') {
+    return (
+      <div className="space-y-6 w-full text-right font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Header */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className={`w-16 h-7 rounded-xl ${shimmerClass}`} />
+          <div className={`h-3.5 w-24 rounded-full ${shimmerClass}`} />
+        </div>
+
+        {/* Main large Input text bar */}
+        <div className={`h-12 w-full rounded-2xl ${shimmerClass}`} />
+
+        {/* Recent Search categories elements list */}
+        <div className="space-y-3 ps-1">
+          <div className={`h-3 w-28 rounded-full ${shimmerClass}`} />
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className={`h-8 w-24 rounded-xl ${shimmerClass}`} />
+            ))}
+          </div>
+        </div>
+
+        {/* Search Results mimicking list rows */}
+        <div className="space-y-4 pt-3">
+          {[1, 2].map((i) => (
+            <div key={i} className={`p-4 rounded-2xl border ${cardBgClass} flex items-center justify-between gap-3`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full ${shimmerClass} shrink-0`} />
+                <div className="space-y-1.5 pr-2">
+                  <div className={`h-3 w-28 rounded-full ${shimmerClass}`} />
+                  <div className={`h-2.5 w-16 rounded-full ${shimmerClass}`} />
+                </div>
+              </div>
+              <div className={`h-3.5 w-[90px] rounded-full ${shimmerClass}`} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // 9. REELS / SHORT TELEGRAM VIDEOS PLAYER PAGE SHIMMER
+  if (viewKey === 'reels') {
+    return (
+      <div className="space-y-6 w-full font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Header */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className={`w-16 h-7 rounded-xl ${shimmerClass}`} />
+          <div className={`h-3.5 w-28 rounded-full ${shimmerClass}`} />
+        </div>
+
+        {/* Vertical full-viewport Tiktok/Insta video stream block */}
+        <div className={`w-full aspect-[9/16] rounded-3xl ${shimmerClass} relative p-5 flex flex-col justify-between`}>
+          {/* Top header stats bar overlay */}
+          <div className="flex justify-between w-full">
+            <div className="w-8 h-8 rounded-full bg-black/20" />
+            <div className="w-16 h-3.5 bg-black/35 rounded-full" />
+          </div>
+
+          {/* Bottom user meta + action floating elements details */}
+          <div className="flex justify-between items-end w-full">
+            <div className="w-9 h-9 rounded-full bg-black/25 shrink-0" />
+            <div className="space-y-3 flex flex-col items-center">
+              <div className="w-9 h-9 rounded-full bg-black/20" />
+              <div className="w-9 h-9 rounded-full bg-black/20" />
+              <div className="w-9 h-9 rounded-full bg-black/20" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 10. PHOTO REELS / CAROUSEL BENTO SLIDES BROWSER SHIMMER
+  if (viewKey === 'photo_reels') {
+    return (
+      <div className="space-y-6 w-full font-sans select-none" style={{ direction: 'rtl' }}>
+        {/* Navigation line bar */}
+        <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+          <div className={`w-16 h-7 rounded-xl ${shimmerClass}`} />
+          <div className={`h-3.5 w-32 rounded-full ${shimmerClass}`} />
+        </div>
+
+        {/* Dynamic carousel rectangle board */}
+        <div className={`w-full aspect-[4/3] rounded-3xl ${shimmerClass}`} />
+
+        {/* Indicators and post text info card */}
+        <div className={`p-5 rounded-3xl border ${cardBgClass} space-y-3`}>
+          <div className="flex justify-center gap-1.5 mb-2">
+            <div className={`w-2 h-2 rounded-full ${shimmerClass}`} />
+            <div className={`w-2 h-2 rounded-full ${shimmerClass}`} />
+            <div className={`w-2 h-2 rounded-full ${shimmerClass}`} />
+          </div>
+          <div className={`h-3.5 w-full rounded-full ${shimmerClass}`} />
+          <div className={`h-3 w-3/4 rounded-full ${shimmerClass}`} />
+        </div>
+      </div>
+    );
+  }
+
+  // 11. DEFAULT FALLBACK / DASHBOARD MAIN PORTAL FEED SHIMMER
+  return (
+    <div className="space-y-6 w-full text-right font-sans select-none" style={{ direction: 'rtl' }}>
+      {/* Search mock bar */}
+      <div className={`h-11 w-full rounded-xl ${shimmerClass}`} />
+
+      {/* Pill buttons horizontal layout */}
+      <div className="flex flex-row gap-2 overflow-hidden py-1">
+        {[1, 2, 3, 4, 5].map((item) => (
+          <div 
+            key={item} 
+            className={`h-9 rounded-xl ${shimmerClass} shrink-0`} 
+            style={{ width: `${60 + (item * 13) % 40}px` }}
+          />
+        ))}
+      </div>
+
+      {/* Primary channel profile notification banner card */}
+      <div className={`p-4 rounded-3xl border ${isDark ? 'bg-slate-900/40 border-slate-800/50' : 'bg-slate-50 border-slate-200'} flex items-center justify-between`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-full ${shimmerClass} shrink-0`} />
+          <div className="space-y-2">
+            <div className={`h-3 w-32 rounded-full ${shimmerClass}`} />
+            <div className={`h-2 w-16 rounded-full ${shimmerClass}`} />
+          </div>
+        </div>
+        <div className={`h-7 w-20 rounded-xl ${shimmerClass}`} />
+      </div>
+
+      {/* Feed general list stream elements (2 massive poster posts cards) */}
+      {[1, 2].map((i) => (
+        <div key={i} className={`p-5 rounded-3xl border ${cardBgClass} space-y-4`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-full ${shimmerClass} shrink-0`} />
+            <div className="space-y-1.5 flex-1 select-none pr-1">
+              <div className={`h-3.5 w-28 rounded-full ${shimmerClass}`} />
+              <div className={`h-2.5 w-14 rounded-full ${shimmerClass}`} />
+            </div>
+          </div>
+          <div className={`h-40 w-full rounded-2xl ${shimmerClass}`} />
+          <div className="space-y-2">
+            <div className={`h-3.5 w-full rounded-full ${shimmerClass}`} />
+            <div className={`h-3.5 w-11/12 rounded-full ${shimmerClass}`} />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -2050,6 +2525,7 @@ export default function App() {
           ? novel.text.replace(/#کیسه|#ناول|#داستان|#کیسې|#رومان|#غږیز|#صوتي|#کتاب|#داستانونه/g, '').split('\n')[0].trim()
           : 'بې نومه اثر';
 
+        const cleanSnippet = pText.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
         const newBookmark = {
           id: keyId,
           chapterId: chapterId,
@@ -2057,7 +2533,7 @@ export default function App() {
           novelId: novel?.id || '',
           novelTitle: cleanNovelTitle,
           paragraphIndex: pIndex,
-          textSnippet: pText.substring(0, 75) + (pText.length > 75 ? '...' : ''),
+          textSnippet: cleanSnippet.substring(0, 350) + (cleanSnippet.length > 350 ? '...' : ''),
           paragraphText: pText,
           timestamp: Date.now(),
           chapterPost: chapter,
@@ -2133,6 +2609,73 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
 
+  // Recent search queries state (maximum 5) with localStorage persistence
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('recentSearches');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const activeViewKey = (() => {
+    if (activeNovelTextChapter) {
+      return `chapter_${activeNovelTextChapter.id || activeNovelTextChapter.title || 'unknown'}`;
+    }
+    if (selectedPost) {
+      return `post_${selectedPost.id || 'unknown'}`;
+    }
+    if (isSettingsPageOpen) return 'settings';
+    if (isAboutPageOpen) return 'about';
+    if (isContactPageOpen) return 'contact';
+    if (isCategoryPageOpen) return 'category';
+    if (isNovelsPageOpen) return 'novels';
+    if (isFullFeedOpen) return 'full_feed';
+    if (isReelsOpen) return 'reels';
+    if (isPhotoReelsOpen) return 'photo_reels';
+    if (isSearchOpen) return 'search';
+    return 'dashboard';
+  })();
+
+  const lastViewKeyRef = useRef<string>(activeViewKey);
+
+  useEffect(() => {
+    if (activeViewKey !== lastViewKeyRef.current) {
+      setIsTransitioning(true);
+      lastViewKeyRef.current = activeViewKey;
+      
+      const timer = setTimeout(() => {
+        setIsTransitioning(false);
+        window.scrollTo({ top: 0, behavior: 'instant' as any });
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [activeViewKey]);
+
+  const addToRecentSearches = (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 2) return;
+    setRecentSearches((prev) => {
+      const filtered = prev.filter((q) => q.toLowerCase() !== trimmed.toLowerCase());
+      const updated = [trimmed, ...filtered].slice(0, 5);
+      try {
+        localStorage.setItem('recentSearches', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  useEffect(() => {
+    if (!searchQuery) return;
+    const timer = setTimeout(() => {
+      addToRecentSearches(searchQuery);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   // Splash Screen and Onboarding states
   const [showSplash, setShowSplash] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -2145,7 +2688,7 @@ export default function App() {
   
   // Custom interactive & persistent style/layout configurations
   const [textSizeClass, setTextSizeClass] = useState<'sm' | 'base' | 'lg' | 'xl'>(() => {
-    return (localStorage.getItem('dewa_text_size') as any) || 'xl';
+    return (localStorage.getItem('dewa_text_size') as any) || 'base';
   });
   const [homeLayout, setHomeLayout] = useState<'standard' | 'grid' | 'compact' | 'masonry' | 'minimalist'>(() => {
     return (localStorage.getItem('dewa_home_layout') as any) || 'standard';
@@ -4116,8 +4659,53 @@ export default function App() {
     // 1. Daily Prose / Writing
     const dailyWriting = allPosts.find(p => !p.hasVideo && !p.hasAudio && !p.photoUrl && !isStoryPost(p) && !getIsNovelOrNovelPart(p) && p.text && p.text.length > 40) || allPosts[0];
 
-    // 2. Daily Poetry
-    const dailyPoetry = pashtoVersesList[currentVerseIndex];
+    // 2. Daily Poetry from real app posts / content (محتوا)
+    let dailyPoetry: PashtoVerse;
+    const realPoemPosts = allPosts.filter(getIsPoem);
+    const poetrySource = realPoemPosts.length > 0 ? realPoemPosts : allPosts;
+    
+    const dayIndex = new Date().getDate(); // Deterministic index changing once per day (1-31)
+    const selectedPost = poetrySource[dayIndex % poetrySource.length];
+    
+    // Extract couplet and format nicely
+    let cleanText = selectedPost.text || '';
+    // Strip off hashtags
+    cleanText = cleanText.replace(/#[\u0600-\u06FFa-zA-Z0-9_]+/g, '').trim();
+    
+    let author = 'رحمان بابا'; // standard classic fallback
+    const textLower = (selectedPost.text || '').toLowerCase();
+    if (textLower.includes('رحمان بابا') || textLower.includes('رحمان بابا')) author = 'عبدالرحمان بابا';
+    else if (textLower.includes('حمزه بابا')) author = 'حمزه شينواری';
+    else if (textLower.includes('خوشحال')) author = 'خوشحال خان خټک';
+    else if (textLower.includes('کاروان')) author = 'پیر محمد کاروان';
+    else if (textLower.includes('تراب')) author = 'مطیع الله تراب';
+    else if (textLower.includes('دروېش')) author = 'دروېش درانی';
+    else if (textLower.includes('جهاني')) author = 'عبدالباري جهاني';
+    else {
+      // Look for poet signature pattern "شاعر: ..."
+      const matchAuthor = cleanText.match(/(?:شاعر|لیکونکی)\s*:\s*([^\n]+)/i);
+      if (matchAuthor && matchAuthor[1]) {
+        author = matchAuthor[1].trim();
+        author = author.replace(/#[\u0600-\u06FFa-zA-Z0-9_]+/g, '').trim();
+      } else {
+        const lines = cleanText.split('\n');
+        const lastLine = lines[lines.length - 1]?.trim() || '';
+        if ((lastLine.startsWith('ـ') || lastLine.startsWith('-') || lastLine.startsWith('—')) && lastLine.length > 1 && lastLine.length < 25) {
+          author = lastLine.replace(/^[ـ\-\—]/, '').trim();
+          lines.pop();
+          cleanText = lines.join('\n').trim();
+        } else {
+          author = selectedPost.authorName || 'مېنې ډېوه همکار';
+        }
+      }
+    }
+
+    dailyPoetry = {
+      couplet: cleanText,
+      meaning: 'د پښتو ادبي خزانې غوره اثر',
+      author: author,
+      postRef: selectedPost
+    };
 
     // 3. Highlighted Video Post
     const videoPost = allPosts.find(p => p.hasVideo || p.videoUrl || p.videoThumbUrl) || allPosts[0];
@@ -4146,6 +4734,18 @@ export default function App() {
   const [storyProgress, setStoryProgress] = useState(0);
   const [isStoryPaused, setIsStoryPaused] = useState(false);
   const storyProgressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const storyVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Synchronize playing/pausing of story video on hold or pause
+  useEffect(() => {
+    if (storyVideoRef.current) {
+      if (isStoryPaused || !isStoryViewerOpen) {
+        storyVideoRef.current.pause();
+      } else {
+        storyVideoRef.current.play().catch((err) => console.log('Story video playback deferred or paused:', err));
+      }
+    }
+  }, [isStoryPaused, isStoryViewerOpen, activeStoryIndex]);
 
   const handleNextStory = () => {
     setStoryProgress(0);
@@ -4171,7 +4771,12 @@ export default function App() {
 
   // Story Autoplay & interval loop
   useEffect(() => {
-    if (!isStoryViewerOpen || storiesList.length === 0 || isStoryPaused) {
+    const activeStory = storiesList[activeStoryIndex];
+    const hasVideo = activeStory && (!!activeStory.videoUrl || (activeStory.videoList && activeStory.videoList.length > 0));
+
+    // If the active story has a video, the default interval timer should not run.
+    // The video player will update storyProgress and handle next story onEnded itself.
+    if (!isStoryViewerOpen || storiesList.length === 0 || isStoryPaused || hasVideo) {
       if (storyProgressIntervalRef.current) {
         clearInterval(storyProgressIntervalRef.current);
       }
@@ -5016,7 +5621,9 @@ export default function App() {
         </AnimatePresence>
 
         {/* Loader condition */}
-        {isLoading && !feedData ? (
+        {isTransitioning ? (
+          <ShimmerPageLoader isDark={isDark} viewKey={activeViewKey} />
+        ) : isLoading && !feedData ? (
           <div className="space-y-5 w-full font-sans">
             {[1, 2, 3].map((n) => (
               <div 
@@ -5223,7 +5830,7 @@ export default function App() {
                           onClick={() => changeReaderLineHeight(readerLineHeight + 0.1)}
                           style={{ cursor: 'pointer' }}
                           className={`w-7 h-7 rounded-lg flex items-center justify-center font-black transition ${
-                            isDark ? 'bg-slate-850 hover:bg-slate-750 text-white border border-slate-800' : 'bg-white hover:bg-slate-200 text-slate-800 border border-slate-250'
+                            isDark ? 'bg-slate-850 hover:bg-slate-755 text-white border border-slate-800' : 'bg-white hover:bg-slate-200 text-slate-850 border border-slate-250'
                           }`}
                           title="زیاتول"
                         >
@@ -5311,67 +5918,67 @@ export default function App() {
                           return i > 0 || (line.trim() !== firstLineClean && line.trim() !== '');
                         })
                         .map((para, idx) => {
-                        const trimmedPara = para.trim();
-                        if (!trimmedPara) return null;
+                          const trimmedPara = para.trim();
+                          if (!trimmedPara) return null;
 
-                        const bookmarkKey = `${activeNovelTextChapter.id}_p_${idx}`;
-                        const isBookmarked = bookmarksList.some(x => x.id === bookmarkKey);
+                          const bookmarkKey = `${activeNovelTextChapter.id}_p_${idx}`;
+                          const isBookmarked = bookmarksList.some(x => x.id === bookmarkKey);
 
-                        return (
-                          <div 
-                            key={idx}
-                            id={`para-${idx}`}
-                            onClick={() => toggleBookmark(activeNovelTextChapter.id, activeNovelTextChapter, selectedPost, idx, trimmedPara)}
-                            style={{ cursor: 'pointer' }}
-                            className={`group relative p-3.5 sm:p-4 rounded-2.5xl transition-all duration-200 text-right flex items-start gap-3 select-none border border-transparent ${
-                              isBookmarked 
-                                ? isDark 
-                                  ? 'bg-indigo-950/20 border-indigo-500/20 shadow-[0_2px_12px_rgba(99,102,241,0.08)]' 
-                                  : 'bg-indigo-50/55 border-indigo-200/60 shadow-xs'
-                                : 'hover:bg-slate-500/5'
-                            }`}
-                          >
-                            <div className="flex-1 text-right min-w-0">
-                              <p 
-                                className={`font-medium whitespace-pre-wrap ${
-                                  isBookmarked 
-                                    ? isDark ? 'text-indigo-200' : 'text-indigo-950 font-black' 
-                                    : isDark ? 'text-slate-200' : 'text-slate-800'
-                                }`}
-                                style={{ fontSize: `${readerFontSize}px`, lineHeight: readerLineHeight }}
-                              >
-                                {trimmedPara}
-                              </p>
-                            </div>
-                            
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleBookmark(activeNovelTextChapter.id, activeNovelTextChapter, selectedPost, idx, trimmedPara);
-                              }}
+                          return (
+                            <div 
+                              key={idx}
+                              id={`para-${idx}`}
+                              onClick={() => toggleBookmark(activeNovelTextChapter.id, activeNovelTextChapter, selectedPost, idx, trimmedPara)}
                               style={{ cursor: 'pointer' }}
-                              className={`p-1.5 rounded-lg shrink-0 transition-all duration-200 ${
+                              className={`group relative p-3.5 sm:p-4 rounded-2.5xl transition-all duration-200 text-right flex items-start gap-3 select-none border border-transparent ${
                                 isBookmarked 
-                                  ? 'bg-indigo-500/20 text-indigo-500' 
-                                  : 'opacity-20 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-indigo-400 hover:bg-slate-500/10'
+                                  ? isDark 
+                                    ? 'bg-indigo-950/25 border-indigo-500/20 shadow-[0_2px_12px_rgba(99,102,241,0.08)]' 
+                                    : 'bg-indigo-50/55 border-indigo-200/60 shadow-xs'
+                                  : 'hover:bg-slate-500/5'
                               }`}
-                              title={isBookmarked ? "ښکاره نښه (بوکمارک) لرې کول" : "نښه کول (بوکمارک کول)"}
                             >
-                              {isBookmarked ? (
-                                <BookmarkCheck className="w-3.5 h-3.5 fill-indigo-500 text-indigo-500 animate-pulse" />
-                              ) : (
-                                <Bookmark className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        );
-                      })})()
-                    }
+                              <div className="flex-1 text-right min-w-0">
+                                <p 
+                                  className={`font-medium whitespace-pre-wrap ${
+                                    isBookmarked 
+                                      ? isDark ? 'text-indigo-200' : 'text-indigo-950 font-black' 
+                                      : isDark ? 'text-slate-200' : 'text-slate-800'
+                                  }`}
+                                  style={{ fontSize: `${readerFontSize}px`, lineHeight: readerLineHeight }}
+                                >
+                                  {trimmedPara}
+                                </p>
+                              </div>
+                              
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleBookmark(activeNovelTextChapter.id, activeNovelTextChapter, selectedPost, idx, trimmedPara);
+                                }}
+                                style={{ cursor: 'pointer' }}
+                                className={`p-1.5 rounded-lg shrink-0 transition-all duration-200 ${
+                                  isBookmarked 
+                                    ? 'bg-indigo-505/20 text-indigo-505' 
+                                    : 'opacity-20 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-indigo-400 hover:bg-slate-500/10'
+                                }`}
+                                title={isBookmarked ? "ښکاره نښه (بوکمارک) لرې کول" : "نښه کول (بوکمارک کول)"}
+                              >
+                                {isBookmarked ? (
+                                  <BookmarkCheck className="w-3.5 h-3.5 fill-indigo-500 text-indigo-500 animate-pulse" />
+                                ) : (
+                                  <Bookmark className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          );
+                        });
+                    })()}
                   </div>
                 </div>
 
                 {/* Guard notice */}
-                <div className="pt-4 border-t border-slate-505/10 text-center select-none">
+                <div className="pt-4 border-t border-slate-500/10 text-center select-none">
                   <span className="text-[10px] text-slate-400 font-bold font-sans flex items-center justify-center gap-1">
                     🔒 د کاپي او شریکولو وړتیا بنده ده (متن خوندي دی)
                   </span>
@@ -5441,7 +6048,7 @@ export default function App() {
                           {selectedPost.hasAudio ? '🔊 غږیز رومان' : '✍️ لیکل شوی رومان'}
                         </span>
                         <span className="bg-emerald-500/15 text-emerald-500 font-sans font-black text-[9px] px-2 py-0.5 rounded border border-emerald-500/10">
-                          📖 بشپړ رومان
+                          📖 : : بشپړ رومان
                         </span>
                         <span className="font-mono text-[9px] text-slate-400 flex items-center gap-1 mr-1">
                           <Eye className="w-3 h-3 text-slate-500" />
@@ -5484,6 +6091,8 @@ export default function App() {
                     )}
                   </div>
                 </div>
+
+
 
                 {/* Bookmarks Section (خوندي شوي پاراګرافونه / یادښتونه) */}
                 {(() => {
@@ -5538,10 +6147,10 @@ export default function App() {
                                   <Trash2 className="w-3 h-3" />
                                 </button>
                               </div>
-                              <p className={`text-[11.5px] font-medium leading-relaxed font-sans line-clamp-3 pr-1 ${
+                              <p className={`text-[11.5px] font-medium leading-[1.65] font-sans pr-1 text-justify ${
                                 isDark ? 'text-slate-300' : 'text-slate-700'
                               }`}>
-                                {bookmark.textSnippet}
+                                {bookmark.textSnippet ? bookmark.textSnippet.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim() : ''}
                               </p>
                             </div>
                             
@@ -5659,7 +6268,7 @@ export default function App() {
                                   style={{ cursor: 'pointer' }}
                                   className={`p-3.5 rounded-3xl border transition-all duration-300 flex items-center justify-between gap-3 text-right hover:scale-[1.015] active:scale-[0.99] select-none ${
                                     isDark 
-                                      ? 'bg-slate-900/60 border-slate-805/85 hover:bg-slate-800 hover:border-indigo-500/20 shadow-md' 
+                                      ? 'bg-slate-900/60 border-slate-800/85 hover:bg-slate-800 hover:border-indigo-500/20 shadow-md' 
                                       : 'bg-white border-slate-205 shadow-sm hover:bg-slate-50 hover:border-indigo-500/20'
                                   } ${isRead ? 'opacity-45 saturate-[0.55] hover:opacity-95' : ''}`}
                                 >
@@ -5744,7 +6353,7 @@ export default function App() {
             {selectedPost.videoList && selectedPost.videoList.length > 0 ? (
               <div className="flex flex-col gap-3.5 w-full border-b border-slate-850 p-3 bg-black">
                 {selectedPost.videoList.map((videoItem, idx) => (
-                  <div key={idx} className="relative bg-black flex flex-col items-center w-full p-1 border border-slate-805 rounded-xl overflow-hidden max-w-md mx-auto">
+                  <div key={idx} className="relative bg-black flex flex-col items-center w-full p-1 border border-slate-800 rounded-xl overflow-hidden max-w-md mx-auto">
                     <BeautifulVideoPlayer
                       url={videoItem.url}
                       poster={videoItem.thumbUrl || selectedPost.photoUrl || undefined}
@@ -6931,6 +7540,76 @@ export default function App() {
                 )}
               </div>
 
+              {/* Recent Search Queries (وروستي پلټنې) */}
+              {!searchQuery && recentSearches.length > 0 && (
+                <div className="space-y-3 mb-6 animate-fade-in text-right">
+                  <div className="flex items-center justify-between border-b border-slate-500/10 pb-2 mb-2" style={{ direction: 'rtl' }}>
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                      <span className="text-[11px] font-black font-sans">وروستي لټونونه (د پلټنو تاریخچه):</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setRecentSearches([]);
+                        try {
+                          localStorage.removeItem('recentSearches');
+                        } catch {}
+                      }}
+                      style={{ cursor: 'pointer' }}
+                      className={`text-[10px] font-bold py-1 px-2.5 rounded flex items-center gap-1 transition ${
+                        isDark 
+                          ? 'text-red-400 bg-red-950/10 hover:bg-red-950/30 hover:text-red-300' 
+                          : 'text-red-700 bg-red-50/50 hover:bg-red-50 hover:text-red-800'
+                      }`}
+                      title="تاریخچه پاکول"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>پاکول</span>
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-start md:justify-end" style={{ direction: 'rtl' }}>
+                    {recentSearches.map((term, index) => (
+                      <div key={index} className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setSearchQuery(term);
+                            addToRecentSearches(term);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                          className={`text-[11px] px-3 py-1.5 rounded-lg transition font-bold select-none border whitespace-nowrap active:scale-95 ${
+                            isDark 
+                              ? 'bg-slate-900/60 border-slate-800 hover:bg-indigo-950/40 hover:border-indigo-500/40 text-indigo-300 hover:text-indigo-200' 
+                              : 'bg-slate-100 border-slate-200 hover:bg-white hover:border-indigo-400 hover:shadow-xs text-indigo-700 hover:text-indigo-800'
+                          }`}
+                        >
+                          {term}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setRecentSearches(prev => {
+                              const updated = prev.filter(q => q !== term);
+                              try {
+                                localStorage.setItem('recentSearches', JSON.stringify(updated));
+                              } catch {}
+                              return updated;
+                            });
+                          }}
+                          style={{ cursor: 'pointer' }}
+                          className={`p-1.5 rounded-lg border transition ${
+                            isDark 
+                              ? 'bg-slate-900/20 border-slate-800 hover:border-red-500/50 hover:bg-red-950/20 text-slate-400 hover:text-red-400' 
+                              : 'bg-slate-50 border-slate-200 hover:border-red-400 hover:bg-red-50 text-slate-500 hover:text-red-500'
+                          }`}
+                          title="حذف"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Quick Hashtag Suggestions */}
               {!searchQuery && (
                 <div className="space-y-3 mb-6 animate-fade-in text-right">
@@ -7259,7 +7938,7 @@ export default function App() {
                                       style={{ cursor: 'pointer' }}
                                       className={`w-[130px] sm:w-[150px] shrink-0 snap-start rounded-2xl p-2.5 border transition-all duration-300 relative overflow-hidden flex flex-col text-right hover:scale-[1.03] active:scale-[0.98] ${
                                         isDark 
-                                          ? 'bg-slate-905/70 border-slate-805/75 text-white hover:border-indigo-550/30' 
+                                          ? 'bg-slate-900/70 border-transparent text-white' 
                                           : 'bg-white border-slate-200 text-slate-900 hover:border-indigo-550/30 shadow-xs'
                                       } group`}
                                     >
@@ -8038,9 +8717,10 @@ export default function App() {
                     <span className={`text-[10px] font-black ${isDark ? 'text-slate-200' : 'text-slate-800'} font-sans mt-0.5`}>د مېنې ډېوه</span>
                   </div>
 
-                  {/* Individual stories listing */}
+                   {/* Individual stories listing */}
                   {storiesList.slice(0, 10).map((stPost, stIdx) => {
                     const thumb = stPost.photoUrl || (stPost.photoUrls && stPost.photoUrls[1] ? stPost.photoUrls[1] : (stPost.photoUrls && stPost.photoUrls[0] ? stPost.photoUrls[0] : null));
+                    const hasVideo = !!stPost.videoUrl || (stPost.videoList && stPost.videoList.length > 0) || !!stPost.hasVideo || !!stPost.videoThumbUrl;
                     return (
                       <div
                         key={stPost.id}
@@ -8052,12 +8732,11 @@ export default function App() {
                         className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 select-none group relative"
                       >
                         <div className="relative p-[2.5px] rounded-full bg-gradient-to-tr from-rose-500 via-fuchsia-600 to-purple-600 shadow transform hover:scale-105 active:scale-95 transition duration-300">
-                          <div className={`w-12 h-12 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-0.5`}>
+                          <div className={`w-12 h-12 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-0.5 relative`}>
                             {thumb ? (
-                              <img
+                              <CachedImage
                                 src={thumb}
                                 alt="thumb"
-                                referrerPolicy="no-referrer"
                                 className="w-full h-full object-cover rounded-full"
                               />
                             ) : (
@@ -8066,6 +8745,12 @@ export default function App() {
                               </div>
                             )}
                           </div>
+                          
+                          {hasVideo && (
+                            <span className="absolute -bottom-1 -right-1 bg-amber-500 text-slate-950 p-1 rounded-full border border-slate-900 shadow flex items-center justify-center animate-pulse">
+                              <Video className="w-2.5 h-2.5 text-black fill-current" />
+                            </span>
+                          )}
                         </div>
                         <span className={`text-[8.5px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'} font-sans truncate w-14 text-center mt-0.5`}>
                           {stPost.text ? stPost.text.replace(/#سټوري|#ستوری|#story|#سټوريانې/g, '').trim().substring(0, 15) : `کیسه ${stIdx + 1}`}
@@ -8130,141 +8815,181 @@ export default function App() {
                 {/* 2. Main content block inside slider */}
                 <div className="relative min-h-[190px] sm:min-h-[210px] flex flex-col justify-between p-5 sm:p-6 text-right overflow-hidden group">
                   <AnimatePresence mode="wait">
-                    {carouselActiveIndex === 0 && (
-                      <motion.div 
-                        key="poetry"
-                        initial={{ opacity: 0, scale: 0.98, y: 5 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.98, y: -5 }}
-                        transition={{ duration: 0.25 }}
-                        className="flex-1 flex flex-col justify-between h-full space-y-4 z-10 w-full"
-                      >
-                        <div className="space-y-2 w-full text-center relative py-1">
-                          <Quote className={`absolute w-16 h-16 opacity-[0.04] -top-3 -right-3 pointer-events-none ${
-                            isDark ? 'text-white' : 'text-indigo-600'
-                          }`} />
-                          
-                          <div className="flex items-center justify-center gap-1.5">
-                            <span className="flex items-center gap-1 text-[9px] font-sans font-black tracking-wider text-pink-500 bg-pink-500/10 px-2.5 py-0.5 rounded-full border border-pink-500/10 uppercase">
-                              <Feather className="w-2.5 h-2.5" />
-                              <span>د نن ورځې الهام بښونکی کلام و شعر</span>
-                            </span>
-                          </div>
-                          
-                          <h4 className={`text-base sm:text-lg font-black leading-relaxed font-sans pt-2 max-w-xl mx-auto whitespace-pre-line tracking-wide ${
-                            isDark ? 'text-slate-100' : 'text-slate-900'
-                          }`}>
-                            {homeCarouselItems.poetry.couplet}
-                          </h4>
+                    {carouselActiveIndex === 0 && (() => {
+                      const coupletText = homeCarouselItems.poetry.couplet || '';
+                      const poemLines = coupletText.split('\n').filter(l => l.trim().length > 0);
+                      const isMoreThanTwoPoemLines = poemLines.length > 2;
+                      const displayPoemText = isMoreThanTwoPoemLines 
+                        ? coupletText.substring(0, 50).trim() + '...' 
+                        : coupletText;
 
-                          {homeCarouselItems.poetry.meaning && (
-                            <p className={`text-[10px] sm:text-[11px] font-medium max-w-lg mx-auto italic leading-relaxed pt-1 opacity-80 ${
-                              isDark ? 'text-slate-450' : 'text-slate-550'
-                            }`}>
-                              {homeCarouselItems.poetry.meaning}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex items-center justify-between border-t border-slate-500/5 pt-3 w-full">
-                          <span className="text-[10.5px] font-black text-slate-450 flex items-center gap-1">
-                            <Feather className="w-3 h-3 text-fuchsia-500" />
-                            <span>د {homeCarouselItems.poetry.author} اثر</span>
-                          </span>
-                          
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => {
-                                const textToCopy = `"${homeCarouselItems.poetry.couplet}"\n- د ${homeCarouselItems.poetry.author} اثر\n\nوړاندې کونکی: د مېنې ډېوه اپلیکیشن`;
-                                navigator.clipboard.writeText(textToCopy);
-                                setOverlayActiveText("شعر په بریالیتوب سره کاپي شو! ✅");
-                              }}
-                              className={`p-1.5 rounded-xl text-[9px] flex items-center gap-1 border transition-all ${
-                                isDark 
-                                  ? 'bg-slate-950/20 text-indigo-400 border-slate-800 hover:bg-slate-900 hover:text-white' 
-                                  : 'bg-white text-indigo-700 border-slate-200 hover:bg-indigo-50 hover:border-indigo-200'
-                              }`}
-                              style={{ cursor: 'pointer' }}
-                              title="کاپي"
-                            >
-                              <Copy className="w-3 h-3" />
-                              <span>کاپي</span>
-                            </button>
+                      return (
+                        <motion.div 
+                          key="poetry"
+                          initial={{ opacity: 0, scale: 0.98, y: 5 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.98, y: -5 }}
+                          transition={{ duration: 0.25 }}
+                          className="flex-1 flex flex-col justify-between h-full space-y-4 z-10 w-full"
+                          onClick={() => {
+                            if (homeCarouselItems.poetry.postRef) {
+                              setSelectedPost(homeCarouselItems.poetry.postRef);
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="space-y-2 w-full text-center relative py-1">
+                            <Quote className={`absolute w-16 h-16 opacity-[0.04] -top-3 -right-3 pointer-events-none ${
+                              isDark ? 'text-white' : 'text-indigo-600'
+                            }`} />
                             
-                            <button
-                              onClick={() => {
-                                if (navigator.share) {
-                                  navigator.share({
-                                    title: 'د نن ورځې کلام',
-                                    text: `"${homeCarouselItems.poetry.couplet}"\n- د ${homeCarouselItems.poetry.author} اثر`,
-                                    url: window.location.href,
-                                  }).catch(() => {});
-                                } else {
+                            <div className="flex items-center justify-center gap-1.5">
+                              <span className="flex items-center gap-1 text-[9px] font-sans font-black tracking-wider text-pink-500 bg-pink-500/10 px-2.5 py-0.5 rounded-full border border-pink-500/10 uppercase">
+                                <Feather className="w-2.5 h-2.5" />
+                                <span>د نن ورځې الهام بښونکی کلام و شعر</span>
+                              </span>
+                            </div>
+                            
+                            <h4 className={`text-base sm:text-lg font-black leading-relaxed font-sans pt-2 max-w-xl mx-auto whitespace-pre-line tracking-wide ${
+                              isDark ? 'text-slate-100' : 'text-slate-900'
+                            }`}>
+                              {displayPoemText}
+                            </h4>
+
+                            {isMoreThanTwoPoemLines && (
+                              <div className="pt-1 select-none">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-pink-500 bg-pink-500/10 hover:bg-pink-500/20 px-2.5 py-0.5 rounded border border-pink-500/15 cursor-pointer">
+                                  <span>مکمل لوستل</span>
+                                </span>
+                              </div>
+                            )}
+
+                            {homeCarouselItems.poetry.meaning && !isMoreThanTwoPoemLines && (
+                              <p className={`text-[10px] sm:text-[11px] font-medium max-w-lg mx-auto italic leading-relaxed pt-1 opacity-80 ${
+                                isDark ? 'text-slate-450' : 'text-slate-550'
+                              }`}>
+                                {homeCarouselItems.poetry.meaning}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between border-t border-slate-500/5 pt-3 w-full">
+                            <span className="text-[10.5px] font-black text-slate-450 flex items-center gap-1 font-sans">
+                              <Feather className="w-3 h-3 text-fuchsia-500" />
+                              <span>د {homeCarouselItems.poetry.author} اثر</span>
+                            </span>
+                            
+                            <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => {
                                   const textToCopy = `"${homeCarouselItems.poetry.couplet}"\n- د ${homeCarouselItems.poetry.author} اثر\n\nوړاندې کونکی: د مېنې ډېوه اپلیکیشن`;
                                   navigator.clipboard.writeText(textToCopy);
-                                  setOverlayActiveText("شعر کاپي شو، ملګرو ته یې واستوئ! ✉️");
-                                }
-                              }}
-                              className={`p-1.5 rounded-xl text-[9px] flex items-center gap-1 border transition-all ${
-                                isDark 
-                                  ? 'bg-slate-950/20 text-purple-400 border-slate-800 hover:bg-slate-900 hover:text-white' 
-                                  : 'bg-white text-purple-700 border-slate-200 hover:bg-purple-50 hover:border-purple-200'
-                              }`}
-                              style={{ cursor: 'pointer' }}
-                              title="شریکول"
-                            >
-                              <Share2 className="w-3 h-3" />
-                              <span>شریکول</span>
-                            </button>
+                                  setOverlayActiveText("شعر په بریالیتوب سره کاپي شو! ✅");
+                                }}
+                                className={`p-1.5 rounded-xl text-[9px] flex items-center gap-1 border transition-all ${
+                                  isDark 
+                                    ? 'bg-slate-950/20 text-indigo-400 border-slate-800 hover:bg-slate-900 hover:text-white' 
+                                    : 'bg-white text-indigo-700 border-slate-200 hover:bg-indigo-50 hover:border-indigo-200'
+                                }`}
+                                style={{ cursor: 'pointer' }}
+                                title="کاپي"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>کاپي</span>
+                              </button>
+                              
+                              <button
+                                onClick={() => {
+                                  if (navigator.share) {
+                                    navigator.share({
+                                      title: 'د نن ورځې کلام',
+                                      text: `"${homeCarouselItems.poetry.couplet}"\n- د ${homeCarouselItems.poetry.author} اثر`,
+                                      url: window.location.href,
+                                    }).catch(() => {});
+                                  } else {
+                                    const textToCopy = `"${homeCarouselItems.poetry.couplet}"\n- د ${homeCarouselItems.poetry.author} اثر\n\nوړاندې کونکی: د مېنې ډېوه اپلیکیشن`;
+                                    navigator.clipboard.writeText(textToCopy);
+                                    setOverlayActiveText("شعر کاپي شو، ملګرو ته یې واستوئ! ✉️");
+                                  }
+                                }}
+                                className={`p-1.5 rounded-xl text-[9px] flex items-center gap-1 border transition-all ${
+                                  isDark 
+                                    ? 'bg-slate-950/20 text-purple-400 border-slate-800 hover:bg-slate-900 hover:text-white' 
+                                    : 'bg-white text-purple-700 border-slate-200 hover:bg-purple-50 hover:border-purple-200'
+                                }`}
+                                style={{ cursor: 'pointer' }}
+                                title="شریکول"
+                              >
+                                <Share2 className="w-3 h-3" />
+                                <span>شریکول</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      </motion.div>
-                    )}
+                        </motion.div>
+                      );
+                    })()}
 
-                    {carouselActiveIndex === 1 && (
-                      <motion.div 
-                        key="writing"
-                        initial={{ opacity: 0, scale: 0.98, y: 5 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.98, y: -5 }}
-                        transition={{ duration: 0.25 }}
-                        className="flex-1 flex flex-col justify-between h-full space-y-3 z-10 w-full"
-                        onClick={() => {
-                          if (homeCarouselItems.writing) {
-                            setSelectedPost(homeCarouselItems.writing);
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <div className="space-y-2 w-full">
-                          <div className="flex items-center gap-2">
-                            <span className="flex items-center gap-1 text-[9px] font-sans font-black text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-full border border-indigo-500/10">
-                              <FileText className="w-2.5 h-2.5 text-indigo-400" />
-                              <span>ورځنۍ په زړه پورې ادبي لیکنه</span>
-                            </span>
-                            {homeCarouselItems.writing?.date && (
-                              <span className="text-[7.5px] text-slate-400 font-sans">
-                                {getRelativeTimeInPashto(homeCarouselItems.writing.date, 'اوسمهال')}
+                    {carouselActiveIndex === 1 && (() => {
+                      const writingText = getPostTextWithFallback(homeCarouselItems.writing).replace(/#[^\s]+/g, '').trim();
+                      const writingLines = writingText.split('\n').filter(l => l.trim().length > 0);
+                      const isMoreThanTwoWritingLines = writingLines.length > 2;
+                      const displayWritingText = isMoreThanTwoWritingLines 
+                        ? writingText.substring(0, 50).trim() + '...' 
+                        : writingText;
+
+                      return (
+                        <motion.div 
+                          key="writing"
+                          initial={{ opacity: 0, scale: 0.98, y: 5 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.98, y: -5 }}
+                          transition={{ duration: 0.25 }}
+                          className="flex-1 flex flex-col justify-between h-full space-y-3 z-10 w-full"
+                          onClick={() => {
+                            if (homeCarouselItems.writing) {
+                              setSelectedPost(homeCarouselItems.writing);
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="space-y-2 w-full">
+                            <div className="flex items-center gap-2">
+                              <span className="flex items-center gap-1 text-[9px] font-sans font-black text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-full border border-indigo-500/10">
+                                <FileText className="w-2.5 h-2.5 text-indigo-400" />
+                                <span>ورځنۍ په زړه پورې ادبي لیکنه</span>
                               </span>
+                              {homeCarouselItems.writing?.date && (
+                                <span className="text-[7.5px] text-slate-400 font-sans">
+                                  {getRelativeTimeInPashto(homeCarouselItems.writing.date, 'اوسمهال')}
+                                </span>
+                              )}
+                            </div>
+                            
+                            <p className={`text-xs sm:text-sm font-medium leading-relaxed font-sans mt-1 ${
+                              isDark ? 'text-slate-200' : 'text-slate-800'
+                            }`}>
+                              {displayWritingText}
+                            </p>
+
+                            {isMoreThanTwoWritingLines && (
+                              <div className="pt-1 select-none">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/20 px-2.5 py-0.5 rounded border border-indigo-500/15 cursor-pointer">
+                                  <span>مکمل لوستل</span>
+                                </span>
+                              </div>
                             )}
                           </div>
                           
-                          <p className={`text-xs sm:text-sm font-medium leading-relaxed font-sans mt-1 line-clamp-3 ${
-                            isDark ? 'text-slate-200' : 'text-slate-800'
-                          }`}>
-                            {getPostTextWithFallback(homeCarouselItems.writing).replace(/#[^\s]+/g, '').trim()}
-                          </p>
-                        </div>
-                        
-                        <div className="flex items-center justify-between border-t border-slate-500/5 pt-3 mt-2 w-full">
-                          <span className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 flex items-center gap-1">
-                            <span>جزییات او تبصرې ومومئ</span>
-                            <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
-                          </span>
-                          <span className="text-[8px] text-slate-400 font-sans">پلټنه وکړۍ 📖</span>
-                        </div>
-                      </motion.div>
-                    )}
+                          <div className="flex items-center justify-between border-t border-slate-500/5 pt-3 mt-2 w-full font-sans">
+                            <span className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 flex items-center gap-1">
+                              <span>جزییات او تبصرې ومومئ</span>
+                              <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
+                            </span>
+                            <span className="text-[8px] text-slate-400 font-sans">پلټنه وکړۍ 📖</span>
+                          </div>
+                        </motion.div>
+                      );
+                    })()}
 
                     {carouselActiveIndex === 2 && (() => {
                       const pv = homeCarouselItems.video;
@@ -8905,6 +9630,255 @@ export default function App() {
             <div className="space-y-3">
               {homePosts.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs">پوسټونه نشته.</div>
+              ) : selectedCategory === 'stories' ? (
+                /* BEAUTIFUL CIRCULAR VIEW LISTS FOR STORIES (سټوريانې) */
+                <div className="space-y-6 animate-fade-in text-right p-1" style={{ direction: 'rtl' }}>
+                  <div className={`p-4 rounded-3xl ${isDark ? 'bg-slate-900/40 border border-slate-800' : 'bg-slate-50 border border-slate-205'} flex items-center justify-between text-xs`}>
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-pink-500 animate-pulse" />
+                      <span className={`font-black ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>پښتو ادبي سټوريانې (غوره کيسې)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">ستاسو لپاره غوره شوي {homePosts.length} سټوريانې</span>
+                  </div>
+
+                  <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-x-4 gap-y-7 justify-items-center" style={{ direction: 'rtl' }}>
+                    {homePosts.map((post) => {
+                      const stIdx = storiesList.findIndex(s => s.id === post.id);
+                      const isRead = readPostIds.includes(post.id);
+                      const thumb = post.photoUrl || (post.photoUrls && post.photoUrls[0]) || "https://images.unsplash.com/photo-1543508282-6319a3e2621d?w=200&q=80";
+                      const cleanText = post.text 
+                        ? post.text.replace(/#سټوري|#ستوری|#story|#سټوريانې/g, '').trim()
+                        : 'ناول کیسه2';
+                      const title = cleanText.split('\n')[0]?.trim() || `کیسه ${stIdx !== -1 ? stIdx + 1 : ''}`;
+                      const displayTitle = title.length > 22 ? title.slice(0, 19) + '...' : title;
+                      const hasVideo = !!post.videoUrl || (post.videoList && post.videoList.length > 0) || !!post.hasVideo || !!post.videoThumbUrl;
+
+                      return (
+                        <div
+                          key={post.id}
+                          onClick={() => {
+                            if (stIdx !== -1) {
+                              setActiveStoryIndex(stIdx);
+                              setIsStoryViewerOpen(true);
+                              markPostAsRead(post.id);
+                            } else {
+                              setSelectedPost(post);
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                          className="flex flex-col items-center gap-2 cursor-pointer select-none group relative w-full"
+                        >
+                          {/* Rich Pink-Purple-Orange Glowing Circle Ring */}
+                          <div className={`relative p-[3px] rounded-full bg-gradient-to-tr from-pink-500 via-fuchsia-600 to-amber-500 transition-all duration-350 shadow-md group-hover:scale-108 group-hover:rotate-3 ${isRead ? 'opacity-60 saturate-[0.7]' : ''}`}>
+                            <div className={`w-18 h-18 sm:w-22 sm:h-22 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-0.5 relative`}>
+                              <CachedImage
+                                simple={true}
+                                src={thumb}
+                                alt={title}
+                                className="w-full h-full object-cover rounded-full"
+                              />
+                              {/* Dark overlay with play sign on hover */}
+                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center rounded-full">
+                                <Play className="w-5 h-5 text-white fill-white" />
+                              </div>
+                            </div>
+                            
+                            {/* Floating category badge on the bottom right */}
+                            {hasVideo ? (
+                              <span className="absolute -bottom-1 -right-1 bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 font-black text-[7px] sm:text-[8px] px-1.5 py-0.5 rounded-full border border-slate-950 shadow flex items-center gap-0.5 animate-pulse">
+                                <Video className="w-2 h-2 text-black fill-current" />
+                                سټوري (ويډيو)
+                              </span>
+                            ) : (
+                              <span className="absolute -bottom-1 -right-1 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-[7px] sm:text-[8px] px-1.5 py-0.5 rounded-full border border-slate-950 shadow">
+                                سټوري
+                              </span>
+                            )}
+                          </div>
+
+                          <span className={`text-[10px] sm:text-[11.5px] font-black tracking-tight text-center line-clamp-2 h-9 leading-tight mt-1 transition-colors duration-200 ${
+                            isDark ? 'text-slate-200 group-hover:text-pink-400' : 'text-slate-800 group-hover:text-pink-600'
+                          }`}>
+                            {displayTitle}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : selectedCategory === 'videos' ? (
+                /* BEAUTIFUL CIRCULAR VIEW + HIGH DENSITY CINEMATIC THUMBNAILS FOR VIDEOS (ویډیويي) */
+                <div className="space-y-6 animate-fade-in text-right p-1" style={{ direction: 'rtl' }}>
+                  
+                  {/* Part A: Circular View List row for Videos */}
+                <div className="relative p-1 bg-slate-500/5 dark:bg-slate-900/10 rounded-2xl border border-slate-500/10 mb-4" style={{ direction: 'rtl' }}>
+                  <div className="px-3 py-1.5 flex items-center justify-between border-b border-slate-500/5">
+                    <div className="flex items-center gap-1.5">
+                      <PlayCircle className="w-4 h-4 text-emerald-500 animate-pulse" />
+                      <span className={`text-[12px] font-black ${isDark ? 'text-white' : 'text-slate-950'} font-sans`}>
+                        ویډیويي چټک ګرد لیست
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-slate-400 font-bold">د کتنې لپاره ورګډ شئ</span>
+                  </div>
+                  
+                  <div className="flex gap-4.5 items-center overflow-x-auto scrollbar-none py-3.5 px-4 justify-start">
+                    {homePosts.map((post) => {
+                      const thumb = getVideoThumbnail(post);
+                      const isRead = readPostIds.includes(post.id);
+                      
+                      const handleVideoClick = () => {
+                        const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                        if (currentScroll > 0) {
+                          detailScrollPosRef.current = currentScroll;
+                        }
+                        const idx = reelsList.findIndex(r => r.post.id === post.id);
+                        if (idx !== -1) {
+                          setActiveReelIndex(idx);
+                          setIsReelsOpen(true);
+                        } else {
+                          setSelectedPost(post);
+                        }
+                        markPostAsRead(post.id);
+                      };
+
+                      const cleanText = post.text 
+                        ? post.text.replace(/#ویډیو|#ويډيو|#video|#ويډيوګانې/g, '').trim()
+                        : 'پښتو ادبی ویډیو';
+                      const title = cleanText.split('\n')[0]?.trim() || 'وېډیو پوسټ';
+                      const displayTitle = title.length > 15 ? title.slice(0, 12) + '...' : title;
+
+                      return (
+                        <div
+                          key={`circle-vid-${post.id}`}
+                          onClick={handleVideoClick}
+                          style={{ cursor: 'pointer' }}
+                          className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 select-none group relative"
+                        >
+                          <div className={`relative p-[2.5px] rounded-full bg-gradient-to-tr from-amber-500 via-rose-600 to-indigo-500 shadow transform hover:scale-105 transition duration-300 ${isRead ? 'opacity-60' : ''}`}>
+                            <div className={`w-13 h-13 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-[1.5px] relative`}>
+                              <CachedImage
+                                simple={true}
+                                src={thumb}
+                                alt={title}
+                                className="w-full h-full object-cover rounded-full filter blur-[15px] scale-110 saturate-[1.35]"
+                              />
+                              <div className="absolute inset-0 bg-black/35 flex items-center justify-center rounded-full">
+                                <Play className="w-4 h-4 text-white fill-white animate-pulse" />
+                              </div>
+                            </div>
+                          </div>
+                          <span className={`text-[8.5px] font-black ${isDark ? 'text-slate-300' : 'text-slate-700'} font-sans truncate w-14 text-center mt-0.5`}>
+                            {displayTitle}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+
+                  {/* Part B: Cinematic Videos Grid */}
+                  <div className="grid grid-cols-3 gap-2 sm:gap-4" style={{ direction: 'rtl' }}>
+                    {homePosts.map((post) => {
+                      const isRead = readPostIds.includes(post.id);
+                      const isFavorite = favoritePostIds.includes(post.id);
+                      const thumb = getVideoThumbnail(post);
+                      
+                      const handleVideoClick = () => {
+                        const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                        if (currentScroll > 0) {
+                          detailScrollPosRef.current = currentScroll;
+                        }
+                        const idx = reelsList.findIndex(r => r.post.id === post.id);
+                        if (idx !== -1) {
+                          setActiveReelIndex(idx);
+                          setIsReelsOpen(true);
+                        } else {
+                          setSelectedPost(post);
+                        }
+                        markPostAsRead(post.id);
+                      };
+
+                      const cleanText = post.text 
+                        ? post.text.replace(/#ویډیو|#ويډيو|#video|#ويډيوګانې/g, '').trim()
+                        : 'ادبي لنډه کیسه او ویډیو';
+                      const firstLine = cleanText.split('\n')[0]?.trim() || 'ادبي ویډیو';
+                      const shortTitle = firstLine.length > 25 ? firstLine.slice(0, 22) + '...' : firstLine;
+                      
+                      return (
+                        <div
+                          key={`grid-vid-${post.id}`}
+                          onClick={handleVideoClick}
+                          style={{ cursor: 'pointer' }}
+                          className={`group rounded-2xl overflow-hidden border transition-all duration-350 flex flex-col relative ${
+                            isDark 
+                              ? 'bg-slate-900/50 border-slate-800/80 hover:border-amber-500/30 shadow-md' 
+                              : 'bg-white border-slate-205 shadow-md hover:border-amber-500/30'
+                          } ${isRead ? 'opacity-65' : ''}`}
+                        >
+                          {/* Rich vertical rectangular aspect video ratio wrapper */}
+                          <div className="w-full aspect-[9/15.5] bg-slate-950 overflow-hidden relative shadow-inner rounded-xl">
+                            <CachedImage
+                              src={thumb}
+                              alt={shortTitle}
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.08] filter blur-[24px] saturate-[1.4] opacity-80"
+                            />
+                            
+                            {/* Rich cinematic play overlay */}
+                            <div className="absolute inset-0 bg-black/15 flex items-center justify-center transition-all duration-300 group-hover:bg-black/10">
+                              <div className="w-10 h-10 rounded-full bg-amber-500/10 backdrop-blur-md border border-amber-500/30 flex items-center justify-center text-amber-500 scale-100 group-hover:scale-110 group-hover:bg-amber-500 group-hover:text-black transition-all duration-300 shadow-lg">
+                                <Play className="w-4.5 h-4.5 fill-current translate-x-0.5" />
+                              </div>
+                            </div>
+
+                            {/* Luxury metadata overlays */}
+                            <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded border border-white/10 text-white text-[7.5px] font-black flex items-center gap-0.5 shadow-lg font-sans">
+                              <Video className="w-2.5 h-2.5 text-amber-400" />
+                              <span>وېډیو</span>
+                            </div>
+
+                            <span className="absolute bottom-2 left-2 bg-black/75 backdrop-blur-sm text-white text-[7.5px] px-1.5 py-0.5 rounded border border-white/5 font-black flex items-center gap-0.5 font-sans">
+                              <Eye className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                              <span>{post.views || '1.2K'} کتنې</span>
+                            </span>
+                          </div>
+
+                          {/* Content bottom section */}
+                          <div className="p-2 flex flex-col justify-between flex-grow text-right">
+                            <h4 className={`text-[9px] sm:text-[11px] font-black leading-snug line-clamp-2 font-sans ${isDark ? 'text-slate-100 group-hover:text-amber-400' : 'text-slate-900 group-hover:text-amber-600'} transition-colors duration-200`}>
+                              {shortTitle}
+                            </h4>
+                            
+                            <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-500/10">
+                              <span className="text-[7px] sm:text-[8.5px] text-slate-455 flex items-center gap-0.5 font-sans">
+                                <Clock className="w-2 h-2 text-slate-500 shrink-0" />
+                                <span className="truncate">{getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}</span>
+                              </span>
+                              
+                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                <button
+                                  onClick={() => handleWhatsAppShare(post)}
+                                  className="p-1 rounded text-emerald-500 hover:bg-emerald-550/10 transition-all font-sans"
+                                >
+                                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                    <path d="M12.012 3c-4.96-.005-9.005 4.02-9.01 8.977a8.94 8.94 0 0 0 1.202 4.492L3 21l4.7-.1.353-.1.332.352c1.082.52 2.274.8 3.518.8h.01c4.965.004 9.01-4.015 9.013-8.977A8.97 8.97 0 0 0 12.012 3zm4.5 12c-.2.5-.9.9-1.4 1-1 .2-2.3-.2-3.8-1.5-1.5-1.3-2.5-2.8-2.8-3.4-.3-.5-.4-.9-.4-1.3 0-.6.3-.9.4-1.1.1-.2.2-.2.3-.2l.7.1c.2 0 .4.1.5.3.3.6.7 1.4.8 1.5.1.2.1.4 0 .6-.1.2-.2.3-.3.4l-.4.3c-.1.1-.1.2 0 .4.4.8 1 1.4 1.8 1.8.2.1.3.1.4 0 .2-.2.4-.5.6-.7l.4-.2c.2 0 .4.1.7.3.7.4 1.2.7 1.3.8.3.1.3.3.2.4-.1.4-.4.8-.8 1z"/>
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => toggleFavorite(post.id)}
+                                  className={`p-1 rounded transition-all ${isFavorite ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}`}
+                                >
+                                  <Heart className={`w-3 h-3 ${isFavorite ? 'fill-rose-550' : ''}`} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               ) : selectedCategory === 'novels' ? (
                 /* GORGEOUS 3-COLUMN GRID DESIGN FOR NOVELS (ناولونه) */
                 <div className="grid grid-cols-3 gap-3 md:gap-5" style={{ direction: 'rtl' }}>
@@ -8939,7 +9913,7 @@ export default function App() {
                         style={{ cursor: 'pointer' }}
                         className={`group relative flex flex-col aspect-[2/3.2] rounded-2xl overflow-hidden border transition-all duration-350 select-none ${
                           isDark 
-                            ? 'bg-slate-900/90 border-slate-805 hover:border-violet-550/40 hover:shadow-2xl hover:shadow-violet-950/20' 
+                            ? 'bg-slate-900/90 border-slate-800 hover:border-violet-550/40 hover:shadow-2xl hover:shadow-violet-950/20' 
                             : 'bg-white border-slate-205 hover:border-violet-400/40 hover:shadow-xl hover:shadow-violet-100/30'
                         }`}
                       >
@@ -9597,258 +10571,192 @@ export default function App() {
               ) : (
                 <div className={`mt-3 ${homeLayout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5'}`}>
                   {[1, 2, 3, 4].map((item) => (
-                    homeLayout === 'grid' ? (
                     <div
                       key={item}
-                      className={`${cardBg} rounded-xl overflow-hidden flex flex-col border border-slate-500/5 animate-pulse text-right`}
+                      className={`${cardBg} p-5 rounded-xl border border-slate-500/5 animate-pulse text-right space-y-3`}
                     >
-                      <div className="relative aspect-video w-full bg-slate-400/10 dark:bg-slate-800/40" />
-                      <div className="p-3 flex-1 space-y-2">
-                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-1/3" />
-                        <div className="h-4 bg-slate-400/25 dark:bg-slate-800/45 rounded w-11/12" />
-                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-2/3" />
+                      <div className="flex gap-2 items-center justify-end">
+                        <div className="h-3 w-16 bg-slate-400/20 dark:bg-slate-800/30 rounded" />
+                        <div className="h-8 w-8 rounded-full bg-slate-400/20 dark:bg-slate-800/30" />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="h-4 bg-slate-400/25 dark:bg-slate-800/40 rounded w-full" />
+                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-5/6" />
                       </div>
                     </div>
-                  ) : (
-                    <div
-                      key={item}
-                      className={`${cardBg} p-4 rounded-xl flex items-center gap-4 border border-slate-500/5 animate-pulse text-right`}
-                    >
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-400/15 dark:bg-slate-800/40 shrink-0" />
-                      <div className="flex-1 space-y-2">
-                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-1/4" />
-                        <div className="h-4 bg-slate-400/25 dark:bg-slate-800/35 rounded w-3/4" />
-                        <div className="h-3 bg-slate-400/15 dark:bg-slate-800/25 rounded w-5/6" />
-                        <div className="h-3 bg-slate-400/10 dark:bg-slate-800/20 rounded w-1/2" />
-                      </div>
-                    </div>
-                    )
                   ))}
                 </div>
               )
             )}
-
-            {/* INFINITE SCROLL SENTINEL & MANUAL OVERRIDE (د غبرکون سینټینل او نور وګورئ بټن) */}
-            <div className="mt-8 flex flex-col items-center justify-center gap-3">
-              {visibleHomeCount < filteredHomePosts.length && (
-                <div id="home-infinite-scroll-sentinel" className="h-6 w-full flex items-center justify-center opacity-0 pointer-events-none" />
-              )}
-              
-              {isAutoloadingMore || isScrapingMore ? (
-                <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                  <span className="w-4 h-4 rounded-full border-2 border-slate-700 border-t-indigo-500 animate-spin shrink-0"></span>
-                  <span className="text-xs font-semibold font-sans">صبر وکړئ، نور پوسټونه راغونډیږي...</span>
-                </div>
-              ) : (
-                <button
-                  onClick={async () => {
-                    setIsAutoloadingMore(true);
-                    try {
-                      if (visibleHomeCount < filteredHomePosts.length) {
-                        setVisibleHomeCount((prev) => prev + 30);
-                      } else {
-                        await loadMoreOlderPosts();
-                        setVisibleHomeCount((prev) => prev + 30);
-                      }
-                    } catch (err) {
-                      console.error("Manual home posts loading failed:", err);
-                    } finally {
-                      setIsAutoloadingMore(false);
-                    }
-                  }}
-                  className="w-full max-w-xs px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black transition-all duration-300 shadow-md active:scale-98 flex items-center justify-center gap-2"
-                >
-                  <Eye className="w-4 h-4 text-indigo-100" />
-                  <span>نور وګورئ (Load More)</span>
-                </button>
-              )}
-            </div>
           </div>
         ) : (
-          /* ==========================================================
-             B. DETAILED FULL LIST VIEW PAGE (بشپړ لیست پاڼه د ۱۰ باچ باچ لوډیدو سره)
-             ========================================================== */
-          <div className="space-y-5 animate-fade-in">
-             {/* Compact items list for full archive feed */}
-            <div className="flex flex-col gap-2.5">
-              {fullFeedPosts.map((post) => (
-                <div
-                  key={post.id}
-                  onClick={() => {
-                    const currentScroll = window.scrollY || document.documentElement.scrollTop;
-                    if (currentScroll > 0) {
-                      detailScrollPosRef.current = currentScroll;
-                    }
-                    setSelectedPost(post);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                  className={`${isDark ? 'bg-slate-900/50 border-white/40 hover:bg-slate-800/60' : 'bg-white border-slate-205 hover:bg-slate-100/80 shadow-md'} border p-4 rounded-xl flex items-center gap-4 transition group select-none text-right`}
-                >
-                  {/* Right: Enlarged thumbnail image with no white stroke */}
-                  {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
-                    post.photoUrl && (!post.photoUrls || post.photoUrls.length <= 1) ? (
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                        <img
-                          src={post.photoUrl || null}
-                          referrerPolicy="no-referrer"
-                          alt="Scrape preview node"
-                          className="w-full h-full object-cover transition duration-305 group-hover:scale-105"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                        {post.hasVideo && (
-                          <span className="absolute inset-0 flex items-center justify-center bg-black/35">
-                            <PlayCircle className="w-6 h-6 text-indigo-400 drop-shadow" />
-                          </span>
-                        )}
-                      </div>
-                    ) : post.videoThumbUrl ? (
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                        <img
-                          src={post.videoThumbUrl || null}
-                          referrerPolicy="no-referrer"
-                          alt="Scrape preview node"
-                          className="w-full h-full object-cover transition duration-305 group-hover:scale-105"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                        <span className="absolute inset-0 flex items-center justify-center bg-black/35">
-                          <PlayCircle className="w-6 h-6 text-indigo-400 drop-shadow" />
-                        </span>
-                      </div>
-                    ) : post.hasVideo ? (
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950/65 flex items-center justify-center shrink-0 text-indigo-400">
-                        <Video className="w-8 h-8 text-indigo-400" />
-                      </div>
-                    ) : null
-                  )}
-
-                  {/* Left: Snippet Text & Reactions */}
-                  <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5 h-full w-full">
-                    <div>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-400 mb-1.5 font-sans">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-slate-500" />
-                          {getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}
-                        </span>
-                      </div>
-                      <BeautifulTelegramText 
-                        text={getPostTextWithFallback(post)}
-                        isDark={isDark}
-                        fs={{ body: 'text-[12.5px] sm:text-[13px] font-semibold' }}
-                        limitLines={6}
-                      />
-
-                      {post.photoUrls && post.photoUrls.length > 1 && (
-                        <div 
-                          onClick={(e) => e.stopPropagation()} 
-                          className="flex gap-2 overflow-x-auto pb-1.5 pt-1 scrollbar-thin scrollbar-thumb-slate-705 mt-2.5 rtl"
-                          style={{ direction: 'rtl' }}
-                        >
-                          {post.photoUrls.map((url, imgIdx) => (
-                            <div 
-                              key={imgIdx} 
-                              className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden shrink-0 bg-slate-950/40 border border-slate-850/10 relative group"
-                            >
-                              <img
-                                src={url}
-                                referrerPolicy="no-referrer"
-                                alt="post gallery"
-                                className="w-full h-full object-cover hover:scale-105 transition duration-200 cursor-zoom-in"
-                                onClick={() => {
-                                  setZoomPhotoUrl(url);
-                                  setZoomScale(1);
-                                }}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {post.audioList && post.audioList.length > 0 ? (
-                        <div className="space-y-2.5 mt-2">
-                          {post.audioList.map((audioItem, idx) => {
-                            const cleanTitle = getBeautifulAudioTitle(audioItem.title, post.title, getPostTextWithFallback(post), idx);
-                            return (
-                              <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                            );
-                          })}
-                        </div>
-                      ) : post.hasAudio && post.audioUrl ? (
-                        <div className="mt-2">
-                          <BeautifulAudioPlayer url={post.audioUrl} title={getBeautifulAudioTitle(post.audioTitle, post.title, getPostTextWithFallback(post))} duration={post.audioDuration} isDark={isDark} tc={tc} />
-                        </div>
-                      ) : null}
-
-                      {getIsBook(post) && (
-                        <div className="mt-2.5">
-                          <CustomBookDownload post={post} isDark={isDark} tc={tc} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
+          <div className="space-y-4 animate-fade-in text-right">
+            {/* Archive feed search banner / title */}
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900/60 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200 text-slate-800'} text-right mb-4 flex items-center justify-between`} style={{ direction: 'rtl' }}>
+              <div className="flex items-center gap-2">
+                <Archive className={`w-5 h-5 ${tc.text}`} />
+                <span className="text-sm font-black font-sans">بشپړ ارشیف پوسټونه</span>
+              </div>
+              <button
+                onClick={() => setIsFullFeedOpen(false)}
+                style={{ cursor: 'pointer' }}
+                className="px-2.5 py-1 text-[10px] font-black bg-rose-500 hover:bg-rose-600 text-white rounded-lg transition"
+              >
+                وتل / شاته
+              </button>
             </div>
 
-            {/* AUTOMATED INFINITE SCROLL SENTINEL FOR ARCHIVE SCREEN */}
-            {feedData?.posts && (
-              <div id="infinite-scroll-sentinel" className="py-6 flex flex-col justify-center items-center gap-3">
-                {isScrapingMore ? (
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full border-2 border-slate-700 border-t-indigo-500 animate-spin shrink-0"></span>
-                    <span className="text-xs text-slate-400 font-sans">د تېرو او پخوانيو پوسټونو کښته کول... (لوډیږي)</span>
+            {/* Archive Feed List */}
+            <div className={`${homeLayout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5'}`}>
+              {allPosts.slice(0, visibleFullCount).map((post) => {
+                const handleClick = () => {
+                  const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                  if (currentScroll > 0) {
+                    detailScrollPosRef.current = currentScroll;
+                  }
+                  const hasVideo = post.hasVideo || post.videoUrl || (post.videoList && post.videoList.length > 0);
+                  const hasImage = post.photoUrl || (post.photoUrls && post.photoUrls.length > 0);
+                  if (hasVideo) {
+                    const idx = reelsList.findIndex(r => r.post.id === post.id);
+                    if (idx !== -1) {
+                      setActiveReelIndex(idx);
+                      setIsReelsOpen(true);
+                    } else {
+                      setSelectedPost(post);
+                    }
+                  } else if (hasImage) {
+                    const idx = photoReelsList.findIndex(p => p.post.id === post.id);
+                    if (idx !== -1) {
+                      setActivePhotoReelIndex(idx);
+                      setIsPhotoReelsOpen(true);
+                    } else {
+                      setSelectedPost(post);
+                    }
+                  } else {
+                    setSelectedPost(post);
+                  }
+                };
+
+                const isRead = readPostIds.includes(post.id);
+                return (
+                  <div
+                    key={post.id}
+                    onClick={handleClick}
+                    style={{ cursor: 'pointer' }}
+                    className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5 ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45' : ''}`}
+                  >
+                    {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
+                      post.photoUrl ? (
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
+                          <CachedImage
+                            src={post.photoUrl || ''}
+                            alt="thumb"
+                            className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                          />
+                          {post.hasVideo && (
+                            <span className="absolute inset-0 flex items-center justify-center bg-black/35">
+                              <PlayCircle className="w-5 h-5 text-white drop-shadow" />
+                            </span>
+                          )}
+                        </div>
+                      ) : post.videoThumbUrl ? (
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
+                          <img
+                            src={post.videoThumbUrl || null}
+                            referrerPolicy="no-referrer"
+                            alt="thumb"
+                            className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                          />
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/35">
+                            <PlayCircle className="w-5 h-5 text-white drop-shadow" />
+                          </span>
+                        </div>
+                      ) : post.hasVideo ? (
+                        <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-xl ${subCardBg} flex items-center justify-center shrink-0 text-indigo-400`}>
+                          <Video className={`w-6 h-6 ${tc.text}`} />
+                        </div>
+                      ) : null
+                    )}
+
+                    <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5 h-full">
+                      <div>
+                        <div className="flex items-center justify-between w-full mb-1.5 text-[10px] text-slate-400 font-sans" style={{ direction: 'rtl' }}>
+                          <div className="flex items-center gap-2">
+                            {isRead && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8.5px] font-bold flex items-center gap-0.5 border border-emerald-500/10 whitespace-nowrap">
+                                <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                <span>لوستل شوی</span>
+                              </span>
+                            )}
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-555" />
+                              {getRelativeTimeInPashto(post.date, post.timeLabel || 'وروستی')}
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleWhatsAppShare(post);
+                              }}
+                              className="focus:outline-hidden p-1.5 rounded-lg text-emerald-500 hover:text-emerald-400 transition"
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                <path d="M12.012 3c-4.96-.005-9.005 4.02-9.01 8.977a8.94 8.94 0 0 0 1.202 4.492L3 21l4.7-.1.353-.1.332.352c1.082.52 2.274.8 3.518.8h.01c4.965.004 9.01-4.015 9.013-8.977A8.97 8.97 0 0 0 12.012 3zm4.5 12c-.2.5-.9.9-1.4 1-1 .2-2.3-.2-3.8-1.5-1.5-1.3-2.5-2.8-2.8-3.4-.3-.5-.4-.9-.4-1.3 0-.6.3-.9.4-1.1.1-.2.2-.2.3-.2l.7.1c.2 0 .4.1.5.3.3.6.7 1.4.8 1.5.1.2.1.4 0 .6-.1.2-.2.3-.3.4l-.4.3c-.1.1-.1.2 0 .4.4.8 1 1.4 1.8 1.8.2.1.3.1.4 0 .2-.2.4-.5.6-.7l.4-.2c.2 0 .4.1.7.3.7.4 1.2.7 1.3.8.3.1.3.3.2.4-.1.4-.4.8-.8 1z"/>
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+
+                        <h3 className={`text-xs font-sans font-black leading-snug truncate-2-lines max-w-full ${isDark ? 'text-slate-100 hover:text-indigo-400' : 'text-slate-900 hover:text-indigo-650'}`}>
+                          {post.text ? post.text.slice(0, 75).trim() + '...' : 'پوسټ'}
+                        </h3>
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <button
-                      onClick={async () => {
-                        setIsScrapingMore(true);
-                        try {
-                          await loadMoreOlderPosts();
-                          setVisibleFullCount(prev => prev + 10);
-                        } catch (err) {
-                          console.error("Manual loading archive failed:", err);
-                        } finally {
-                          setIsScrapingMore(false);
-                        }
-                      }}
-                      className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-700 hover:border-slate-600 text-white dark:text-slate-300 text-xs font-bold transition active:scale-95 flex items-center justify-center gap-2 shadow-sm"
-                    >
-                      <Eye className="w-4 h-4 text-indigo-400" />
-                      <span>نور وګورئ (Load More)</span>
-                    </button>
-                    <span className="text-[10px] text-slate-500 font-sans opacity-75">د نورو پوستونو موندلو لپاره لاندې لاړ شئ یا په پورته بټن کلیک وکړئ.</span>
-                  </div>
-                )}
-              </div>
-            )}
+                );
+              })}
+            </div>
+
+            {/* Infinite Scroll Sentinel */}
+            <div id="infinite-scroll-sentinel" className="h-10 w-full flex items-center justify-center">
+              {visibleFullCount < allPosts.length && (
+                <RefreshCw className="w-5 h-5 animate-spin text-slate-400" />
+              )}
+            </div>
           </div>
         )}
       </main>
 
       {/* ==========================================================
-         SPLASH SCREEN OVERLAY (ښایسته شروع صفحه د ۵ سکینډه وال لوډینګ سره)
+         SPLASH SCREEN OVERLAY (ښایسته شروع صفحه د ښکلي افکټونو او مډرن لوډینګ بار سره)
          ========================================================== */}
       {showSplash && (
-        <div className={`fixed inset-0 z-[100] ${isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-800'} flex flex-col items-center justify-between py-12 px-6 text-center select-none transition-colors duration-300`}>
+        <div className={`fixed inset-0 z-[100] ${isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-800'} flex flex-col items-center justify-between py-12 px-6 text-center select-none transition-colors duration-300 overflow-hidden`}>
+          {/* Rotating glowing background ambient blurs */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
+            <div className="absolute top-1/4 left-1/4 w-72 h-72 rounded-full bg-indigo-500/10 blur-[90px] animate-pulse" />
+            <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-rose-500/10 blur-[110px] animate-pulse" style={{ animationDelay: '1.5s' }} />
+          </div>
+
           {/* Top spacer to push contents down */}
           <div className="flex-1" />
 
-          <div className="w-full max-w-sm flex flex-col items-center gap-6">
-            {/* Logo/Avatar container with animated glow styling */}
+          <div className="w-full max-w-sm flex flex-col items-center gap-6 relative z-10">
+            {/* Logo/Avatar container with animated glow styling & ripple rings */}
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 1, ease: 'easeOut' }}
-              className="relative p-1 bg-gradient-to-tr from-indigo-500 to-indigo-600 rounded-full shadow-2xl"
+              transition={{ duration: 0.85, ease: 'easeOut' }}
+              className="relative p-1 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 rounded-full shadow-2xl relative"
             >
+              <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 rounded-full blur animate-ping opacity-25" />
               <img
                 src={feedData?.channelInfo?.avatarUrl || 'https://telegram.org/img/t_logo.png'}
                 referrerPolicy="no-referrer"
-                className={`w-24 h-24 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} object-cover shadow-inner`}
+                className={`w-24 h-24 rounded-full ${isDark ? 'bg-slate-900 border-slate-900' : 'bg-white border-white'} object-cover shadow-inner relative z-10`}
                 alt="Channel logo"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://telegram.org/img/t_logo.png';
@@ -9861,23 +10769,31 @@ export default function App() {
               <motion.h2 
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className={`text-2xl sm:text-3xl font-black ${isDark ? 'text-white' : 'text-slate-900'} tracking-wide font-sans text-center`}
+                transition={{ delay: 0.2 }}
+                className={`text-2xl sm:text-3xl font-black ${isDark ? 'text-white' : 'text-slate-900'} tracking-wide font-sans text-center drop-shadow-xs`}
               >
                 {feedData?.channelInfo?.title || 'ښه راغلاست'}
               </motion.h2>
             </div>
 
             {/* Timed progress loader */}
-            <div className={`w-4/5 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-200 border-slate-300'} h-1.5 rounded-full overflow-hidden border relative mt-4`}>
+            <div className={`w-64 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-205 border-slate-300'} h-3 rounded-full overflow-hidden border p-0.5 relative mt-4 shadow-inner`}>
               <div 
-                className="h-full bg-indigo-500 rounded-full transition-all duration-75 ease-out" 
+                className="h-full bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-500 rounded-full transition-all duration-75 ease-out relative shadow-[0_0_12px_rgba(99,102,241,0.5)] overflow-hidden" 
                 style={{ width: `${splashProgress}%` }}
-              />
+              >
+                <div className="absolute inset-0 bg-white/20 animate-pulse" />
+              </div>
             </div>
             
-            <span className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-slate-400'} font-mono tracking-wider`}>
-              صبر وکړئ، معلومات لوډیږي... {Math.round(splashProgress)}%
+            <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-600'} font-sans font-black flex items-center gap-1.5`}>
+              <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+              <span>
+                {splashProgress < 20 ? 'د کلامونو او کتابونو راغونډول...' :
+                 splashProgress < 45 ? 'د ښکلو ډیزاینونو او سټایلونو ترتیب کول...' :
+                 splashProgress < 70 ? 'د شارټ او ترنمیز ریلزونو چمتو کول...' :
+                 splashProgress < 90 ? 'د واټساپ شاعري سټورېز...' : 'اپلیکیشن چمتو دی! وګورئ...'}
+              </span>
             </span>
           </div>
 
@@ -9888,8 +10804,8 @@ export default function App() {
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.45 }}
-            className="w-full flex justify-center pb-2"
+            transition={{ delay: 0.4 }}
+            className="w-full flex justify-center pb-2 relative z-10"
           >
             <div className={`text-xs font-mono font-bold tracking-wider uppercase ${isDark ? 'text-indigo-400 bg-indigo-950/40 border-indigo-900/40' : 'text-indigo-600 bg-indigo-50 border-indigo-200'} border px-4 py-1.5 rounded-full shadow-sm`}>
               Develop by obaidullah ghafari
@@ -9900,7 +10816,7 @@ export default function App() {
 
 
       {/* ==========================================================
-         FIRST-TIME 10-PAGE ONBOARDING CAROUSEL (ښکلی او د لسو پاڼو مډرن اونبورډینګ سلایډر)
+         FIRST-TIME 5-PAGE ONBOARDING CAROUSEL (ښکلی، فول سکرین، د موضوع موافق روښانه/تیاره حالت ډیزاین)
          ========================================================== */}
       <AnimatePresence>
         {showOnboarding && (() => {
@@ -9909,71 +10825,36 @@ export default function App() {
               title: 'پښتو ادبي خزانه',
               desc: 'د پښتنو د مډرن ادب، کلتور، بې‌ساري ادبي زېرمو او خوندورو شعرونو یوازینی پوره ډیجیټل راټولونه.',
               icon: Sparkles,
-              gradient: 'from-pink-500 via-fuchsia-600 to-rose-500',
+              gradient: 'from-pink-500 via-rose-500 to-amber-500',
               badge: 'بشپړه ادبي زېرمه'
             },
             {
-              title: 'د غونډال ښکلي سټوريانې',
-              desc: 'د لنډو شعرونو او خوندورو پیغامونو د مډرن کتنې لپاره د واټساپ سټایل په څېر ډینامیک پرمختګ کونکي سټوري ځانګړتیا.',
-              icon: Feather,
-              gradient: 'from-amber-500 to-orange-600',
-              badge: 'سټوري بڼه (Stories)'
+              title: 'د کیسو او ناولونو لړۍ',
+              desc: 'رښتیني پښتو ناولونه، په زړه پورې کتابونه او د تلیګرام پی‌ډی‌اف ارشیف په مستقیم ډول ولولئ.',
+              icon: BookOpen,
+              gradient: 'from-violet-500 via-purple-600 to-indigo-600',
+              badge: 'ناولونه او کتابونه'
             },
             {
-              title: 'شارټ او ترنمیز ریلزونه',
-              desc: 'د زړګي کښلي پښتو ترنمونو او د شعرونو کیفیت لرونکي لړۍ په ځانګړو او رنګینو لنډو ویډیوګانو (Reels) بڼې سره.',
+              title: 'لنډ او زړه راښکونکي ریلزونه',
+              desc: 'د پښتو ځانګړي ترنمونه، کښلي ویډیوګانې او لنډ ریلزونه (Reels) د ځانګړو ترتیباتو او غږونو سره وګورئ.',
               icon: Video,
-              gradient: 'from-red-500 to-rose-600',
+              gradient: 'from-red-500 via-rose-600 to-pink-500',
               badge: 'شارټ ویډیوګانې'
             },
             {
-              title: 'د انځورونو او بیتونو سلایډر',
-              desc: 'د کښلو شعرونو څخه جوړ شوي لوړ کیفیت لرونکي انځورونه او ګرافیکي بڼې په یو پوره مډرن تصویري ریل کښې وګورئ.',
-              icon: ImageIcon,
-              gradient: 'from-emerald-500 to-teal-600',
-              badge: 'انځورونه'
-            },
-            {
-              title: 'غږيز ترنمونه او پوډکاسټونه',
-              desc: 'د پښتلو د خوندورو ترنمونو، بېلابېلو غږیزو پیغامونو او خپرونو موندل او د شالید (Background Player) کې په اسانه غږول.',
-              icon: Music,
-              gradient: 'from-indigo-500 to-blue-600',
-              badge: 'غږيز کلامونه'
-            },
-            {
-              title: 'د ډلبندیو منظم موضوعات',
-              desc: 'ټول پوسټونه په بشپړه توګه په څانګو وېشل شوي دي لکه: شعرونه، لیکنې، غږیز پیغامونه او د پښتو ادبي کتابونه.',
+              title: 'د واټساپ سټایل سټوریانې',
+              desc: 'د لنډو شعرونو او په زړه پورې پیغامونو کتنې لپاره د واټساپ په څېر د ۲۴ ساعته سټوري سیستم.',
               icon: Layers,
-              gradient: 'from-violet-500 to-purple-600',
-              badge: 'کټګورۍ'
+              gradient: 'from-amber-400 via-orange-500 to-red-500',
+              badge: 'شاعري او سټورېز'
             },
             {
-              title: 'د پښتو ادبي کتابونو لوی ارشیف',
-              desc: 'د غوښتنلیک څخه په اسانۍ د تلیګرام لوی ادبي کتابونه او پي‌ډي‌اف (PDF) فایلونه کښته او په مستقیمه توګه مطالعه کړئ.',
-              icon: BookOpen,
-              gradient: 'from-cyan-500 to-blue-500',
-              badge: 'کتابتون او PDF'
-            },
-            {
-              title: 'د موبایل اصلي خبرتیاوې',
-              desc: 'هیڅ کله نوې ادبی خپرونې مه له لاسه ورکوئ، سمدستي پخپل اندارئډ موبایل بار (System Bar) کې رښتینې خبرتیا ترلاسه کړئ.',
-              icon: Bell,
-              gradient: 'from-purple-500 via-pink-500 to-rose-500',
-              badge: 'د غونډال خبرتیاوې'
-            },
-            {
-              title: 'روښانه او د سترګو هوسا بېلابېل حالتونه',
-              desc: 'د سترګو د هوساینې او په اسانه د لوستلو لپاره هر کله غوښتنلیک تیاره (Twilight Dark) یا روښانه بڼې ته اړولی شئ.',
+              title: 'شخصي رنګونه او تېاره حالت',
+              desc: 'د خپلې خوښې رنګ او په اسانۍ د لوستلو لپاره هر وخت ځانګړی تیاره (Twilight) یا روښانه بڼه غوره کړئ.',
               icon: Sun,
-              gradient: 'from-orange-400 to-amber-500',
+              gradient: 'from-blue-500 via-indigo-600 to-purple-600',
               badge: 'بهرني رنګونه'
-            },
-            {
-              title: 'خوښې او نښه شوي شعرونه',
-              desc: 'خپل تر ټولو محبوبه کلامونه په نښه کړئ او د انټرنیټ پرته یې په خپلو غوره والي کې د تل لپاره ذخیره وساتئ.',
-              icon: Heart,
-              gradient: 'from-rose-500 to-pink-600',
-              badge: 'زما خوښې'
             }
           ];
 
@@ -10005,83 +10886,72 @@ export default function App() {
               // ۱. پښتو ادبي خزانه
               setSelectedCategory('all');
             } else if (slideIndex === 1) {
-              // ۲. د سټوريانو برخه
+              // ۲. د کیسو او ناولونو برخه
+              setIsNovelsPageOpen(true);
+            } else if (slideIndex === 2) {
+              // ۳. شارټ او ترنمیز ریلزونه (Reels)
+              setIsReelsOpen(true);
+            } else if (slideIndex === 3) {
+              // ۴. د سټورېز برخه
               if (storiesList.length > 0) {
                 setActiveStoryIndex(0);
                 setIsStoryViewerOpen(true);
               } else {
                 setSelectedCategory('stories');
               }
-            } else if (slideIndex === 2) {
-              // ۳. شارټ او ترنمیز ریلزونه (Reels)
-              setIsReelsOpen(true);
-            } else if (slideIndex === 3) {
-              // ۴. د انځورونو او بیتونو سلایډر
-              setIsPhotoReelsOpen(true);
             } else if (slideIndex === 4) {
-              // ۵. غږيز کلامونه
-              setSelectedCategory('audio');
-            } else if (slideIndex === 5) {
-              // ۶. موضوعي ډلبندۍ
-              setIsCategoryPageOpen(true);
-            } else if (slideIndex === 6) {
-              // ۷. د کتابونو ارشیف (PDF)
-              setSelectedCategory('pdf');
-            } else if (slideIndex === 7) {
-              // ۸. د غونډال خبرتیاوې
+              // ۵. غونډال رنګونه او تنظیمات
               setIsSettingsPageOpen(true);
-            } else if (slideIndex === 8) {
-              // ۹. بهرني رنګونه (تھیم ترتیب)
-              setIsSettingsPageOpen(true);
-            } else if (slideIndex === 9) {
-              // ۱۰. خوښ شوي اثار (Favorites)
-              setIsFavoritesMenuOpen(true);
             }
           };
 
           return (
             <>
-              {/* Overlay Backdrop */}
+              {/* Immersive Theme-Adaptive Full-Screen Setup View */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 bg-slate-950/95 z-[9991] backdrop-blur-md"
-              />
+                className={`fixed inset-0 z-[9991] overflow-y-auto flex flex-col justify-between p-6 sm:p-12 select-none transition-colors duration-300 ${
+                  isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'
+                }`}
+              >
+                {/* Immersive background decoration */}
+                <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
+                  <div className={`absolute top-[-10%] right-[-10%] w-[50vw] h-[50vw] rounded-full blur-[110px] opacity-20 bg-gradient-to-br ${currentSlide.gradient}`} />
+                  <div className={`absolute bottom-[-10%] left-[-10%] w-[40vw] h-[40vw] rounded-full blur-[130px] opacity-15 bg-gradient-to-tr ${currentSlide.gradient}`} />
+                </div>
 
-              {/* Onboarding Dialog view */}
-              <div className="fixed inset-0 z-[9992] overflow-y-auto flex items-center justify-center p-4">
-                <motion.div
-                  initial={{ scale: 0.95, opacity: 0, y: 30 }}
-                  animate={{ scale: 1, opacity: 1, y: 0 }}
-                  exit={{ scale: 0.95, opacity: 0, y: -30 }}
-                  className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl relative text-right flex flex-col justify-between min-h-[580px]"
-                >
+                <div className="relative z-10 max-w-lg mx-auto w-full h-full flex flex-col justify-between min-h-[550px] flex-1">
                   
                   {/* Top Segmented Progress Bar and Skip Button */}
                   <div className="flex flex-col gap-4">
                     <div className="flex items-center justify-between gap-4" style={{ direction: 'rtl' }}>
-                      <span className="text-[10px] uppercase tracking-wider font-sans font-black text-slate-400 bg-slate-800/60 px-2.5 py-1 rounded-full">
-                        مرحله {activeOnboardingPage + 1} / 10
+                      <span className={`text-[10px] uppercase font-sans font-black ${
+                        isDark ? 'text-slate-300 bg-slate-900 border-slate-800' : 'text-slate-700 bg-white border-slate-200'
+                      } px-3.5 py-1.5 rounded-full border shadow-xs`}>
+                        مرحله {activeOnboardingPage + 1} / 5
                       </span>
                       <button
                         onClick={handleFinishOnboarding}
                         style={{ cursor: 'pointer' }}
-                        className="text-xs font-black font-sans text-rose-400 hover:text-rose-350 transition select-none active:scale-95"
+                        className="text-xs font-black font-sans text-rose-500 hover:text-rose-450 transition select-none active:scale-95 px-3 py-1.5 rounded-full hover:bg-rose-500/10"
                       >
                         تېرېدل / Skip
                       </button>
                     </div>
 
                     {/* Highly Interactive Navigable Segmented Progress Bars */}
-                    <div className="flex gap-1 w-full" style={{ direction: 'rtl' }}>
+                    <div className="flex gap-1.5 w-full" style={{ direction: 'rtl' }}>
                       {onboardingSlides.map((_, idx) => (
                         <button
                           key={idx}
                           onClick={() => setActiveOnboardingPage(idx)}
                           style={{ cursor: 'pointer' }}
                           title={`مرحله ${idx + 1}`}
-                          className="h-1.5 flex-1 bg-slate-800 rounded-full overflow-hidden focus:outline-none transition-transform hover:scale-y-125"
+                          className={`h-2 flex-1 rounded-full overflow-hidden focus:outline-none transition-all hover:scale-y-125 ${
+                            isDark ? 'bg-slate-800' : 'bg-slate-250'
+                          }`}
                         >
                           <div
                             className={`h-full transition-all duration-300 ${
@@ -10096,49 +10966,52 @@ export default function App() {
                   </div>
 
                   {/* Icon and Animated Content inside the slider */}
-                  <div className="my-5 flex flex-col items-center text-center">
+                  <div className="my-auto py-8 flex flex-col items-center text-center">
                     
                     {/* Glowing outer ring and icon */}
                     <motion.div
                       key={activeOnboardingPage}
-                      initial={{ scale: 0.6, rotate: -20, opacity: 0 }}
+                      initial={{ scale: 0.7, rotate: -15, opacity: 0 }}
                       animate={{ scale: 1, rotate: 0, opacity: 1 }}
-                      transition={{ type: 'spring', damping: 15 }}
+                      transition={{ type: 'spring', damping: 12 }}
                       onClick={() => handleLaunchFeatureOnboard(activeOnboardingPage)}
                       style={{ cursor: 'pointer' }}
-                      className={`w-18 h-18 rounded-full bg-gradient-to-tr ${currentSlide.gradient} p-0.5 shadow-lg shadow-indigo-500/10 flex items-center justify-center mb-4 relative cursor-pointer active:scale-95 transition`}
-                      title="د خلاصون لپاره کلیک وباسئ"
+                      className={`w-28 h-28 rounded-full bg-gradient-to-tr ${currentSlide.gradient} p-0.5 shadow-2xl flex items-center justify-center mb-6 relative cursor-pointer active:scale-95 transition`}
                     >
-                      <div className="w-full h-full bg-slate-900 rounded-full flex items-center justify-center">
-                        <SlideIcon className={`w-8 h-8 text-white`} />
+                      <div className={`w-full h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-800'} rounded-full flex items-center justify-center shadow-inner`}>
+                        <SlideIcon className={`w-12 h-12`} />
                       </div>
                       
-                      <span className="absolute -bottom-2 bg-slate-950 text-white rounded-full px-2.5 py-0.5 border border-slate-850 text-[8px] font-black tracking-wider shadow">
+                      <span className="absolute -bottom-3 bg-slate-950 text-white rounded-full px-3 py-0.5 border border-slate-800 text-[9px] font-black tracking-wider shadow">
                         {currentSlide.badge}
                       </span>
                     </motion.div>
 
                     {/* Texts with animations */}
-                    <div className="space-y-2" style={{ direction: 'rtl' }}>
+                    <div className="space-y-3" style={{ direction: 'rtl' }}>
                       <motion.h3
                         key={`title_${activeOnboardingPage}`}
-                        initial={{ opacity: 0, y: 10 }}
+                        initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.1 }}
                         onClick={() => handleLaunchFeatureOnboard(activeOnboardingPage)}
                         style={{ cursor: 'pointer' }}
-                        className="text-[16px] font-black text-white hover:text-indigo-400 transition leading-tight font-sans cursor-pointer flex items-center justify-center gap-1.5"
+                        className={`text-xl sm:text-2xl font-black ${
+                          isDark ? 'text-white' : 'text-slate-900'
+                        } hover:text-indigo-400 transition leading-tight font-sans cursor-pointer flex items-center justify-center gap-1.5`}
                       >
                         {currentSlide.title}
-                        <Sparkles className="w-4 h-4 text-amber-400" />
+                        <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
                       </motion.h3>
 
                       <motion.p
                         key={`desc_${activeOnboardingPage}`}
-                        initial={{ opacity: 0, y: 15 }}
+                        initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="text-xs text-slate-350 leading-relaxed font-semibold max-w-sm mx-auto px-2"
+                        transition={{ delay: 0.15 }}
+                        className={`text-xs sm:text-sm ${
+                          isDark ? 'text-slate-300' : 'text-slate-600'
+                        } leading-relaxed font-semibold max-w-sm mx-auto px-4`}
                       >
                         {currentSlide.desc}
                       </motion.p>
@@ -10147,13 +11020,13 @@ export default function App() {
                   </div>
 
                   {/* HIGHLY INTERACTIVE GRID OF FEATURES (د فیچرونو ځانګړی لیست چي په کلیک کولو سره په مستقیم ډول خلاصيږي) */}
-                  <div className="mb-6 border-t border-slate-800/80 pt-4 text-right w-full">
-                    <span className="block text-[11px] font-black text-amber-400 mb-2.5 font-sans leading-none flex items-center justify-start gap-1 justify-end">
+                  <div className={`mb-6 border-t ${isDark ? 'border-slate-800/80' : 'border-slate-200'} pt-4 text-right w-full`}>
+                    <span className="block text-[11px] font-black text-amber-500 mb-3 font-sans leading-none flex items-center justify-end gap-1">
                       <span>د کتنې لپاره لاندې په هر بېلابېل فیچر باندې کلیک وباسئ:</span>
-                      <Sparkles className="w-3 h-3 text-amber-450 animate-pulse" />
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
                     </span>
                     
-                    <div className="grid grid-cols-2 gap-2 max-h-34 overflow-y-auto pr-1 pb-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                    <div className="grid grid-cols-2 gap-2.5 max-h-36 overflow-y-auto pr-1 pb-1 scrollbar-thin">
                       {onboardingSlides.map((slide, idx) => {
                         const IconComponent = slide.icon;
                         const isCurrent = idx === activeOnboardingPage;
@@ -10162,17 +11035,21 @@ export default function App() {
                             key={idx}
                             onClick={() => handleLaunchFeatureOnboard(idx)}
                             style={{ cursor: 'pointer' }}
-                            className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-right transition-all duration-200 active:scale-[0.96] group ${
+                            className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border text-right transition-all duration-200 active:scale-[0.96] group ${
                               isCurrent 
-                                ? 'bg-slate-800/90 border-indigo-500/50 text-white shadow-md' 
-                                : 'bg-slate-950/65 border-slate-850 hover:border-slate-800 text-slate-300 hover:text-white'
+                                ? isDark 
+                                  ? 'bg-slate-850 border-indigo-500/50 text-white shadow-md' 
+                                  : 'bg-white border-indigo-500 text-indigo-700 shadow-md'
+                                : isDark 
+                                  ? 'bg-slate-900/65 border-slate-850 hover:border-slate-800 text-slate-300 hover:text-white' 
+                                  : 'bg-slate-100/80 border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900'
                             }`}
                           >
-                            <span className="text-[9.5px] font-bold truncate order-2 font-sans select-none pointer-events-none">
+                            <span className="text-[10px] font-black truncate order-2 font-sans select-none pointer-events-none">
                               {slide.title}
                             </span>
                             <div className={`p-1.5 rounded-lg bg-gradient-to-tr ${slide.gradient} text-white shrink-0 shadow-xs order-1 pointer-events-none select-none`}>
-                              <IconComponent className="w-3 h-3" />
+                              <IconComponent className="w-3.5 h-3.5" />
                             </div>
                           </button>
                         );
@@ -10181,12 +11058,12 @@ export default function App() {
                   </div>
 
                   {/* Navigation controls next, back and get started */}
-                  <div className="flex gap-3 items-center mt-2" style={{ direction: 'rtl' }}>
-                    {activeOnboardingPage < 9 ? (
+                  <div className="flex gap-3 items-center" style={{ direction: 'rtl' }}>
+                    {activeOnboardingPage < 4 ? (
                       <button
-                        onClick={() => setActiveOnboardingPage(prev => Math.min(prev + 1, 9))}
+                        onClick={() => setActiveOnboardingPage(prev => Math.min(prev + 1, 4))}
                         style={{ cursor: 'pointer' }}
-                        className={`flex-1 py-3 bg-gradient-to-r ${currentSlide.gradient} active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 font-sans shadow-lg shadow-indigo-500/10`}
+                        className={`flex-1 py-3.5 bg-gradient-to-r ${currentSlide.gradient} active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 font-sans shadow-lg shadow-indigo-500/10 hover:brightness-110`}
                       >
                         <span>بلې مرحلې ته لاړ شئ</span>
                         <ChevronLeft className="w-4 h-4" />
@@ -10195,7 +11072,7 @@ export default function App() {
                       <button
                         onClick={handleFinishOnboarding}
                         style={{ cursor: 'pointer' }}
-                        className="flex-1 py-3 bg-pink-600 hover:bg-pink-550 active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 font-sans shadow-lg shadow-pink-500/15"
+                        className="flex-1 py-3.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:brightness-110 active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 font-sans shadow-lg shadow-pink-500/15"
                       >
                         <span>دلته پیل کړئ</span>
                         <Check className="w-4 h-4" />
@@ -10206,15 +11083,17 @@ export default function App() {
                       <button
                         onClick={() => setActiveOnboardingPage(prev => Math.max(prev - 1, 0))}
                         style={{ cursor: 'pointer' }}
-                        className="px-5 py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold transition active:scale-[0.98]"
+                        className={`px-5 py-3.5 rounded-xl text-xs font-bold transition active:scale-[0.98] ${
+                          isDark ? 'bg-slate-800 hover:bg-slate-750 text-slate-300' : 'bg-slate-200 hover:bg-slate-250 text-slate-700 border border-slate-200'
+                        }`}
                       >
                         بېرته
                       </button>
                     )}
                   </div>
 
-                </motion.div>
-              </div>
+                </div>
+              </motion.div>
             </>
           );
         })()}
@@ -11275,17 +12154,31 @@ export default function App() {
                 <div className="w-full max-w-lg h-full flex flex-col justify-center items-center z-5">
                   {storyVideo ? (
                     <video
+                      ref={storyVideoRef}
                       src={storyVideo}
                       autoPlay
                       playsInline
                       muted={false}
+                      onTimeUpdate={(e) => {
+                        const vid = e.currentTarget;
+                        if (vid.duration) {
+                          setStoryProgress((vid.currentTime / vid.duration) * 100);
+                        }
+                      }}
+                      onDurationChange={(e) => {
+                        const vid = e.currentTarget;
+                        if (vid.duration) {
+                          setStoryProgress((vid.currentTime / vid.duration) * 100);
+                        }
+                      }}
+                      onEnded={handleNextStory}
                       className="max-h-[70vh] max-w-full rounded-2xl shadow-2xl object-contain border border-white/10 bg-black/40"
                     />
                   ) : storyImage ? (
-                    <img
+                    <CachedImage
+                      simple={true}
                       src={storyImage}
                       alt="story-media"
-                      referrerPolicy="no-referrer"
                       className="max-h-[70vh] max-w-full rounded-2xl shadow-2xl object-contain border border-white/10 bg-black/20"
                     />
                   ) : (
