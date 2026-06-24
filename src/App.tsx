@@ -5,6 +5,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { FeedResponse, TelegramPost } from './types';
+import sidebarBannerImg from './assets/images/sidebar_banner_1782207302113.jpg';
+import developerAvatarImg from './assets/images/developer_avatar_1782207316232.jpg';
+import adminAvatarImg from './assets/images/admin_avatar_1782207985680.jpg';
 import { 
   Eye, 
   Calendar, 
@@ -12,6 +15,7 @@ import {
   Image as ImageIcon, 
   Info,
   AlertCircle,
+  HelpCircle,
   Smartphone,
   Download,
   ChevronLeft,
@@ -73,9 +77,51 @@ import {
   Bookmark,
   BookmarkCheck,
   RotateCw,
-  Archive
+  Archive,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+// Memory fallback for environments where window.localStorage throws SecurityError (like sandbox iframes)
+const inMemoryStorage: Record<string, string> = {};
+
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      if (typeof window !== 'undefined' && 'localStorage' in window && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+    } catch (e) {
+      console.warn('Storage security/quota restriction active, reading via fallback cache:', e);
+    }
+    return inMemoryStorage[key] !== undefined ? inMemoryStorage[key] : null;
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      if (typeof window !== 'undefined' && 'localStorage' in window && window.localStorage) {
+        window.localStorage.setItem(key, value);
+        return;
+      }
+    } catch (e) {
+      console.warn('Storage security/quota restriction active, writing via fallback cache:', e);
+    }
+    inMemoryStorage[key] = value;
+  },
+  removeItem: (key: string): void => {
+    try {
+      if (typeof window !== 'undefined' && 'localStorage' in window && window.localStorage) {
+        window.localStorage.removeItem(key);
+        return;
+      }
+    } catch (e) {
+      console.warn('Storage security/quota restriction active, removing via fallback cache:', e);
+    }
+    delete inMemoryStorage[key];
+  }
+};
+
+// Override localStorage in this file with safeLocalStorage to prevent Security Errors / Sandbox crashes
+const localStorage = safeLocalStorage;
 
 // Custom elegant PDF Book display and download component
 function CustomBookDownload({ post, isDark, tc }: { post: TelegramPost; isDark: boolean; tc: any }) {
@@ -975,6 +1021,13 @@ function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride, autoPl
       setProgress((cur / dur) * 100);
     }
     setCurrentTime(formatTime(cur));
+    
+    // Save to global window state so Reels can pick it up
+    (window as any).lastWatchedVideo = {
+      videoUrl: url,
+      currentTime: cur,
+      timestamp: Date.now()
+    };
   };
 
   const handleLoadedMetadata = () => {
@@ -1555,6 +1608,30 @@ function preloadPostMedia(post: any) {
       if (url) preloadVid(url);
     });
   }
+}
+
+/* Global helper function to check if browser notification system is supported safely */
+export function isNotificationSupportedSafely(): boolean {
+  try {
+    if (typeof window !== 'undefined' && 'Notification' in window && (window as any).Notification) {
+      return true;
+    }
+  } catch (e) {
+    console.warn('Notification support check failed in sandbox:', e);
+  }
+  return false;
+}
+
+/* Global helper function to safely verify notification permission inside restricted cross-origin iframes */
+export function getNotificationPermissionSafely(): string {
+  try {
+    if (isNotificationSupportedSafely()) {
+      return (window as any).Notification.permission;
+    }
+  } catch (e) {
+    console.warn('Notification.permission is inaccessible in this environment:', e);
+  }
+  return 'denied';
 }
 
 /* Global helper function for identifying stories */
@@ -2170,6 +2247,56 @@ function ShimmerPageLoader({ isDark, viewKey = 'dashboard' }: { isDark: boolean;
   );
 }
 
+interface PremiumAvatarProps {
+  src: string;
+  sizeClass: string;
+  ringSize?: string;
+  showStoryRing?: boolean;
+}
+
+function PremiumAvatar({ src, sizeClass, ringSize = "p-[3px]", showStoryRing = true }: PremiumAvatarProps) {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  return (
+    <div className="relative flex items-center justify-center shrink-0">
+      {/* 1. Gorgeous Instagram/TikTok style Story Ring */}
+      {showStoryRing && (
+        <div className={`absolute inset-0 bg-gradient-to-tr from-yellow-400 via-rose-500 to-indigo-500 rounded-full animate-pulse ${ringSize}`} />
+      )}
+      
+      {/* 2. Inner Gap & Container */}
+      <div className={`relative rounded-full overflow-hidden bg-slate-950 ${showStoryRing ? 'm-[3px]' : ''} ${sizeClass} flex items-center justify-center border border-white/10`}>
+        {/* Loader with Feather Icon */}
+        {!isLoaded && !hasError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+            <Feather className="w-1/2 h-1/2 text-indigo-400 animate-pulse" />
+          </div>
+        )}
+        
+        {/* Fallback Icon on Error */}
+        {hasError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+            <Feather className="w-1/2 h-1/2 text-slate-500" />
+          </div>
+        )}
+
+        <img
+          src={src}
+          alt="Avatar"
+          referrerPolicy="no-referrer"
+          onLoad={() => setIsLoaded(true)}
+          onError={() => {
+            setIsLoaded(true);
+            setHasError(true);
+          }}
+          className={`w-full h-full object-cover transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [feedData, setFeedData] = useState<FeedResponse | null>(() => {
     const cached = localStorage.getItem('dewa_cached_feed_data');
@@ -2232,8 +2359,16 @@ export default function App() {
       return [];
     }
   });
+  const [toReadPostIds, setToReadPostIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('dewa_toread_post_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isFavoritesMenuOpen, setIsFavoritesMenuOpen] = useState(false);
-  const [activeFavoriteFilter, setActiveFavoriteFilter] = useState<'videos' | 'images' | 'writings' | 'pdf' | 'audio' | null>(null);
+  const [activeFavoriteFilter, setActiveFavoriteFilter] = useState<'videos' | 'images' | 'writings' | 'pdf' | 'audio' | 'toread' | null>(null);
 
   // Reading history state and page state
   const [readingHistoryIds, setReadingHistoryIds] = useState<string[]>(() => {
@@ -2262,6 +2397,26 @@ export default function App() {
         showToast('پوسټ ستاسو د خوښو شویو څخه لرې شو! 💔', 'info');
       } else {
         showToast('پوسټ په بریالیتوب سره ستاسو خوښو شویو کې اضافه شو! ❤️', 'success');
+      }
+      return updated;
+    });
+  };
+
+  // Toggling to-read post helper and automatic sync to localStorage (د وروسته لوستلو لیست کې پوسټ اضافه کول)
+  const toggleToRead = (postId: string) => {
+    setToReadPostIds(prev => {
+      const exists = prev.includes(postId);
+      const updated = exists ? prev.filter(id => id !== postId) : [...prev, postId];
+      try {
+        localStorage.setItem('dewa_toread_post_ids', JSON.stringify(updated));
+      } catch (e) {
+        console.error("Error toggling to-read:", e);
+      }
+      
+      if (exists) {
+        showToast('پوسټ د وروسته لوستلو لیست څخه لرې شو! 🗑️', 'info');
+      } else {
+        showToast('پوسټ د وروسته لوستلو لیست کې اضافه شو! 📖', 'success');
       }
       return updated;
     });
@@ -2319,8 +2474,9 @@ export default function App() {
 
   useEffect(() => {
     // Inject mobile safe area fallback custom properties to support edge-to-edge layout bounds
-    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (window as any).Capacitor;
-    const isAndroid = /Android/i.test(navigator.userAgent) || ((window as any).Capacitor && (window as any).Capacitor.getPlatform() === 'android');
+    const isMobileCheck = !!((window as any).Capacitor && typeof (window as any).Capacitor.getPlatform === 'function');
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || isMobileCheck;
+    const isAndroid = /Android/i.test(navigator.userAgent) || (isMobileCheck && (window as any).Capacitor.getPlatform() === 'android');
     const root = document.documentElement;
     if (isMobile) {
       root.style.setProperty('--safe-top-fallback', isAndroid ? '28px' : '44px');
@@ -2359,9 +2515,38 @@ export default function App() {
   const [photoSwipeDirection, setPhotoSwipeDirection] = useState<'next' | 'prev'>('next');
   const [isCategoryPageOpen, setIsCategoryPageOpen] = useState(false);
   const [isNovelsPageOpen, setIsNovelsPageOpen] = useState(false);
+  const [selectedAuthorName, setSelectedAuthorName] = useState<string | null>(null);
+  const [profileSelectedCategory, setProfileSelectedCategory] = useState<string>('all');
+  const [hasReachedEnd, setHasReachedEnd] = useState(false);
   const [novelsFeedData, setNovelsFeedData] = useState<FeedResponse | null>(null);
   const [activeNovelTextChapter, setActiveNovelTextChapter] = useState<any | null>(null);
   const [novelScrollProgress, setNovelScrollProgress] = useState(0);
+
+  const handleLoadMoreHomePosts = async () => {
+    if (isLoading || isAutoloadingMore) return;
+    
+    setIsAutoloadingMore(true);
+    
+    // Simulating a luxurious premium loading delay for smooth visual feel
+    setTimeout(async () => {
+      if (visibleHomeCount < filteredHomePosts.length) {
+        setVisibleHomeCount((prev) => prev + 15);
+        setIsAutoloadingMore(false);
+      } else if (!isScrapingMore) {
+        // No more local cache posts, scrape/load more older posts from Telegram
+        try {
+          await loadMoreOlderPosts();
+          setVisibleHomeCount((prev) => prev + 15);
+        } catch (err) {
+          console.error("Error loading older posts:", err);
+        } finally {
+          setIsAutoloadingMore(false);
+        }
+      } else {
+        setIsAutoloadingMore(false);
+      }
+    }, 1200);
+  };
 
   // Novel reader settings with persistence
   const [readerFontSize, setReaderFontSize] = useState<number>(() => {
@@ -2604,6 +2789,8 @@ export default function App() {
 
   // New states for Sidebar, three-dot menu, and search filtering
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isAdminDetailOpen, setIsAdminDetailOpen] = useState(false);
+  const [isDevDetailOpen, setIsDevDetailOpen] = useState(false);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -2626,6 +2813,9 @@ export default function App() {
     }
     if (selectedPost) {
       return `post_${selectedPost.id || 'unknown'}`;
+    }
+    if (selectedAuthorName) {
+      return `author_${selectedAuthorName}`;
     }
     if (isSettingsPageOpen) return 'settings';
     if (isAboutPageOpen) return 'about';
@@ -2705,6 +2895,9 @@ export default function App() {
   const [appLanguage, setAppLanguage] = useState<'ps' | 'en'>(() => {
     return (localStorage.getItem('dewa_app_language') as any) || 'ps';
   });
+  const [showDailySections, setShowDailySections] = useState<boolean>(() => {
+    return localStorage.getItem('dewa_show_daily_sections') === 'true';
+  });
 
   // State and handles for our beautiful custom toast alerts and confirmation prompt sheets
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -2737,6 +2930,7 @@ export default function App() {
   useEffect(() => {
     // Only bind if we are on the home screen view of the feed (no modal pages, no sub views)
     const isHomeActive = !selectedPost && 
+                         !selectedAuthorName &&
                          !isAboutPageOpen && 
                          !isContactPageOpen && 
                          !isSettingsPageOpen && 
@@ -2858,7 +3052,7 @@ export default function App() {
   useEffect(() => {
     const handleScroll = () => {
       const currentScroll = window.scrollY || document.documentElement.scrollTop;
-      const isInAnySubpage = !!(selectedPost || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen);
+      const isInAnySubpage = !!(selectedPost || selectedAuthorName || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen);
       if (!isInAnySubpage) {
         if (currentScroll > 0) {
           homeScrollPosRef.current = currentScroll;
@@ -2875,7 +3069,7 @@ export default function App() {
     return () => {
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [selectedPost, isAboutPageOpen, isContactPageOpen, isSettingsPageOpen, isFullFeedOpen, isSearchOpen, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen]);
+  }, [selectedPost, selectedAuthorName, isAboutPageOpen, isContactPageOpen, isSettingsPageOpen, isFullFeedOpen, isSearchOpen, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen]);
 
   // 2. SelectedPost Transitions Tracker (opening and closing detailed post reading page)
   useEffect(() => {
@@ -2904,7 +3098,7 @@ export default function App() {
 
   // 3. Other Panels Transitions Tracker (returning back to home view from settings/category/search etc.)
   useEffect(() => {
-    const isInPanel = !!(isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen);
+    const isInPanel = !!(selectedAuthorName || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen);
     const isReturningToHome = !isInPanel && prevInPanelRef.current && !selectedPost;
 
     if (isReturningToHome) {
@@ -2918,7 +3112,7 @@ export default function App() {
       }
     }
     prevInPanelRef.current = isInPanel;
-  }, [selectedPost, isAboutPageOpen, isContactPageOpen, isSettingsPageOpen, isFullFeedOpen, isSearchOpen, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen]);
+  }, [selectedPost, selectedAuthorName, isAboutPageOpen, isContactPageOpen, isSettingsPageOpen, isFullFeedOpen, isSearchOpen, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen]);
 
   // Persists changes to local storage
   useEffect(() => {
@@ -2944,6 +3138,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('dewa_app_language', appLanguage);
   }, [appLanguage]);
+
+  useEffect(() => {
+    localStorage.setItem('dewa_show_daily_sections', String(showDailySections));
+  }, [showDailySections]);
 
   // Native Capacitor Background Notification Scheduler
   const scheduleNativeBackgroundNotifications = React.useCallback(async (posts: TelegramPost[]) => {
@@ -3061,8 +3259,8 @@ export default function App() {
     }
 
     if (!nativeSuccess) {
-      if ('Notification' in window && Notification.permission === 'granted') {
-        try {
+      try {
+        if (isNotificationSupportedSafely() && getNotificationPermissionSafely() === 'granted') {
           const notif = new Notification(notificationTitle, {
             body: snippet,
             icon: '/favicon.ico',
@@ -3078,9 +3276,9 @@ export default function App() {
             setIsCategoryPageOpen(false);
             notif.close();
           };
-        } catch (err) {
-          console.warn('Native notification failed:', err);
         }
+      } catch (err) {
+        console.warn('Native notification failed:', err);
       }
     }
   }, [notificationsEnabled]);
@@ -3088,14 +3286,14 @@ export default function App() {
   // Request standard push notification permission on opening the app
   useEffect(() => {
     const askPermission = async () => {
-      if ('Notification' in window) {
-        if (Notification.permission === 'default') {
-          try {
+      try {
+        if (isNotificationSupportedSafely()) {
+          if (getNotificationPermissionSafely() === 'default') {
             await Notification.requestPermission();
-          } catch (e) {
-            console.warn('System Notification.requestPermission failed', e);
           }
         }
+      } catch (e) {
+        console.warn('System Notification.requestPermission failed', e);
       }
     };
     
@@ -3218,14 +3416,14 @@ export default function App() {
   const loadMoreOlderPosts = async () => {
     if (isScrapingMore || !feedData || !feedData.posts || feedData.posts.length === 0) return;
     
-    const ids = feedData.posts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
+    const ids = feedData.posts.filter((p): p is TelegramPost => !!(p && p.id)).map(p => parseInt(p.id)).filter(id => !isNaN(id));
     if (ids.length === 0) return;
     const minPostId = Math.min(...ids);
     
     setIsScrapingMore(true);
     console.log('[Dewa Paging] Loading older posts dynamically, before ID:', minPostId);
 
-    const checkIsCapacitor = !!(window as any).Capacitor;
+    const checkIsCapacitor = !!((window as any).Capacitor && typeof (window as any).Capacitor.getPlatform === 'function');
     const isMobileProtocol = window.location.protocol === 'file:' || window.location.protocol.startsWith('capacitor:');
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const isMobileApp = checkIsCapacitor || isMobileProtocol || (isLocalhost && window.location.port !== '3000');
@@ -3276,7 +3474,7 @@ export default function App() {
     }
 
     if (loadedPosts.length > 0) {
-      const existingIds = new Set(feedData.posts.map(p => p.id));
+      const existingIds = new Set(feedData.posts.filter((p): p is TelegramPost => !!(p && p.id)).map(p => p.id));
       const filteredNew = loadedPosts.filter(p => p && p.id && !existingIds.has(p.id));
       
       if (filteredNew.length > 0) {
@@ -3294,9 +3492,11 @@ export default function App() {
         console.log(`[Dewa Paging] Successfully loaded & merged ${filteredNew.length} older posts.`);
       } else {
         setVisibleFullCount(prev => prev + 5);
+        setHasReachedEnd(true);
       }
     } else {
       setVisibleFullCount(prev => prev + 5);
+      setHasReachedEnd(true);
     }
 
     setIsScrapingMore(false);
@@ -3677,8 +3877,8 @@ export default function App() {
       if (previousCached) {
         const prevObj = JSON.parse(previousCached);
         if (prevObj && prevObj.posts && prevObj.posts.length > 0 && newData.posts && newData.posts.length > 0) {
-          const prevHighestId = Math.max(...prevObj.posts.map((p: any) => parseInt(p.id) || 0));
-          const newHighestId = Math.max(...newData.posts.map((p: any) => parseInt(p.id) || 0));
+          const prevHighestId = Math.max(...prevObj.posts.filter((p: any) => p && p.id).map((p: any) => parseInt(p.id) || 0));
+          const newHighestId = Math.max(...newData.posts.filter((p: any) => p && p.id).map((p: any) => parseInt(p.id) || 0));
           if (newHighestId > prevHighestId) {
             const latestPost = newData.posts.find((p: any) => (parseInt(p.id) || 0) === newHighestId);
             if (latestPost && notificationsEnabled) {
@@ -3703,7 +3903,7 @@ export default function App() {
     setIsNovelsLoading(true);
     setNovelsErrorMsg(null);
 
-    const checkIsCapacitor = !!(window as any).Capacitor;
+    const checkIsCapacitor = !!((window as any).Capacitor && typeof (window as any).Capacitor.getPlatform === 'function');
     const isMobileProtocol = window.location.protocol === 'file:' || window.location.protocol.startsWith('capacitor:');
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const isMobileApp = checkIsCapacitor || isMobileProtocol || (isLocalhost && window.location.port !== '3000');
@@ -3760,10 +3960,10 @@ export default function App() {
             if (parsedData && parsedData.posts && parsedData.posts.length > 0) {
               try {
                 let currentPagingPosts = [...parsedData.posts];
-                const uniqueIds = new Set(parsedData.posts.map(p => p.id));
+                const uniqueIds = new Set(parsedData.posts.filter((p): p is TelegramPost => !!(p && p.id)).map(p => p.id));
                 for (let pageIdx = 2; pageIdx <= 10; pageIdx++) {
                   if (parsedData.posts.length >= 100) break;
-                  const postIdsNumeric = currentPagingPosts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
+                  const postIdsNumeric = currentPagingPosts.filter((p): p is TelegramPost => !!(p && p.id)).map(p => parseInt(p.id)).filter(id => !isNaN(id));
                   if (postIdsNumeric.length === 0) break;
                   const minPostId = Math.min(...postIdsNumeric);
                   const nextUrl = `https://t.me/s/${novelsChannel}?before=${minPostId}`;
@@ -3823,14 +4023,14 @@ export default function App() {
     if (isNovelsScrapingMore || !novelsFeedData || !novelsFeedData.posts || novelsFeedData.posts.length === 0) return;
     setIsNovelsScrapingMore(true);
 
-    const ids = novelsFeedData.posts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
+    const ids = novelsFeedData.posts.filter((p): p is TelegramPost => !!(p && p.id)).map(p => parseInt(p.id)).filter(id => !isNaN(id));
     if (ids.length === 0) {
       setIsNovelsScrapingMore(false);
       return;
     }
     const minPostId = Math.min(...ids);
 
-    const checkIsCapacitor = !!(window as any).Capacitor;
+    const checkIsCapacitor = !!((window as any).Capacitor && typeof (window as any).Capacitor.getPlatform === 'function');
     const isMobileProtocol = window.location.protocol === 'file:' || window.location.protocol.startsWith('capacitor:');
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const isMobileApp = checkIsCapacitor || isMobileProtocol || (isLocalhost && window.location.port !== '3000');
@@ -3878,7 +4078,7 @@ export default function App() {
     }
 
     if (loadedPosts.length > 0) {
-      const existingIds = new Set(novelsFeedData.posts.map(p => p.id));
+      const existingIds = new Set(novelsFeedData.posts.filter((p): p is TelegramPost => !!(p && p.id)).map(p => p.id));
       const filteredNew = loadedPosts.filter(p => p && p.id && !existingIds.has(p.id));
       if (filteredNew.length > 0) {
         setNovelsFeedData(prev => {
@@ -3966,8 +4166,8 @@ export default function App() {
     setDiagnostics(null);
 
     // 1. Detect environment flags
-    const checkIsCapacitor = !!(window as any).Capacitor;
-    const capacitorPlatform = checkIsCapacitor ? ((window as any).Capacitor.getPlatform() || 'unknown') : 'none';
+    const checkIsCapacitor = !!((window as any).Capacitor && typeof (window as any).Capacitor.getPlatform === 'function');
+    const capacitorPlatform = checkIsCapacitor ? (((window as any).Capacitor.getPlatform && (window as any).Capacitor.getPlatform()) || 'unknown') : 'none';
     const isMobileProtocol = window.location.protocol === 'file:' || window.location.protocol.startsWith('capacitor:');
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const isMobileApp = checkIsCapacitor || isMobileProtocol || (isLocalhost && window.location.port !== '3000');
@@ -4042,12 +4242,12 @@ export default function App() {
       // Try fetching older posts client-side in a dynamic loop to fetch up to 150 posts initially
       try {
         let currentPagingPosts = [...parsedData.posts];
-        const uniqueIds = new Set(parsedData.posts.map(p => p.id));
+        const uniqueIds = new Set(parsedData.posts.filter((p): p is TelegramPost => !!(p && p.id)).map(p => p.id));
         for (let pageIdx = 2; pageIdx <= 12; pageIdx++) {
           if (parsedData.posts.length >= 150) {
             break; // Stop client scraping once we have 150 posts initially
           }
-          const postIdsNumeric = currentPagingPosts.map(p => parseInt(p.id)).filter(id => !isNaN(id));
+          const postIdsNumeric = currentPagingPosts.filter((p): p is TelegramPost => !!(p && p.id)).map(p => parseInt(p.id)).filter(id => !isNaN(id));
           if (postIdsNumeric.length === 0) break;
           const minPostId = Math.min(...postIdsNumeric);
           const nextUrl = `https://t.me/s/${targetChannelName}?before=${minPostId}`;
@@ -4151,7 +4351,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    const isCap = !!(window as any).Capacitor;
+    const isCap = !!((window as any).Capacitor && typeof (window as any).Capacitor.getPlatform === 'function');
     if (!isCap) return;
 
     let appListener: any = null;
@@ -4208,7 +4408,7 @@ export default function App() {
 
   // Dynamic status bar styling implementation matching current primary/theme modes
   useEffect(() => {
-    const isCap = !!(window as any).Capacitor;
+    const isCap = !!((window as any).Capacitor && typeof (window as any).Capacitor.getPlatform === 'function');
     if (!isCap) return;
 
     const headerBgColor = themeMode === 'dark' ? '#0f172a' : '#f8fafc';
@@ -4256,9 +4456,9 @@ export default function App() {
   const allPosts = feedData?.posts ? feedData.posts.filter(p => {
     if (!p) return false;
     
-    // 1. Filter out the '#dev' post
+    // 1. Filter out the '#dev' and '#admin' posts
     const textLower = (p.text || '').toLowerCase();
-    if (textLower.includes('#dev')) {
+    if (textLower.includes('#dev') || textLower.includes('#admin')) {
       return false;
     }
     
@@ -4277,6 +4477,12 @@ export default function App() {
     return feedData.posts.find(p => p && p.text && p.text.toLowerCase().includes('#dev'));
   }, [feedData?.posts]);
 
+  // Find the custom '#admin' post (from raw posts pool) to dynamically populate the Admin profile
+  const adminPost = React.useMemo(() => {
+    if (!feedData?.posts) return null;
+    return feedData.posts.find(p => p && p.text && p.text.toLowerCase().includes('#admin'));
+  }, [feedData?.posts]);
+
   // Slider featured posts (10 random posts from any category to keep it dynamic and fresh)
   const featuredPosts = React.useMemo(() => {
     if (!allPosts || allPosts.length === 0) return [];
@@ -4292,7 +4498,11 @@ export default function App() {
     let list = allPosts;
 
     if (activeFavoriteFilter) {
-      list = list.filter(p => favoritePostIds.includes(p.id));
+      if (activeFavoriteFilter === 'toread') {
+        list = list.filter(p => toReadPostIds.includes(p.id));
+      } else {
+        list = list.filter(p => favoritePostIds.includes(p.id));
+      }
       // By default exclude stories and novels from general favorites categorization lists
       list = list.filter(p => !isStoryPost(p) && !getIsNovelOrNovelPart(p));
       
@@ -4336,7 +4546,7 @@ export default function App() {
       }
     }
     return list;
-  }, [allPosts, selectedCategory, activeFavoriteFilter, favoritePostIds]);
+  }, [allPosts, selectedCategory, activeFavoriteFilter, favoritePostIds, toReadPostIds]);
 
   // Reset infinite scroll page-size whenever selection filter parameters shift
   useEffect(() => {
@@ -4439,6 +4649,21 @@ export default function App() {
   const photoReelsList = React.useMemo(() => {
     const list: { post: TelegramPost; photoUrl: string }[] = [];
     allPosts.forEach(post => {
+      // Exclude novels and stories from the images section
+      if (isStoryPost(post) || getIsNovelOrNovelPart(post)) {
+        return;
+      }
+      // Explicitly check for story or novel hashtags in the post text to be absolutely safe
+      if (post.text) {
+        const textLower = post.text.toLowerCase();
+        const hasStoryOrNovelTag = textLower.includes('#کيسه') || 
+                                   textLower.includes('#کیسه') || 
+                                   textLower.includes('#ناول') || 
+                                   textLower.includes('#رومان');
+        if (hasStoryOrNovelTag) {
+          return;
+        }
+      }
       if (post.photoUrls && post.photoUrls.length > 0) {
         post.photoUrls.forEach(url => {
           if (url) {
@@ -4463,6 +4688,29 @@ export default function App() {
   // Extract unique hashtags with counts from the original feed posts
   const hashtagsWithCount = React.useMemo(() => {
     if (!feedData?.posts) return [];
+    
+    // Novel & Story hashtag detector to exclude them from main categories/hashtags list
+    const isNovelOrStoryHashtag = (tag: string): boolean => {
+      const normalized = tag.toLowerCase();
+      const forbidden = [
+        '#ناول', '#novel', '#رومان', '#ناول_برخه', '#رومان_برخه',
+        '#novel_profile', '#ناول_پروفایل', '#ناول_پروفايل', '#profile_novel',
+        '#کیسه', '#کيسه', '#کیسې', '#کيسې', '#کیسه_برخه', '#کيسه_برخه', '#داستان', '#داستانونه'
+      ];
+      if (forbidden.includes(normalized)) return true;
+      
+      if (
+        normalized.startsWith('#ناول_') || 
+        normalized.startsWith('#novel_') || 
+        normalized.startsWith('#رومان_') ||
+        normalized.startsWith('#کیسه_') ||
+        normalized.startsWith('#کيسه_')
+      ) {
+        return true;
+      }
+      return false;
+    };
+
     const countMap = new Map<string, number>();
     feedData.posts.forEach(p => {
       if (p && p.text) {
@@ -4470,7 +4718,9 @@ export default function App() {
         if (matches) {
           const uniqueInPost = new Set<string>(matches);
           uniqueInPost.forEach(tag => {
-            countMap.set(tag, (countMap.get(tag) || 0) + 1);
+            if (!isNovelOrStoryHashtag(tag)) {
+              countMap.set(tag, (countMap.get(tag) || 0) + 1);
+            }
           });
         }
       }
@@ -4898,6 +5148,20 @@ export default function App() {
       // Stop or pause global background audio
       pauseGlobalAudio();
 
+      // Check if there's a matching last watched video and apply its current time
+      const lastWatched = (window as any).lastWatchedVideo;
+      if (lastWatched && lastWatched.videoUrl) {
+        const activeReelObj = reelsList[activeReelIndex];
+        const activeUrl = activeReelObj ? activeReelObj.videoUrl : '';
+        if (
+          activeUrl === lastWatched.videoUrl || 
+          (activeUrl && activeUrl.includes(lastWatched.videoUrl)) || 
+          (lastWatched.videoUrl && lastWatched.videoUrl.includes(activeUrl))
+        ) {
+          video.currentTime = lastWatched.currentTime;
+        }
+      }
+
       video.play().then(() => {
         setReelLoading(false);
         setReelPlaying(true);
@@ -5279,7 +5543,7 @@ export default function App() {
     <div dir="rtl" className={`min-h-screen ${appBg} flex flex-col font-sans selection:bg-indigo-600/35 leading-normal transition-colors duration-200`}>
       
       {/* 1. TOP TOOLBAR (د چینل بار خوندور او پرمختللی ډیزاین) */}
-      {!isReelsOpen && (
+      {!isReelsOpen && !selectedAuthorName && (
         <header className={`sticky top-0 z-40 ${headerBg} backdrop-blur-md border-b pb-4 px-4 sm:px-6 flex items-center justify-between shadow-lg safe-header-pt`}>
           {/* Right side: Sidebar Hamburger Menu and Title */}
           <div className="flex items-center gap-3 min-w-0">
@@ -5294,17 +5558,18 @@ export default function App() {
             
             <div className="min-w-0 text-right">
               <h1 className={`text-sm sm:text-base font-bold truncate leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                {selectedPost ? 'د پوسټ لوستل' : isAboutPageOpen ? 'زمونږ په اړه معلومات' : isContactPageOpen ? 'زمونږ سره اړیکه' : isSettingsPageOpen ? 'د اپلیکیشن تنظیمات' : isSearchOpen ? 'په پوسټونو کې پلټنه' : isFullFeedOpen ? 'ټول آرشیف پوسټونه' : isReelsOpen ? 'شارټ ویډیوګانې (Reels)' : isPhotoReelsOpen ? 'ښکلي انځورونه (Images Carousel)' : isCategoryPageOpen ? 'د شعرونو ډلبندي (ککړۍ)' : isNovelsPageOpen ? 'د کیسو او ناولونو برخه' : 'پښتو ادبي خزانه'}
+                {selectedPost ? 'د پوسټ لوستل' : selectedAuthorName ? `د ${selectedAuthorName} پېژندڅېره` : isAboutPageOpen ? 'زمونږ په اړه معلومات' : isContactPageOpen ? 'زمونږ سره اړیکه' : isSettingsPageOpen ? 'د اپلیکیشن تنظیمات' : isSearchOpen ? 'په پوسټونو کې پلټنه' : isFullFeedOpen ? 'ټول آرشیف پوسټونه' : isReelsOpen ? 'شارټ ویډیوګانې (Reels)' : isPhotoReelsOpen ? 'ښکلي انځورونه (Images Carousel)' : isCategoryPageOpen ? 'د شعرونو ډلبندي (ککړۍ)' : isNovelsPageOpen ? 'د کیسو او ناولونو برخه' : 'پښتو ادبي خزانه'}
               </h1>
             </div>
           </div>
 
           {/* Left side: Back navigation actions and the Action popup */}
           <div className="flex items-center gap-2 relative">
-            {(selectedPost || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen || isNovelsPageOpen) && (
+            {(selectedPost || selectedAuthorName || isAboutPageOpen || isContactPageOpen || isSettingsPageOpen || isFullFeedOpen || isSearchOpen || isReelsOpen || isPhotoReelsOpen || isCategoryPageOpen || isNovelsPageOpen) && (
               <button
                 onClick={() => {
                   setSelectedPost(null);
+                  setSelectedAuthorName(null);
                   setIsSettingsPageOpen(false);
                   setIsAboutPageOpen(false);
                   setIsContactPageOpen(false);
@@ -5426,42 +5691,155 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 26, stiffness: 220 }}
-              className={`fixed right-0 top-0 bottom-0 w-72 sm:w-80 ${sidebarBg} border-l z-50 shadow-2xl flex flex-col justify-between text-right safe-sidebar-pt`}
+              className={`fixed right-0 top-0 bottom-0 w-72 sm:w-80 ${sidebarBg} border-l z-50 shadow-2xl flex flex-col justify-between text-right overflow-hidden`}
             >
-              {/* Sidebar Header */}
-              <div className="p-5 border-b border-slate-800/10 dark:border-slate-800/60 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <h3 className={`text-xs font-bold ${textMuted} tracking-wide uppercase font-sans`}>د اپلیکیشن برخې</h3>
-                  <button
-                    onClick={() => setIsSidebarOpen(false)}
+              {/* 1. IMMERSIVE HERO BANNER WITH GRADIENT OVERLAY (ټول بینر ښه ښکاري او لیکل پکې پښتو ادبي خزانه دي) */}
+              <div className="relative h-44 w-full overflow-hidden flex-shrink-0 bg-slate-950 border-b border-indigo-500/20">
+                <img 
+                  src={sidebarBannerImg} 
+                  alt="Pashto Literary Treasure Banner" 
+                  className="w-full h-full object-cover opacity-90 transition-transform duration-700 hover:scale-105"
+                  referrerPolicy="no-referrer"
+                />
+                {/* Contrast gradient layers for maximum readability on all screens */}
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-black/30" />
+                <div className="absolute inset-x-0 bottom-0 top-0 bg-gradient-to-b from-indigo-950/20 via-transparent to-slate-950/90" />
+
+                {/* Safe Area Header Overlay with explicit translation to Pashto Literary Treasure */}
+                <div className="absolute inset-0 flex flex-col justify-center items-center p-4 text-center z-10 select-none">
+                  <span className="text-[9px] font-black tracking-widest text-indigo-400 uppercase bg-indigo-950/85 border border-indigo-500/30 px-2 py-0.5 rounded-md mb-1.5 backdrop-blur-xs">
+                    د پښتني کلتور روښانه ډيوه
+                  </span>
+                  <h3 className="text-xl font-extrabold text-amber-400 font-sans tracking-wide drop-shadow-[0_2px_8px_rgba(0,0,0,0.98)] text-center">
+                    پښتو ادبي خزانه
+                  </h3>
+                  <div className="w-16 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent mt-1" />
+                  <p className="text-[10px] text-slate-300 font-bold font-sans mt-1.5 drop-shadow">
+                    شعرونه، لنډۍ او خوږ الګوریتمونه
+                  </p>
+                </div>
+
+                {/* Ergonomic Close Button aligned safe for notches */}
+                <button
+                  onClick={() => setIsSidebarOpen(false)}
+                  style={{ top: 'calc(0.5rem + var(--safe-top))', cursor: 'pointer' }}
+                  className="absolute left-2.5 z-30 p-1.5 bg-black/70 hover:bg-white/10 text-white rounded-full transition border border-white/15 backdrop-blur-md active:scale-90"
+                  title="تړل"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* 2. DUAL TEAM PROFILE CARDS (Interactive Developer & Admin - clickable, compact, and highly immersive) */}
+              <div className="relative px-3 pt-1 flex-shrink-0 z-25 text-center">
+                <div className="grid grid-cols-2 gap-2 -mt-7 mb-2.5">
+                  
+                  {/* DEVELOPER CARD (Interactive / click for about us modal) */}
+                  <motion.div
+                    whileHover={{ scale: 1.03, translateY: -1 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setIsDevDetailOpen(true)}
                     style={{ cursor: 'pointer' }}
-                    className={`p-1.5 ${isDark ? 'bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-650'} rounded-lg transition`}
-                    title="تړل"
+                    className={`p-2 rounded-xl border ${
+                      isDark 
+                        ? 'bg-slate-900/95 border-indigo-500/25 hover:border-indigo-500/50 hover:bg-slate-850/95' 
+                        : 'bg-indigo-50/15 border-indigo-500/25 hover:border-indigo-500/50 hover:bg-indigo-50/35'
+                    } text-center shadow-md backdrop-blur-xs flex flex-col items-center justify-between gap-1 transition-all group relative overflow-hidden`}
+                    title="د جوړوونکي په اړه زموږ پېژندنه"
                   >
-                    <X className="w-4 h-4" />
-                  </button>
+                    {/* Top Left Dev Mini Badge */}
+                    <span className="absolute top-0.5 right-1 bg-indigo-600 text-slate-100 text-[6.5px] px-0.5 py-0.2 rounded font-black scale-75 uppercase">
+                      Dev
+                    </span>
+
+                    <div className="inline-block relative rounded-full p-0.5 bg-gradient-to-tr from-indigo-500 to-purple-600 shadow-sm">
+                      <img
+                        src={devPost?.photoUrl || developerAvatarImg}
+                        alt="Obaidullah Ghaffari"
+                        className="w-10 h-10 rounded-full object-cover border border-slate-900"
+                        referrerPolicy="no-referrer"
+                      />
+                      <span className="absolute -top-0.5 -right-0.5 bg-blue-500 text-white rounded-full p-0.5 border border-slate-950 shadow flex items-center justify-center animate-pulse" style={{ width: '10px', height: '10px' }}>
+                        <Check className="w-[5px] h-[5px] stroke-[4]" />
+                      </span>
+                      <span className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 border border-slate-900 rounded-full" />
+                    </div>
+                    
+                    <div className="text-center w-full">
+                      <span className="text-[7.5px] font-black tracking-widest text-indigo-400 uppercase block mb-0.5 group-hover:animate-pulse">
+                        جوړونکی / DEV
+                      </span>
+                      <h4 className={`text-[10px] font-black ${isDark ? 'text-slate-100' : 'text-slate-800'} font-sans leading-tight block truncate`}>
+                        عبیدالله غفاري
+                      </h4>
+                      <p className={`text-[8px] ${isDark ? 'text-slate-400' : 'text-slate-550'} font-bold leading-none mt-0.5`}>
+                        سافټویر انجینر
+                      </p>
+                    </div>
+
+                    {/* Interactive glowing guide indicator */}
+                    <div className="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-indigo-500 to-purple-600 opacity-50 group-hover:opacity-100" />
+                  </motion.div>
+
+                  {/* ADMIN CARD (Interactive / click for admin bio modal) */}
+                  <motion.div
+                    whileHover={{ scale: 1.03, translateY: -1 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setIsAdminDetailOpen(true)}
+                    style={{ cursor: 'pointer' }}
+                    className={`p-2 rounded-xl border ${
+                      isDark 
+                        ? 'bg-slate-900/95 border-amber-500/25 hover:border-amber-500/50 hover:bg-slate-850/95' 
+                        : 'bg-amber-50/15 border-amber-500/25 hover:border-amber-500/50 hover:bg-amber-50/35'
+                    } text-center shadow-md backdrop-blur-xs flex flex-col items-center justify-between gap-1 transition-all group relative overflow-hidden`}
+                    title="د اډمین په اړه په زړه پورې معلومات"
+                  >
+                    {/* Top Right Admin Mini Badge */}
+                    <span className="absolute top-0.5 left-1 bg-amber-500 text-slate-950 text-[6.5px] px-0.5 py-0.2 rounded font-black scale-75 uppercase">
+                      Admin
+                    </span>
+
+                    <div className="inline-block relative rounded-full p-0.5 bg-gradient-to-tr from-amber-500 to-yellow-400 shadow-sm">
+                      <img
+                        src={adminPost?.photoUrl || adminAvatarImg}
+                        alt="Wahidullah Qalamyar"
+                        className="w-10 h-10 rounded-full object-cover border border-slate-900"
+                        referrerPolicy="no-referrer"
+                      />
+                      <span className="absolute -top-0.5 -right-0.5 bg-amber-500 text-slate-950 rounded-full p-0.5 border border-slate-950 shadow flex items-center justify-center animate-pulse" style={{ width: '10px', height: '10px' }}>
+                        <Shield className="w-1 h-1 fill-current" />
+                      </span>
+                      <span className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 border border-slate-900 rounded-full" />
+                    </div>
+                    
+                    <div className="text-center w-full">
+                      <span className="text-[7.5px] font-black tracking-widest text-amber-500 dark:text-amber-400 uppercase block mb-0.5 group-hover:animate-pulse">
+                        اډمین / ADMIN
+                      </span>
+                      <h4 className={`text-[10px] font-black ${isDark ? 'text-slate-100' : 'text-slate-800'} font-sans leading-tight block truncate`}>
+                        وحیدالله قلمیار
+                      </h4>
+                      <p className={`text-[8px] ${isDark ? 'text-slate-400' : 'text-slate-550'} font-bold leading-none mt-0.5`}>
+                        محتوا خپرونکی
+                      </p>
+                    </div>
+
+                    {/* Interactive glowing guide indicator */}
+                    <div className="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-amber-500 to-yellow-400 opacity-50 group-hover:opacity-100" />
+                  </motion.div>
+
                 </div>
               </div>
 
-              {/* Sidebar Content (عکس ➔ نوم ➔ بټنې) */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-5 text-right">
-                
-                {/* 1. د اپلیکیشن رسمي بڼه (بڼکه او پښتو ادبي خزانه) */}
-                <div className={`flex flex-col items-center text-center ${subCardBg} rounded-2xl p-5 border gap-2.5 shadow-sm`}>
-                  <div className={`w-14 h-14 rounded-full ${isDark ? 'bg-indigo-550/10' : 'bg-indigo-600/10'} flex items-center justify-center border border-indigo-500/30`}>
-                    <Feather className={`w-7 h-7 ${tc.text}`} />
-                  </div>
-                  <h4 className={`text-xs font-black ${isDark ? 'text-white' : 'text-slate-900'} leading-tight font-sans`}>
-                    {appLanguage === 'en' ? 'Pashto Literary Treasure' : 'پښتو ادبي خزانه'}
-                  </h4>
-                </div>
-
-                {/* د مینو بټنې */}
+              {/* 3. SIDEBAR NAVIGATION CONTENT WITH INTERACTIVE GRADIENT BUTTONS */}
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 scrollbar-thin text-right">
                 <div className="flex flex-col gap-2 font-sans">
-                  <p className={`text-[10px] ${textMuted} font-bold uppercase tracking-wider mb-1 px-1 text-right`}>مینو او کړنې</p>
+                  <p className={`text-[10px] ${textMuted} font-black tracking-wider mb-1 px-1.5 uppercase`}>د پښتو ادبي خزانې برښنایي برخې</p>
                   
                   {/* ۱. تنظیمات */}
-                  <button
+                  <motion.button
+                    whileHover={{ x: -6, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={() => {
                       setIsSidebarOpen(false);
                       setIsSettingsPageOpen(true);
@@ -5470,28 +5848,46 @@ export default function App() {
                       setIsSearchOpen(false);
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`w-full text-right px-4 py-3 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
+                    className={`w-full text-right px-4 py-3 ${subCardBg} ${
+                      isDark 
+                        ? 'hover:bg-slate-800/85 text-slate-200 hover:text-indigo-400 hover:border-indigo-500/40' 
+                        : 'hover:bg-slate-200/85 text-slate-800 hover:text-indigo-700 hover:border-indigo-400/40'
+                    } rounded-xl text-xs font-black transition border flex items-center justify-between gap-3 shadow-xs group`}
                   >
-                    <Settings className={`w-4 h-4 ${tc.text}`} />
-                    <span>{tr.settings}</span>
-                  </button>
+                    <div className="flex items-center gap-2 text-right">
+                      <Settings className={`w-4 h-4 text-indigo-500 group-hover:animate-spin-slow`} />
+                      <span className="font-extrabold">{tr.settings}</span>
+                    </div>
+                    <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400" />
+                  </motion.button>
 
                   {/* ۲. پلټنه */}
-                  <button
+                  <motion.button
+                    whileHover={{ x: -6, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={() => {
                       setIsSidebarOpen(false);
                       setIsSearchOpen(true);
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`w-full text-right px-4 py-3 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
+                    className={`w-full text-right px-4 py-3 ${subCardBg} ${
+                      isDark 
+                        ? 'hover:bg-slate-800/85 text-slate-200 hover:text-indigo-400 hover:border-indigo-500/40' 
+                        : 'hover:bg-slate-200/85 text-slate-800 hover:text-indigo-700 hover:border-indigo-400/40'
+                    } rounded-xl text-xs font-black transition border flex items-center justify-between gap-3 shadow-xs group`}
                   >
-                    <Search className={`w-4 h-4 ${tc.text}`} />
-                    <span>پلټنه</span>
-                  </button>
+                    <div className="flex items-center gap-2 text-right">
+                      <Search className={`w-4 h-4 text-indigo-500`} />
+                      <span className="font-extrabold">دلته ورننوځئ (پلټنه)</span>
+                    </div>
+                    <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400" />
+                  </motion.button>
 
                   {/* ۳. زمونږ په اړه */}
-                  <button
+                  <motion.button
+                    whileHover={{ x: -6, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={() => {
                       setIsSidebarOpen(false);
                       setIsAboutPageOpen(true);
@@ -5501,14 +5897,23 @@ export default function App() {
                       setSelectedPost(null);
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`w-full text-right px-4 py-3 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
+                    className={`w-full text-right px-4 py-3 ${subCardBg} ${
+                      isDark 
+                        ? 'hover:bg-slate-800/85 text-slate-200 hover:text-indigo-400 hover:border-indigo-500/40' 
+                        : 'hover:bg-slate-200/85 text-slate-800 hover:text-indigo-700 hover:border-indigo-400/40'
+                    } rounded-xl text-xs font-black transition border flex items-center justify-between gap-3 shadow-xs group`}
                   >
-                    <Info className={`w-4 h-4 ${tc.text}`} />
-                    <span>زمونږ په اړه</span>
-                  </button>
+                    <div className="flex items-center gap-2 text-right">
+                      <Info className={`w-4 h-4 text-indigo-500`} />
+                      <span className="font-extrabold">لیکوال او زمونږ په اړه</span>
+                    </div>
+                    <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400" />
+                  </motion.button>
 
                   {/* ۴. زمونږ سره اړیکه */}
-                  <button
+                  <motion.button
+                    whileHover={{ x: -6, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={() => {
                       setIsSidebarOpen(false);
                       setSelectedPost(null);
@@ -5523,49 +5928,107 @@ export default function App() {
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`w-full text-right px-4 py-3 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
+                    className={`w-full text-right px-4 py-3 ${subCardBg} ${
+                      isDark 
+                        ? 'hover:bg-slate-800/85 text-slate-200 hover:text-indigo-400 hover:border-indigo-500/40' 
+                        : 'hover:bg-slate-200/85 text-slate-800 hover:text-indigo-700 hover:border-indigo-400/40'
+                    } rounded-xl text-xs font-black transition border flex items-center justify-between gap-3 shadow-xs group`}
                   >
-                    <Mail className={`w-4 h-4 ${tc.text}`} />
-                    <span>زمونږ سره اړیکه</span>
-                  </button>
+                    <div className="flex items-center gap-2 text-right">
+                      <Mail className={`w-4 h-4 text-indigo-500`} />
+                      <span className="font-extrabold">زمونږ سره اړیکه نیول</span>
+                    </div>
+                    <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400" />
+                  </motion.button>
 
                   {/* ۵. د ټلیګرام چینل */}
-                  <a
+                  <motion.a
+                    whileHover={{ x: -6, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
                     href={`https://t.me/${feedData?.channelInfo?.username || 'da_mine_dewa'}`}
                     target="_blank"
                     rel="noreferrer"
                     style={{ cursor: 'pointer' }}
-                    className={`w-full text-right px-4 py-3 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
+                    className={`w-full text-right px-4 py-3 ${subCardBg} ${
+                      isDark 
+                        ? 'hover:bg-slate-800/85 text-slate-200 hover:text-sky-400 hover:border-sky-500/40' 
+                        : 'hover:bg-slate-200/85 text-slate-800 hover:text-sky-700 hover:border-sky-400/40'
+                    } rounded-xl text-xs font-black transition border flex items-center justify-between gap-3 shadow-xs group`}
                   >
-                    <Send className={`w-4 h-4 ${tc.text} -rotate-12`} />
-                    <span>د ټلیګرام چینل</span>
-                  </a>
+                    <div className="flex items-center gap-2 text-right">
+                      <Send className={`w-4 h-4 text-sky-500 -rotate-12`} />
+                      <span className="font-extrabold">زمونږ رسمي ټلیګرام چینل</span>
+                    </div>
+                    <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-sky-400" />
+                  </motion.a>
 
                   {/* ۶. نور اپليکيشنونه */}
-                  <button
+                  <motion.button
+                    whileHover={{ x: -6, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={() => {
                       setIsSidebarOpen(false);
                       setActiveModal('apps');
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`w-full text-right px-4 py-2.5 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
+                    className={`w-full text-right px-4 py-3 ${subCardBg} ${
+                      isDark 
+                        ? 'hover:bg-slate-800/85 text-slate-200 hover:text-indigo-400 hover:border-indigo-500/40' 
+                        : 'hover:bg-slate-200/85 text-slate-800 hover:text-indigo-700 hover:border-indigo-400/40'
+                    } rounded-xl text-xs font-black transition border flex items-center justify-between gap-3 shadow-xs group`}
                   >
-                    <Grid className={`w-4 h-4 ${tc.text}`} />
-                    <span>نور اپليکيشنونه</span>
-                  </button>
+                    <div className="flex items-center gap-2 text-right">
+                      <Grid className={`w-4 h-4 text-indigo-500`} />
+                      <span className="font-extrabold">نور ښکلي اپليکيشنونه</span>
+                    </div>
+                    <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400" />
+                  </motion.button>
+
+                  {/* لارښود او پېژندنه */}
+                  <motion.button
+                    whileHover={{ x: -6, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      setIsSidebarOpen(false);
+                      setActiveOnboardingPage(0);
+                      setShowOnboarding(true);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className={`w-full text-right px-4 py-3 ${subCardBg} ${
+                      isDark 
+                        ? 'hover:bg-slate-800/85 text-slate-200 hover:text-amber-400 hover:border-amber-500/40' 
+                        : 'hover:bg-slate-200/85 text-slate-800 hover:text-amber-700 hover:border-amber-400/40'
+                    } rounded-xl text-xs font-black transition border flex items-center justify-between gap-3 shadow-xs group`}
+                  >
+                    <div className="flex items-center gap-2 text-right">
+                      <HelpCircle className={`w-4 h-4 text-amber-500`} />
+                      <span className="font-extrabold">لارښوونه او پیژندنه</span>
+                    </div>
+                    <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-amber-400" />
+                  </motion.button>
+
+                  <div className="h-0.5 my-1" />
 
                   {/* ۷. له اپلیکیشن څخه وتل */}
-                  <button
+                  <motion.button
+                    whileHover={{ x: -6, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={() => {
                       setIsSidebarOpen(false);
                       setShowExitConfirmation(true);
                     }}
                     style={{ cursor: 'pointer' }}
-                    className={`w-full text-right px-4 py-2.5 ${subCardBg} ${isDark ? 'hover:bg-slate-800 text-rose-450 border-rose-950/20' : 'hover:bg-slate-250 text-rose-600 border-rose-200'} rounded-xl text-xs font-semibold transition border flex items-center justify-start gap-2`}
+                    className={`w-full text-right px-4 py-3 ${subCardBg} ${
+                      isDark 
+                        ? 'hover:bg-rose-950/20 text-rose-450 border-rose-950/30 hover:border-rose-500/40' 
+                        : 'hover:bg-rose-50 text-rose-600 border-rose-200 hover:border-rose-300'
+                    } rounded-xl text-xs font-black transition border flex items-center justify-between gap-3 shadow-xs group`}
                   >
-                    <LogOut className="w-4 h-4 text-rose-500" />
-                    <span>له اپلیکیشن څخه وتل</span>
-                  </button>
+                    <div className="flex items-center gap-2 text-right">
+                      <LogOut className="w-4 h-4 text-rose-500 group-hover:translate-x-1 transition-transform" />
+                      <span className="font-extrabold text-rose-550 dark:text-rose-400">اپلیکیشن بندول (وتل)</span>
+                    </div>
+                  </motion.button>
                 </div>
               </div>
             </motion.div>
@@ -5574,7 +6037,11 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main View Area */}
-      <main className="flex-1 max-w-[580px] w-full mx-auto px-4 py-6 flex flex-col gap-6">
+      <main className={`flex-1 w-full mx-auto flex flex-col ${
+        selectedAuthorName 
+          ? 'max-w-full px-0 py-0 gap-0' 
+          : 'max-w-[580px] px-4 py-6 gap-6'
+      }`}>
         
         {/* Pull to Refresh Dynamic Indicator */}
         <AnimatePresence>
@@ -6270,7 +6737,7 @@ export default function App() {
                                     isDark 
                                       ? 'bg-slate-900/60 border-slate-800/85 hover:bg-slate-800 hover:border-indigo-500/20 shadow-md' 
                                       : 'bg-white border-slate-205 shadow-sm hover:bg-slate-50 hover:border-indigo-500/20'
-                                  } ${isRead ? 'opacity-45 saturate-[0.55] hover:opacity-95' : ''}`}
+                                  }`}
                                 >
                                   <div className="flex items-center gap-3 min-w-0">
                                     <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
@@ -6688,7 +7155,7 @@ export default function App() {
 
               {/* Copy, Like, WhatsApp & Share Action Buttons Row (د شعر د کاپي، خوښولو، واټساپ او شریکولو ښکلي بټنې) */}
               {selectedPost.text && selectedPost.text.trim() !== '' && (
-                <div className={`grid grid-cols-2 md:grid-cols-4 gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-205'}`}>
+                <div className={`grid grid-cols-2 md:grid-cols-5 gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800/40' : 'border-slate-205'}`}>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedPost.text || '');
@@ -6714,6 +7181,21 @@ export default function App() {
                       favoritePostIds.includes(selectedPost.id) ? 'text-rose-500 fill-rose-500 scale-110 animate-pulse' : 'text-slate-400 group-hover:text-rose-500'
                     }`} />
                     <span>{favoritePostIds.includes(selectedPost.id) ? 'خوښ شوی' : 'خوښول'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => toggleToRead(selectedPost.id)}
+                    style={{ cursor: 'pointer' }}
+                    className={`py-3 px-3.5 border rounded-xl text-[11px] sm:text-[11.5px] font-bold transition active:scale-95 flex items-center justify-center gap-2 group shadow-xs ${
+                      toReadPostIds.includes(selectedPost.id)
+                        ? 'bg-amber-500/15 border-amber-500/30 text-amber-650 font-black dark:text-amber-400'
+                        : `${isDark ? 'bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-slate-900' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-755'}`
+                    }`}
+                  >
+                    <Bookmark className={`w-4 h-4 transition-all duration-300 ${
+                      toReadPostIds.includes(selectedPost.id) ? 'text-amber-500 fill-amber-500 scale-110 animate-pulse' : 'text-slate-400 group-hover:text-amber-500'
+                    }`} />
+                    <span>{toReadPostIds.includes(selectedPost.id) ? 'وروسته لوستل کیږي' : 'وروسته لوستل'}</span>
                   </button>
 
                   <button
@@ -6771,13 +7253,523 @@ export default function App() {
                 <Eye className={`w-4 h-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
                 <span>{selectedPost.views || '0'} كتنې</span>
               </span>
-              <span className={`text-[11.5px] font-sans ${isDark ? 'text-slate-300' : 'text-slate-800'} font-semibold`}>
+              <span 
+                onClick={() => {
+                  const authorName = selectedPost.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه";
+                  setSelectedAuthorName(authorName);
+                  setSelectedPost(null);
+                }}
+                className={`text-[11.5px] font-sans ${isDark ? 'text-slate-300 hover:text-indigo-400' : 'text-slate-800 hover:text-indigo-650'} font-semibold cursor-pointer transition`}
+                title="د خپرونکي د ټولو پوسټونو لیدل"
+              >
                 {selectedPost.authorName ? `خپرونکی: ${selectedPost.authorName}` : 'د مینې ډېوه خپرونه'}
               </span>
             </div>
           </article>
         )
-      ) : isReelsOpen ? (
+      ) : selectedAuthorName ? (
+          /* ==========================================================
+             AUTHOR PROFILE SCREEN (د لیکوال پېژندڅېرې پاڼه) - Full Screen/Full Width Layout
+             ========================================================== */
+          <div className="animate-fade-in text-right flex flex-col w-full min-h-screen">
+            {/* Custom Transparent/Glassy Header overlaying the cover image */}
+            <div className="sticky top-0 z-50 w-full px-4 py-3 bg-slate-950/20 backdrop-blur-md border-b border-white/5 flex items-center justify-between shadow-xs">
+              <button
+                onClick={() => setSelectedAuthorName(null)}
+                style={{ cursor: 'pointer' }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition active:scale-95 font-bold text-xs shrink-0 select-none"
+                title="شاته کورپاڼې ته"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>شاته تګ</span>
+              </button>
+              
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 bg-white/10 px-3 py-1 rounded-full border border-white/10 text-white">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                  <span className="text-xs font-black font-sans truncate max-w-[150px]">{selectedAuthorName}</span>
+                </div>
+              </div>
+            </div>
+
+              {/* Profile Card Header */}
+              {(() => {
+                const baseAuthorPosts = feedData?.posts ? feedData.posts.filter(p => {
+                  if (!p) return false;
+                  // Exclude hashtag-hidden posts
+                  const textLower = (p.text || '').toLowerCase();
+                  if (textLower.includes('#dev') || textLower.includes('#admin')) {
+                    return false;
+                  }
+                  if (textLower.includes('channel created') || p.id === '1') {
+                    return false;
+                  }
+                  
+                  const pAuthor = p.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه";
+                  return pAuthor === selectedAuthorName;
+                }) : [];
+
+                const totalViewsCount = baseAuthorPosts.reduce((sum, p) => {
+                  const v = parseInt((p.views || '0').replace(/[^0-9]/g, ''));
+                  return sum + (isNaN(v) ? 0 : v);
+                }, 0);
+
+                const avatarUrl = selectedAuthorName && selectedAuthorName !== "پښتو ادبي خزانه" && selectedAuthorName !== (feedData?.channelInfo?.title)
+                  ? `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedAuthorName)}&background=6366f1&color=fff&size=128&bold=true`
+                  : (feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg");
+
+                // Filter by profile selected category
+                const authorPosts = baseAuthorPosts.filter(p => {
+                  if (profileSelectedCategory === 'all') return true;
+                  if (profileSelectedCategory === 'writings_plain') return getIsWriting(p);
+                  if (profileSelectedCategory === 'poems') return getIsPoem(p);
+                  if (profileSelectedCategory === 'videos') return !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl;
+                  if (profileSelectedCategory === 'audio') return !!p.hasAudio || !!p.audioUrl;
+                  if (profileSelectedCategory === 'pdf') return getIsBook(p);
+                  if (profileSelectedCategory === 'images') return !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0);
+                  return true;
+                });
+
+                return (
+                  <div className="flex-1 w-full pb-16 flex flex-col">
+                    {/* 1. Full Screen/Full Width Cover Image (کاور عکس پول سکرين) with beautiful top offset overlay */}
+                    <div className="h-44 sm:h-56 w-full relative overflow-hidden -mt-[49px]">
+                      <img
+                        src="https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?w=1200&auto=format&fit=crop&q=80"
+                        alt="Cover Background"
+                        className="w-full h-full object-cover filter brightness-[0.65]"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
+                    </div>
+                    
+                    {/* 2. Overlapping Circular Profile Image (دايروي عکس) */}
+                    <div className="relative -mt-16 sm:-mt-20 flex flex-col items-center z-20">
+                      <PremiumAvatar
+                        src={avatarUrl}
+                        sizeClass="w-32 h-32 sm:w-36 sm:h-36"
+                        ringSize="p-[3.5px]"
+                        showStoryRing={true}
+                      />
+                    </div>
+
+                    {/* Spacer and Info */}
+                    <div className="px-4 sm:px-6 pt-3 flex flex-col items-center text-center">
+                      {/* 3. Beautifully Styled Name (نوم ښايسته سټايل) */}
+                      <div className="space-y-1.5">
+                        <h2 className="text-2xl sm:text-3xl font-black text-white font-sans tracking-tight drop-shadow-md select-none">
+                          {selectedAuthorName}
+                        </h2>
+                        <p className="text-xs text-indigo-400 font-extrabold tracking-wide flex items-center justify-center gap-1.5 bg-indigo-500/10 px-4 py-1.5 rounded-full border border-indigo-500/20 shadow-sm">
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                          <span>د پښتو ادبي خزانې غوره لیکوال / خپرونکی</span>
+                        </p>
+                      </div>
+
+                      {/* Stats Row */}
+                      <div className="grid grid-cols-2 gap-4 w-full max-w-sm border-t border-b border-slate-900/60 py-4 mt-6">
+                        <div className="text-center">
+                          <span className="block text-xl font-black text-white font-mono">{baseAuthorPosts.length}</span>
+                          <span className="text-[10px] text-slate-400 font-bold">ټول خپاره شوي پوسټونه</span>
+                        </div>
+                        <div className="text-center border-r border-slate-900/60">
+                          <span className="block text-xl font-black text-white font-mono">{totalViewsCount.toLocaleString()}</span>
+                          <span className="text-[10px] text-slate-400 font-bold">ټولې لیدنې (Views)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4. Beautiful Category tab design like the Home page */}
+                    <div className="px-4 sm:px-6 space-y-3 pt-6">
+                      <div className="flex items-center justify-between border-b border-slate-500/10 dark:border-slate-800 pb-2" style={{ direction: 'rtl' }}>
+                        <span className={`text-[12.5px] font-black ${isDark ? 'text-slate-300' : 'text-slate-800'} flex items-center gap-1.5`}>
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>موضوعات / ډلبندي (د لیکوال په مطالبو کې لټون)</span>
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-bold">({authorPosts.length} پاڼې)</span>
+                      </div>
+                      
+                      <div className="relative -mx-4 px-4 sm:-mx-6 sm:px-6 overflow-visible">
+                        <div 
+                          className="flex gap-2.5 overflow-x-auto py-4 px-3.5 scrollbar-none snap-x snap-mandatory overflow-y-visible animate-fade-in"
+                          style={{ direction: 'rtl', WebkitOverflowScrolling: 'touch' }}
+                        >
+                          {[
+                            { id: 'all', label: 'ټول مطالب', icon: Sparkles, activeClass: 'bg-gradient-to-r from-pink-500 via-fuchsia-600 to-rose-500 border-transparent shadow-[0_4px_12px_rgba(236,72,153,0.35)]' },
+                            { id: 'writings_plain', label: 'ليکنې', icon: FileText, activeClass: 'cat-btn-writings-active' },
+                            { id: 'poems', label: 'شعرونه', icon: Feather, activeClass: 'cat-btn-poems-active' },
+                            { id: 'videos', label: 'ويډيويي', icon: Video, activeClass: 'cat-btn-videos-active' },
+                            { id: 'audio', label: 'غږيز', icon: Music, activeClass: 'cat-btn-audio-active' },
+                            { id: 'pdf', label: 'کتابونه', icon: BookOpen, activeClass: 'cat-btn-pdf-active' },
+                            { id: 'images', label: 'انځورونه', icon: ImageIcon, activeClass: 'cat-btn-images-active' },
+                          ].map((cat) => {
+                            const CatIcon = cat.icon;
+                            const isActive = profileSelectedCategory === cat.id;
+                            return (
+                              <button
+                                key={cat.id}
+                                onClick={() => setProfileSelectedCategory(cat.id)}
+                                style={{ cursor: 'pointer' }}
+                                className={`snap-center flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[12.5px] font-black transition-all duration-300 select-none border whitespace-nowrap active:scale-[0.96] ${
+                                  isActive 
+                                    ? cat.activeClass.includes('cat-btn') ? `${cat.activeClass} text-white border-transparent transform scale-[1.04]` : `${cat.activeClass} text-white border-transparent transform scale-[1.04]`
+                                    : `${isDark ? 'bg-slate-900/60 hover:bg-slate-800 border-slate-800/70 text-slate-300 hover:text-white shadow-xs' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-950 shadow-xs'}`
+                                }`}
+                              >
+                                <CatIcon className={`w-4 h-4 transition-transform duration-300 ${isActive ? 'text-white scale-110 rotate-3' : isDark ? 'text-slate-455' : 'text-slate-500'}`} />
+                                <span className="font-sans tracking-tight">{cat.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Posts list */}
+                    {authorPosts.length === 0 ? (
+                      <div className="mx-4 sm:mx-6 mt-5 text-center py-16 px-4 rounded-3xl bg-slate-500/5 border border-dashed border-slate-500/10">
+                        <FileText className="w-12 h-12 text-slate-400 mx-auto opacity-30 mb-3" />
+                        <p className={`text-xs ${textMuted} font-black`}>
+                          د دې کټګورۍ لپاره هیڅ پوسټ ونه موندل شو.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className={`px-4 sm:px-6 pt-5 flex-1 ${
+                        homeLayout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-3'
+                      }`}>
+                        {authorPosts.map((post) => {
+                          const handleClick = () => {
+                            const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                            if (currentScroll > 0) {
+                              detailScrollPosRef.current = currentScroll;
+                            }
+
+                            const hasVideo = post.hasVideo || post.videoUrl || (post.videoList && post.videoList.length > 0);
+                            const hasImage = post.photoUrl || (post.photoUrls && post.photoUrls.length > 0);
+                            
+                            if (hasVideo) {
+                              const idx = reelsList.findIndex(r => r.post.id === post.id);
+                              if (idx !== -1) {
+                                setActiveReelIndex(idx);
+                                setIsReelsOpen(true);
+                              } else {
+                                setSelectedPost(post);
+                              }
+                            } else if (hasImage) {
+                              const idx = photoReelsList.findIndex(p => p.post.id === post.id);
+                              if (idx !== -1) {
+                                setActivePhotoReelIndex(idx);
+                                setIsPhotoReelsOpen(true);
+                              } else {
+                                setSelectedPost(post);
+                              }
+                            } else {
+                              setSelectedPost(post);
+                            }
+                          };
+
+                          // 1. STANDARD LIST VIEW OR FALLBACK
+                          if (homeLayout === 'standard' || !homeLayout || homeLayout === 'minimalist' || homeLayout === 'cards') {
+                            const isRead = readPostIds.includes(post.id);
+                            return (
+                              <div
+                                key={post.id}
+                                onClick={handleClick}
+                                style={{ cursor: 'pointer' }}
+                                className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5`}
+                              >
+                                {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
+                                  post.photoUrl ? (
+                                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
+                                      <CachedImage
+                                        src={post.photoUrl || ''}
+                                        alt="thumb"
+                                        className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                                      />
+                                      {post.photoUrls && post.photoUrls.length > 1 && (
+                                        <span className="absolute top-1.5 left-1.5 bg-slate-950/85 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5 border border-white/10 shadow">
+                                          <Images className="w-2.5 h-2.5 text-indigo-400" />
+                                          <span>+{post.photoUrls.length - 1}</span>
+                                        </span>
+                                      )}
+                                      {post.hasVideo && (
+                                        <span className="absolute inset-0 flex items-center justify-center bg-black/35">
+                                          <PlayCircle className="w-6 h-6 text-white drop-shadow" />
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : post.videoThumbUrl ? (
+                                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
+                                      <img
+                                        src={post.videoThumbUrl || null}
+                                        referrerPolicy="no-referrer"
+                                        alt="thumb"
+                                        className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                                      />
+                                      <span className="absolute inset-0 flex items-center justify-center bg-black/35">
+                                        <PlayCircle className="w-6 h-6 text-white drop-shadow" />
+                                      </span>
+                                    </div>
+                                  ) : post.hasVideo ? (
+                                    <div className={`w-20 h-20 sm:w-24 sm:h-24 rounded-xl ${subCardBg} flex items-center justify-center shrink-0 text-indigo-400`}>
+                                      <Video className={`w-8 h-8 ${tc.text}`} />
+                                    </div>
+                                  ) : null
+                                )}
+
+                                <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5 h-full">
+                                  <div>
+                                    <div className="flex items-center justify-between w-full mb-1.5 text-[10px] text-slate-400 font-sans" style={{ direction: 'rtl' }}>
+                                      <div className="flex items-center gap-2">
+                                        {isRead && (
+                                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8.5px] font-bold flex items-center gap-0.5 border border-emerald-500/10 whitespace-nowrap">
+                                            <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                            <span>لوستل شوی</span>
+                                          </span>
+                                        )}
+                                        <span className="flex items-center gap-1">
+                                          <Clock className="w-3 h-3 text-slate-550" />
+                                          {getRelativeTimeInPashto(post.date, post.timeLabel || 'وروستی')}
+                                        </span>
+                                      </div>
+                                      
+                                      <div className="flex items-center gap-1">
+                                        {/* Share to WhatsApp Button */}
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleWhatsAppShare(post);
+                                          }}
+                                          className="focus:outline-hidden p-1.5 rounded-lg text-emerald-500 hover:text-emerald-400 hover:bg-emerald-550/10 transition-all transform hover:scale-110 active:scale-95 flex items-center justify-center gap-1 group"
+                                          style={{ cursor: 'pointer' }}
+                                          title="واټساپ کې مستقیم شریکول"
+                                        >
+                                          <svg className="w-4 h-4 fill-current group-hover:scale-110 transition duration-200" viewBox="0 0 24 24">
+                                            <path d="M12.012 3c-4.96-.005-9.005 4.02-9.01 8.977a8.94 8.94 0 0 0 1.202 4.492L3 21l4.7-.1.353-.1.332.352c1.082.52 2.274.8 3.518.8h.01c4.965.004 9.01-4.015 9.013-8.977A8.97 8.97 0 0 0 12.012 3zm4.5 12c-.2.5-.9.9-1.4 1-1 .2-2.3-.2-3.8-1.5-1.5-1.3-2.5-2.8-2.8-3.4-.3-.5-.4-.9-.4-1.3 0-.6.3-.9.4-1.1.1-.2.2-.2.3-.2l.7.1c.2 0 .4.1.5.3.3.6.7 1.4.8 1.5.1.2.1.4 0 .6-.1.2-.2.3-.3.4l-.4.3c-.1.1-.1.2 0 .4.4.8 1 1.4 1.8 1.8.2.1.3.1.4 0 .2-.2.4-.5.6-.7l.4-.2c.2 0 .4.1.7.3.7.4 1.2.7 1.3.8.3.1.3.3.2.4-.1.4-.4.8-.8 1z"/>
+                                          </svg>
+                                        </button>
+
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleFavorite(post.id);
+                                          }}
+                                          className={`focus:outline-hidden p-1.5 rounded-lg transition-all transform hover:scale-105 active:scale-95 ${
+                                            favoritePostIds.includes(post.id)
+                                              ? 'text-rose-500 bg-rose-500/10'
+                                              : 'text-slate-400 hover:text-rose-400 hover:bg-slate-500/10'
+                                          }`}
+                                          style={{ cursor: 'pointer' }}
+                                          title="خوښ کړل"
+                                        >
+                                          <Heart className={`w-3.5 h-3.5 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
+                                        </button>
+
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleToRead(post.id);
+                                          }}
+                                          className={`focus:outline-hidden p-1.5 rounded-lg transition-all transform hover:scale-105 active:scale-95 ${
+                                            toReadPostIds.includes(post.id)
+                                              ? 'text-amber-500 bg-amber-500/10'
+                                              : 'text-slate-400 hover:text-amber-400 hover:bg-slate-500/10'
+                                          }`}
+                                          style={{ cursor: 'pointer' }}
+                                          title="وروسته لوستل"
+                                        >
+                                          <Bookmark className={`w-3.5 h-3.5 ${toReadPostIds.includes(post.id) ? 'fill-amber-500' : ''}`} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <BeautifulTelegramText 
+                                      text={getPostTextWithFallback(post)}
+                                      isDark={isDark}
+                                      fs={fs}
+                                      limitLines={6}
+                                    />
+
+                                    {post.photoUrls && post.photoUrls.length > 1 && (
+                                      <div 
+                                        onClick={(e) => e.stopPropagation()} 
+                                        className="flex gap-2 overflow-x-auto pb-1.5 pt-1 scrollbar-thin scrollbar-thumb-slate-700 mt-2.5"
+                                        style={{ direction: 'rtl' }}
+                                      >
+                                        {post.photoUrls.map((url, imgIdx) => (
+                                          <div 
+                                            key={imgIdx} 
+                                            className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden shrink-0 bg-slate-950/40 border border-slate-850/10 relative group"
+                                          >
+                                            <img
+                                              src={url}
+                                              referrerPolicy="no-referrer"
+                                              alt="post gallery"
+                                              className="w-full h-full object-cover hover:scale-105 transition duration-200 cursor-zoom-in"
+                                              onClick={() => {
+                                                setZoomPhotoUrl(url);
+                                                setZoomScale(1);
+                                              }}
+                                            />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {post.audioList && post.audioList.length > 0 ? (
+                                      <div className="space-y-2.5">
+                                        {post.audioList.map((audioItem, idx) => {
+                                          const cleanTitle = getBeautifulAudioTitle(audioItem.title, post.title, getPostTextWithFallback(post), idx);
+                                          return (
+                                            <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
+                                          );
+                                        })}
+                                      </div>
+                                    ) : post.hasAudio && post.audioUrl ? (
+                                      <BeautifulAudioPlayer url={post.audioUrl} title={getBeautifulAudioTitle(post.audioTitle, post.title, getPostTextWithFallback(post))} duration={post.audioDuration} isDark={isDark} tc={tc} />
+                                    ) : null}
+
+                                    {getIsBook(post) && (
+                                      <CustomBookDownload post={post} isDark={isDark} tc={tc} />
+                                    )}
+
+                                    {post.linkPreview ? (
+                                      <a
+                                        href={post.linkPreview.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className={`mt-2 block ${isDark ? 'bg-slate-950/40 hover:bg-slate-950/60 border-indigo-500/15' : 'bg-slate-100 hover:bg-slate-150 border-indigo-500/10'} hover:border-indigo-500/40 border rounded-xl p-2.5 transition text-right`}
+                                      >
+                                        <div className="flex gap-2 min-w-0">
+                                          {post.linkPreview.photoUrl && (
+                                            <img
+                                              src={post.linkPreview.photoUrl}
+                                              referrerPolicy="no-referrer"
+                                              className="w-8 h-8 rounded bg-slate-900 object-cover shrink-0"
+                                              alt="lnk"
+                                            />
+                                          )}
+                                          <div className="min-w-0 flex-1 text-right">
+                                            <h5 className={`text-[10px] font-bold ${isDark ? 'text-white' : 'text-slate-900'} truncate leading-normal`}>{post.linkPreview.title}</h5>
+                                            <p className="text-[9px] text-slate-400 truncate leading-normal mt-0.5">{post.linkPreview.description}</p>
+                                          </div>
+                                        </div>
+                                      </a>
+                                    ) : extractUrl(post.text || '') ? (
+                                      <CustomLinkPreview url={extractUrl(post.text || '')!} isDark={isDark} />
+                                    ) : null}
+                                  </div>
+
+                                  {post.reactions && post.reactions.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2.5 justify-start">
+                                      {post.reactions.slice(0, 4).map((react, rIdx) => (
+                                        <span
+                                          key={rIdx}
+                                          className={`${isDark ? 'bg-slate-950/80' : 'bg-slate-100'} rounded-lg px-2 py-0.5 text-[10px] flex items-center gap-1 text-slate-550 border border-slate-800/10`}
+                                        >
+                                          <span>{react.emoji}</span>
+                                          <span className="font-mono text-[9px]">{react.count}</span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          // 2. CARD GRID DESIGN (2 columns)
+                          if (homeLayout === 'grid') {
+                            const isRead = readPostIds.includes(post.id);
+                            return (
+                              <div
+                                key={post.id}
+                                onClick={handleClick}
+                                style={{ cursor: 'pointer' }}
+                                className={`${cardBg} rounded-xl overflow-hidden flex flex-col transition group active:scale-[0.98] select-none text-right shadow-sm border border-slate-500/5`}
+                              >
+                                <div className="relative aspect-video w-full bg-slate-950 overflow-hidden flex items-center justify-center">
+                                  {post.photoUrl ? (
+                                    <CachedImage
+                                      src={post.photoUrl || ''}
+                                      alt="grid-thumb"
+                                      className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                                    />
+                                  ) : post.videoThumbUrl ? (
+                                    <CachedImage
+                                      src={post.videoThumbUrl || ''}
+                                      alt="grid-thumb"
+                                      className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                                    />
+                                  ) : (
+                                    <div className={`w-full h-full ${subCardBg} flex items-center justify-center`}>
+                                      <BookOpen className={`w-7 h-7 ${tc.text} opacity-50`} />
+                                    </div>
+                                  )}
+                                  {post.photoUrls && post.photoUrls.length > 1 && (
+                                    <span className="absolute top-2 left-2 bg-slate-950/85 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5 border border-white/10 shadow">
+                                      <Images className="w-2.5 h-2.5 text-indigo-400" />
+                                      <span>+{post.photoUrls.length - 1}</span>
+                                    </span>
+                                  )}
+                                  {post.hasVideo && (
+                                    <span className="absolute inset-0 flex items-center justify-center bg-black/35">
+                                      <PlayCircle className="w-8 h-8 text-white drop-shadow" />
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="p-3 flex-1 flex flex-col justify-between gap-2.5 text-right">
+                                  <BeautifulTelegramText 
+                                    text={getPostTextWithFallback(post)}
+                                    isDark={isDark}
+                                    fs={fs}
+                                    limitLines={4}
+                                  />
+
+                                  <div className="flex items-center justify-between text-[8.5px] text-slate-400 border-t border-slate-500/10 dark:border-slate-800/60 pt-2" style={{ direction: 'rtl' }}>
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="w-2.5 h-2.5" />
+                                      {getRelativeTimeInPashto(post.date, post.timeLabel || 'وروستی')}
+                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleFavorite(post.id);
+                                        }}
+                                        className={`focus:outline-hidden p-1 rounded-md transition ${
+                                          favoritePostIds.includes(post.id) ? 'text-rose-500 bg-rose-500/10' : 'text-slate-400'
+                                        }`}
+                                      >
+                                        <Heart className={`w-3 h-3 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleToRead(post.id);
+                                        }}
+                                        className={`focus:outline-hidden p-1 rounded-md transition ${
+                                          toReadPostIds.includes(post.id) ? 'text-amber-500 bg-amber-500/10' : 'text-slate-400'
+                                        }`}
+                                      >
+                                        <Bookmark className={`w-3 h-3 ${toReadPostIds.includes(post.id) ? 'fill-amber-500' : ''}`} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return null;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+          </div>
+        ) : isReelsOpen ? (
           /* ==========================================================
              REELS / SHORTS VIEW (د ټک ټاک او شارټس په ډیزاین د ویډیوګانو بېله زړه پورې پاڼه)
              ========================================================== */
@@ -6988,7 +7980,7 @@ export default function App() {
                         <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
 
                         {/* 5. TOP FLOATING REELS STATS BAR */}
-                        <div className="absolute left-6 right-6 flex items-center justify-between z-20 text-white" style={{ top: 'calc(1.5rem + var(--safe-top))' }}>
+                        <div className="absolute left-6 z-20 text-white flex items-center justify-between" style={{ top: 'calc(1.5rem + var(--safe-top))', right: '10.5rem' }}>
                           {/* Left: Indicator of reel progress */}
                           <span className="text-[11px] font-mono font-black bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
                             {activeReelIndex + 1} / {reelsList.length}
@@ -7030,6 +8022,32 @@ export default function App() {
                             </div>
                             <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
                               {favoritePostIds.includes(activeReel.post.id) ? 'خوښ شو' : 'خوښول'}
+                            </span>
+                          </button>
+
+                          {/* Bookmark / To-Read Button (وروسته لوستل) */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleToRead(activeReel.post.id);
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className="flex flex-col items-center group active:scale-90 transition"
+                            title="وروسته لوستل"
+                          >
+                            <div className={`w-11.5 h-11.5 rounded-full border flex items-center justify-center backdrop-blur-md transition-all shadow-xl ${
+                              toReadPostIds.includes(activeReel.post.id)
+                                ? 'bg-amber-600/80 border-amber-500 scale-105'
+                                : 'bg-black/60 border-white/10 hover:border-amber-500 hover:scale-105 hover:bg-black/80'
+                            }`}>
+                              <Bookmark className={`w-5 h-5 transition duration-250 ${
+                                toReadPostIds.includes(activeReel.post.id) 
+                                  ? 'text-white fill-white scale-110' 
+                                  : 'text-slate-100 group-hover:text-amber-500 group-hover:scale-110'
+                              }`} />
+                            </div>
+                            <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
+                              {toReadPostIds.includes(activeReel.post.id) ? 'نښه شو' : 'وروسته لوستل'}
                             </span>
                           </button>
 
@@ -7118,34 +8136,29 @@ export default function App() {
                         <div className="absolute right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2"
                           style={{ bottom: 'calc(1.5rem + var(--safe-bottom))' }}
                         >
-                          <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
+                          <div 
+                            onClick={() => {
+                              const authorName = activeReel.post.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه";
+                              setSelectedAuthorName(authorName);
+                              setIsReelsOpen(false);
+                              if (reelVideoRef.current) {
+                                reelVideoRef.current.pause();
+                              }
+                            }}
+                            className="pointer-events-auto flex items-center gap-2 justify-end cursor-pointer hover:scale-105 active:scale-95 transition duration-200"
+                            title="د خپرونکي د ټولو لیکنو لیدل"
+                          >
                             <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
-                              پښتو ادبي خزانه
+                              {activeReel.post.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه"}
                             </span>
-                            <div 
-                              onClick={() => {
-                                if (storiesList.length > 0) {
-                                  setActiveStoryIndex(0);
-                                  setIsStoryViewerOpen(true);
-                                }
-                              }}
-                              style={{ cursor: storiesList.length > 0 ? 'pointer' : 'default' }}
-                              className={`pointer-events-auto shrink-0 transition-all duration-300 ${
-                                storiesList.length > 0 
-                                  ? 'p-[2px] bg-gradient-to-tr from-pink-500 via-purple-600 to-indigo-500 rounded-full animate-pulse-slow active:scale-95 shadow-[0_0_12px_rgba(236,72,153,0.55)]' 
-                                  : 'w-6.5 h-6.5 rounded-full border border-white/20 shadow-md overflow-hidden'
-                              }`}
-                              title={storiesList.length > 0 ? "پښتو ادبي خزانه سټوري وګورئ" : ""}
-                            >
-                              <div className={`rounded-full overflow-hidden ${storiesList.length > 0 ? 'w-5.5 h-5.5' : 'w-full h-full'}`}>
-                                <img 
-                                  src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
-                                  alt="avatar" 
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                            </div>
+                            <PremiumAvatar
+                              src={activeReel.post.authorName 
+                                ? `https://ui-avatars.com/api/?name=${encodeURIComponent(activeReel.post.authorName)}&background=6366f1&color=fff&size=128&bold=true` 
+                                : (feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg")}
+                              sizeClass="w-12.5 h-12.5"
+                              ringSize="p-[2.5px]"
+                              showStoryRing={true}
+                            />
                           </div>
 
                           {/* Poetry text message body */}
@@ -7249,8 +8262,8 @@ export default function App() {
                   {/* Floating Action Glass Back navigation button, positioned top-right for high ergonomics */}
                   <button
                     onClick={() => setIsPhotoReelsOpen(false)}
-                    style={{ cursor: 'pointer' }}
-                    className="absolute top-5 right-5 z-40 px-4 py-2.5 rounded-full bg-black/60 hover:bg-white/10 border border-white/10 text-white shadow-2xl active:scale-95 transition backdrop-blur-md flex items-center gap-2 font-sans font-bold text-xs"
+                    style={{ top: 'calc(1.25rem + var(--safe-top))', right: '1.25rem', cursor: 'pointer' }}
+                    className="absolute z-40 px-4 py-2.5 rounded-full bg-black/60 hover:bg-white/10 border border-white/10 text-white shadow-2xl active:scale-95 transition backdrop-blur-md flex items-center gap-2 font-sans font-bold text-xs"
                     title="کورپاڼې ته شاته لاړ شئ"
                   >
                     <ArrowRight className="w-4 h-4 text-white" />
@@ -7305,7 +8318,7 @@ export default function App() {
                         <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none z-10" />
 
                         {/* 3. TOP FLOATING STATUS BAR */}
-                        <div className="absolute top-6 left-6 right-6 flex items-center justify-between z-20 text-white">
+                        <div className="absolute left-6 z-20 text-white flex items-center justify-between" style={{ top: 'calc(1.5rem + var(--safe-top))', right: '10.5rem' }}>
                           {/* Left: Indicator of photo progress */}
                           <span className="text-[11px] font-mono font-black bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full shadow select-none">
                             {activePhotoReelIndex + 1} / {photoReelsList.length}
@@ -7347,6 +8360,32 @@ export default function App() {
                             </div>
                             <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
                               {favoritePostIds.includes(activePhotoReel.post.id) ? 'خوښ شو' : 'خوښول'}
+                            </span>
+                          </button>
+
+                          {/* Bookmark / To-Read Button (وروسته لوستل) */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleToRead(activePhotoReel.post.id);
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className="flex flex-col items-center group active:scale-90 transition"
+                            title="وروسته لوستل"
+                          >
+                            <div className={`w-11.5 h-11.5 rounded-full border flex items-center justify-center backdrop-blur-md transition-all shadow-xl ${
+                              toReadPostIds.includes(activePhotoReel.post.id)
+                                ? 'bg-amber-600/80 border-amber-500 scale-105'
+                                : 'bg-black/60 border-white/10 hover:border-amber-500 hover:scale-105 hover:bg-black/80'
+                            }`}>
+                              <Bookmark className={`w-5 h-5 transition duration-250 ${
+                                toReadPostIds.includes(activePhotoReel.post.id) 
+                                  ? 'text-white fill-white scale-110' 
+                                  : 'text-slate-100 group-hover:text-amber-500 group-hover:scale-110'
+                              }`} />
+                            </div>
+                            <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">
+                              {toReadPostIds.includes(activePhotoReel.post.id) ? 'نښه شو' : 'وروسته لوستل'}
                             </span>
                           </button>
 
@@ -7411,34 +8450,26 @@ export default function App() {
                         <div className="absolute right-24 sm:right-28 left-6 z-20 text-white select-text pointer-events-none text-right flex flex-col gap-2"
                           style={{ bottom: 'calc(1.5rem + var(--safe-bottom))' }}
                         >
-                          <div className="flex items-center gap-2 justify-end select-none pointer-events-none">
+                          <div 
+                            onClick={() => {
+                              const authorName = activePhotoReel.post.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه";
+                              setSelectedAuthorName(authorName);
+                              setIsPhotoReelsOpen(false);
+                            }}
+                            className="pointer-events-auto flex items-center gap-2 justify-end cursor-pointer hover:scale-105 active:scale-95 transition duration-200"
+                            title="د خپرونکي د ټولو لیکنو لیدل"
+                          >
                             <span className="text-white text-[11px] font-black leading-tight drop-shadow font-sans">
-                              پښتو ادبي خزانه
+                              {activePhotoReel.post.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه"}
                             </span>
-                            <div 
-                              onClick={() => {
-                                if (storiesList.length > 0) {
-                                  setActiveStoryIndex(0);
-                                  setIsStoryViewerOpen(true);
-                                }
-                              }}
-                              style={{ cursor: storiesList.length > 0 ? 'pointer' : 'default' }}
-                              className={`pointer-events-auto shrink-0 transition-all duration-300 ${
-                                storiesList.length > 0 
-                                  ? 'p-[2px] bg-gradient-to-tr from-pink-500 via-purple-600 to-indigo-500 rounded-full animate-pulse-slow active:scale-95 shadow-[0_0_12px_rgba(236,72,153,0.55)]' 
-                                  : 'w-6.5 h-6.5 rounded-full border border-white/20 shadow-md overflow-hidden'
-                              }`}
-                              title={storiesList.length > 0 ? "پښتو ادبي خزانه سټوري وګورئ" : ""}
-                            >
-                              <div className={`rounded-full overflow-hidden ${storiesList.length > 0 ? 'w-5.5 h-5.5' : 'w-full h-full'}`}>
-                                <img 
-                                  src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"} 
-                                  alt="avatar" 
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                            </div>
+                            <PremiumAvatar
+                              src={activePhotoReel.post.authorName 
+                                ? `https://ui-avatars.com/api/?name=${encodeURIComponent(activePhotoReel.post.authorName)}&background=6366f1&color=fff&size=128&bold=true` 
+                                : (feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg")}
+                              sizeClass="w-12.5 h-12.5"
+                              ringSize="p-[2.5px]"
+                              showStoryRing={true}
+                            />
                           </div>
 
                           {/* Poetry text message body */}
@@ -7667,7 +8698,7 @@ export default function App() {
                               setSelectedPost(post);
                             }}
                             style={{ cursor: 'pointer' }}
-                            className={`${isDark ? 'bg-slate-950/40 border-slate-900 hover:bg-slate-900/60' : 'bg-white border-slate-200 hover:bg-slate-50 shadow-xs'} border p-3.5 rounded-xl flex items-center gap-3.5 transition group select-none text-right ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45 hover:opacity-100 dark:hover:opacity-100' : ''}`}
+                            className={`${isDark ? 'bg-slate-950/40 border-slate-900 hover:bg-slate-900/60' : 'bg-white border-slate-200 hover:bg-slate-50 shadow-xs'} border p-3.5 rounded-xl flex items-center gap-3.5 transition group select-none text-right`}
                           >
                             {/* Right side teaser */}
                             {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
@@ -8660,6 +9691,23 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* 5. DAILY SECTIONS TOGGLE */}
+                <div className="flex items-center justify-between p-3.5 bg-slate-500/5 rounded-xl border border-slate-500/10 text-right font-sans pt-1 mt-1">
+                  <div className="flex items-center gap-1.5 text-right">
+                    <Feather className={`w-4 h-4 ${tc.text}`} />
+                    <span className={`text-[11px] ${isDark ? 'text-slate-200' : 'text-slate-855'} font-bold`}>د ورځنیو ځانګړتیاوو (شعر او لیکنې) ښودل:</span>
+                  </div>
+                  <button
+                    onClick={() => setShowDailySections(!showDailySections)}
+                    style={{ cursor: 'pointer' }}
+                    className={`py-1.5 px-3 rounded-lg text-[10px] font-black tracking-wide uppercase transition ${
+                      showDailySections ? 'bg-emerald-500/15 border border-emerald-500/25 text-emerald-450 dark:text-emerald-400' : 'bg-slate-500/10 border border-slate-500/20 text-slate-500'
+                    }`}
+                  >
+                    {showDailySections ? 'فعال' : 'غیر فعال'}
+                  </button>
+                </div>
+
                 {/* 6. NOTIFICATIONS TOGGLE */}
                 <div className="flex items-center justify-between p-3.5 bg-slate-500/5 rounded-xl border border-slate-500/10 text-right font-sans pt-1 mt-1">
                   <div className="flex items-center gap-1.5 text-right">
@@ -8763,7 +9811,7 @@ export default function App() {
             )}
 
             {/* ۱. الهام بښونکی او ځانګړی ملوټي میډیا کروسرول (Custom Multi-Media & Literature Slider) */}
-            {homeCarouselItems && (
+            {showDailySections && homeCarouselItems && (
               <div 
                 className={`relative rounded-[2rem] overflow-hidden border transition-all duration-300 shadow-2xl ${
                   isDark 
@@ -9247,7 +10295,19 @@ export default function App() {
               <div 
                 onClick={() => {
                   setIsReelsOpen(true);
-                  setActiveReelIndex(0);
+                  let targetIndex = 0;
+                  const lastWatched = (window as any).lastWatchedVideo;
+                  if (lastWatched && lastWatched.videoUrl) {
+                    const idx = reelsList.findIndex(r => 
+                      r.videoUrl === lastWatched.videoUrl || 
+                      (r.videoUrl && r.videoUrl.includes(lastWatched.videoUrl)) || 
+                      (lastWatched.videoUrl && lastWatched.videoUrl.includes(r.videoUrl))
+                    );
+                    if (idx !== -1) {
+                      targetIndex = idx;
+                    }
+                  }
+                  setActiveReelIndex(targetIndex);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 style={{ cursor: 'pointer' }}
@@ -9446,7 +10506,7 @@ export default function App() {
 
             {/* 3. CATEGORY FILTER TABS (د موضوع کټګوري ښکلي افقي ريسايکلر ويو) */}
             <div className="relative overflow-visible" style={{ direction: 'rtl' }}>
-              <div className="flex gap-2.5 text-right relative overflow-x-auto py-4 px-2 scrollbar-none items-center snap-x snap-mandatory -my-2.5">
+              <div className="flex gap-2.5 text-right relative overflow-x-auto py-4 px-3.5 scrollbar-none items-center snap-x snap-mandatory overflow-y-visible">
                 {(() => {
                   const categoriesBase = [
                     { id: 'all', label: 'ټول', icon: Layers, activeClass: 'cat-btn-all-active' },
@@ -9540,17 +10600,21 @@ export default function App() {
                         <span className="text-[9.5px] text-slate-400 font-sans font-bold">لاندې په هره کټګورۍ کې خپل خوښ پيغامونه ولولئ (محرک او پاخه رنګونه د ښي څخه چپ لوري ته):</span>
                       </div>
                       
-                      <div className="grid grid-cols-2 xs:grid-cols-5 gap-1.5 sm:gap-2" style={{ direction: 'rtl' }}>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-2" style={{ direction: 'rtl' }}>
                         {[
                           { id: 'videos', label: 'خوښې شوې ويډيوګاني', icon: Video, colorClass: 'fav-btn-videos' },
                           { id: 'images', label: 'خوښ شوي انځورونه', icon: ImageIcon, colorClass: 'fav-btn-images' },
                           { id: 'writings', label: 'خوښې شوې ليکنی', icon: FileText, colorClass: 'fav-btn-writings' },
                           { id: 'pdf', label: 'خوښ شوي کتابونه', icon: BookOpen, colorClass: 'fav-btn-pdf' },
                           { id: 'audio', label: 'خوښي شوي غږيزې', icon: Music, colorClass: 'fav-btn-audio' },
+                          { id: 'toread', label: 'د وروسته لوستلو لیست', icon: Bookmark, colorClass: 'fav-btn-toread' },
                         ].map((fav) => {
                           const FavIcon = fav.icon;
                           const isActive = activeFavoriteFilter === fav.id;
                           const count = allPosts.filter(p => {
+                            if (fav.id === 'toread') {
+                              return toReadPostIds.includes(p.id);
+                            }
                             if (!favoritePostIds.includes(p.id)) return false;
                             if (fav.id === 'videos') return !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl;
                             if (fav.id === 'images') return !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0);
@@ -9607,12 +10671,17 @@ export default function App() {
                 style={{ direction: 'rtl' }}
               >
                 <div className="flex items-center gap-1.5 font-bold font-sans text-xs">
-                  <Heart className="w-4 h-4 text-rose-500 fill-rose-500 animate-pulse" />
+                  {activeFavoriteFilter === 'toread' ? (
+                    <Bookmark className="w-4 h-4 text-amber-500 fill-amber-500 animate-pulse" />
+                  ) : (
+                    <Heart className="w-4 h-4 text-rose-500 fill-rose-500 animate-pulse" />
+                  )}
                   <span>ښودل کیږي: {
                     activeFavoriteFilter === 'videos' ? 'خوښې شوې ويډيوګاني' :
                     activeFavoriteFilter === 'images' ? 'خوښ شوي انځورونه' :
                     activeFavoriteFilter === 'writings' ? 'خوښې شوې ليکنی' :
                     activeFavoriteFilter === 'pdf' ? 'خوښ شوي کتابونه' :
+                    activeFavoriteFilter === 'toread' ? 'د وروسته لوستلو لیست' :
                     'خوښي شوي غږيزې'
                   }</span>
                 </div>
@@ -9669,7 +10738,7 @@ export default function App() {
                           className="flex flex-col items-center gap-2 cursor-pointer select-none group relative w-full"
                         >
                           {/* Rich Pink-Purple-Orange Glowing Circle Ring */}
-                          <div className={`relative p-[3px] rounded-full bg-gradient-to-tr from-pink-500 via-fuchsia-600 to-amber-500 transition-all duration-350 shadow-md group-hover:scale-108 group-hover:rotate-3 ${isRead ? 'opacity-60 saturate-[0.7]' : ''}`}>
+                          <div className="relative p-[3px] rounded-full bg-gradient-to-tr from-pink-500 via-fuchsia-600 to-amber-500 transition-all duration-350 shadow-md group-hover:scale-108 group-hover:rotate-3">
                             <div className={`w-18 h-18 sm:w-22 sm:h-22 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-0.5 relative`}>
                               <CachedImage
                                 simple={true}
@@ -9755,7 +10824,7 @@ export default function App() {
                           style={{ cursor: 'pointer' }}
                           className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 select-none group relative"
                         >
-                          <div className={`relative p-[2.5px] rounded-full bg-gradient-to-tr from-amber-500 via-rose-600 to-indigo-500 shadow transform hover:scale-105 transition duration-300 ${isRead ? 'opacity-60' : ''}`}>
+                          <div className="relative p-[2.5px] rounded-full bg-gradient-to-tr from-amber-500 via-rose-600 to-indigo-500 shadow transform hover:scale-105 transition duration-300">
                             <div className={`w-13 h-13 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-[1.5px] relative`}>
                               <CachedImage
                                 simple={true}
@@ -9815,7 +10884,7 @@ export default function App() {
                             isDark 
                               ? 'bg-slate-900/50 border-slate-800/80 hover:border-amber-500/30 shadow-md' 
                               : 'bg-white border-slate-205 shadow-md hover:border-amber-500/30'
-                          } ${isRead ? 'opacity-65' : ''}`}
+                          }`}
                         >
                           {/* Rich vertical rectangular aspect video ratio wrapper */}
                           <div className="w-full aspect-[9/15.5] bg-slate-950 overflow-hidden relative shadow-inner rounded-xl">
@@ -10028,7 +11097,7 @@ export default function App() {
                             key={post.id}
                             onClick={handleClick}
                             style={{ cursor: 'pointer' }}
-                            className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5 ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45 hover:opacity-100 dark:hover:opacity-100 transition-opacity duration-300' : ''}`}
+                            className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5`}
                           >
                             {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
                               post.photoUrl ? (
@@ -10115,6 +11184,22 @@ export default function App() {
                                       title="خوښ کړل"
                                     >
                                       <Heart className={`w-3.5 h-3.5 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
+                                    </button>
+
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleToRead(post.id);
+                                      }}
+                                      className={`focus:outline-hidden p-1.5 rounded-lg transition-all transform hover:scale-105 active:scale-95 ${
+                                        toReadPostIds.includes(post.id)
+                                          ? 'text-amber-500 bg-amber-500/10'
+                                          : 'text-slate-400 hover:text-amber-400 hover:bg-slate-500/10'
+                                      }`}
+                                      style={{ cursor: 'pointer' }}
+                                      title="وروسته لوستل"
+                                    >
+                                      <Bookmark className={`w-3.5 h-3.5 ${toReadPostIds.includes(post.id) ? 'fill-amber-500' : ''}`} />
                                     </button>
                                   </div>
                                 </div>
@@ -10222,7 +11307,7 @@ export default function App() {
                             key={post.id}
                             onClick={handleClick}
                             style={{ cursor: 'pointer' }}
-                            className={`${cardBg} rounded-xl overflow-hidden flex flex-col transition group active:scale-[0.98] select-none text-right shadow-sm border border-slate-500/5 ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45 hover:opacity-100 dark:hover:opacity-100 transition-opacity duration-300' : ''}`}
+                            className={`${cardBg} rounded-xl overflow-hidden flex flex-col transition group active:scale-[0.98] select-none text-right shadow-sm border border-slate-500/5`}
                           >
                             <div className="relative aspect-video w-full bg-slate-950 overflow-hidden flex items-center justify-center">
                               {post.photoUrl ? (
@@ -10297,6 +11382,22 @@ export default function App() {
                                       title="خوښ کړل"
                                     >
                                       <Heart className={`w-3 h-3 ${favoritePostIds.includes(post.id) ? 'fill-rose-500' : ''}`} />
+                                    </button>
+
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleToRead(post.id);
+                                      }}
+                                      className={`focus:outline-hidden p-1 rounded transition-all transform hover:scale-105 active:scale-95 ${
+                                        toReadPostIds.includes(post.id)
+                                          ? 'text-amber-500 bg-amber-500/10'
+                                          : 'text-slate-400 hover:text-amber-400 hover:bg-slate-500/10'
+                                      }`}
+                                      style={{ cursor: 'pointer' }}
+                                      title="وروسته لوستل"
+                                    >
+                                      <Bookmark className={`w-3 h-3 ${toReadPostIds.includes(post.id) ? 'fill-amber-500' : ''}`} />
                                     </button>
                                   </div>
                                 </div>
@@ -10588,6 +11689,42 @@ export default function App() {
                 </div>
               )
             )}
+
+            {/* GORGEOUS LOAD MORE BUTTON WITH LUXURY HOVER EFFECT AND BEAUTIFUL INTERACTIVE SPINNER */}
+            {(!isAutoloadingMore && (visibleHomeCount < filteredHomePosts.length || !hasReachedEnd)) ? (
+              <div className="mt-8 mb-6 flex flex-col items-center justify-center text-center">
+                <button
+                  onClick={handleLoadMoreHomePosts}
+                  style={{ cursor: 'pointer' }}
+                  className={`px-8 py-3.5 rounded-full font-black text-xs sm:text-sm transition-all duration-300 flex items-center gap-2.5 shadow-lg active:scale-95 select-none ${
+                    isDark
+                      ? 'bg-gradient-to-r from-indigo-600 via-fuchsia-600 to-pink-600 text-white shadow-indigo-950/40 hover:shadow-indigo-500/35 border border-indigo-500/20 hover:scale-[1.04]'
+                      : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-indigo-100 hover:shadow-indigo-500/20 hover:scale-[1.04]'
+                  }`}
+                >
+                  <ArrowDown className="w-4 h-4 animate-bounce" />
+                  <span>نور وګورئ (نوي مطالب لوډ کړئ)</span>
+                </button>
+                
+                {/* Hidden infinite-scroll-sentinel to seamlessly integrate with any automated loading */}
+                <div id="home-infinite-scroll-sentinel" className="h-2 w-2 opacity-0" />
+              </div>
+            ) : isAutoloadingMore ? (
+              <div className="mt-6 mb-6 flex justify-center text-center animate-pulse">
+                <div className={`px-6 py-2.5 rounded-full text-xs font-black flex items-center gap-2 ${
+                  isDark ? 'bg-slate-900 text-slate-300' : 'bg-slate-100 text-slate-700'
+                }`}>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+                  <span>د نویو مطالبو راوړل... لطفا صبر وکړئ</span>
+                </div>
+              </div>
+            ) : (
+              filteredHomePosts.length > 0 && (
+                <div className="mt-8 mb-6 text-center text-xs text-slate-400 font-bold select-none animate-fade-in">
+                  ✨ تاسو ټول خپاره شوي مطالب وکتل! نوي مطالب نشته. ✨
+                </div>
+              )
+            )}
           </div>
         ) : (
           <div className="space-y-4 animate-fade-in text-right">
@@ -10608,7 +11745,7 @@ export default function App() {
 
             {/* Archive Feed List */}
             <div className={`${homeLayout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5'}`}>
-              {allPosts.slice(0, visibleFullCount).map((post) => {
+              {allPosts.slice(0, visibleFullCount).filter((p): p is TelegramPost => !!(p && p.id)).map((post) => {
                 const handleClick = () => {
                   const currentScroll = window.scrollY || document.documentElement.scrollTop;
                   if (currentScroll > 0) {
@@ -10643,7 +11780,7 @@ export default function App() {
                     key={post.id}
                     onClick={handleClick}
                     style={{ cursor: 'pointer' }}
-                    className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5 ${isRead ? 'opacity-55 saturate-[0.65] dark:opacity-45' : ''}`}
+                    className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5`}
                   >
                     {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
                       post.photoUrl ? (
@@ -10662,7 +11799,7 @@ export default function App() {
                       ) : post.videoThumbUrl ? (
                         <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
                           <img
-                            src={post.videoThumbUrl || null}
+                            src={post.videoThumbUrl || undefined}
                             referrerPolicy="no-referrer"
                             alt="thumb"
                             className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
@@ -10915,6 +12052,10 @@ export default function App() {
                 className={`fixed inset-0 z-[9991] overflow-y-auto flex flex-col justify-between p-6 sm:p-12 select-none transition-colors duration-300 ${
                   isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'
                 }`}
+                style={{
+                  paddingTop: 'calc(1.5rem + var(--safe-top))',
+                  paddingBottom: 'calc(1.5rem + var(--safe-bottom))'
+                }}
               >
                 {/* Immersive background decoration */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
@@ -11017,44 +12158,6 @@ export default function App() {
                       </motion.p>
                     </div>
 
-                  </div>
-
-                  {/* HIGHLY INTERACTIVE GRID OF FEATURES (د فیچرونو ځانګړی لیست چي په کلیک کولو سره په مستقیم ډول خلاصيږي) */}
-                  <div className={`mb-6 border-t ${isDark ? 'border-slate-800/80' : 'border-slate-200'} pt-4 text-right w-full`}>
-                    <span className="block text-[11px] font-black text-amber-500 mb-3 font-sans leading-none flex items-center justify-end gap-1">
-                      <span>د کتنې لپاره لاندې په هر بېلابېل فیچر باندې کلیک وباسئ:</span>
-                      <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-                    </span>
-                    
-                    <div className="grid grid-cols-2 gap-2.5 max-h-36 overflow-y-auto pr-1 pb-1 scrollbar-thin">
-                      {onboardingSlides.map((slide, idx) => {
-                        const IconComponent = slide.icon;
-                        const isCurrent = idx === activeOnboardingPage;
-                        return (
-                          <button
-                            key={idx}
-                            onClick={() => handleLaunchFeatureOnboard(idx)}
-                            style={{ cursor: 'pointer' }}
-                            className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border text-right transition-all duration-200 active:scale-[0.96] group ${
-                              isCurrent 
-                                ? isDark 
-                                  ? 'bg-slate-850 border-indigo-500/50 text-white shadow-md' 
-                                  : 'bg-white border-indigo-500 text-indigo-700 shadow-md'
-                                : isDark 
-                                  ? 'bg-slate-900/65 border-slate-850 hover:border-slate-800 text-slate-300 hover:text-white' 
-                                  : 'bg-slate-100/80 border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900'
-                            }`}
-                          >
-                            <span className="text-[10px] font-black truncate order-2 font-sans select-none pointer-events-none">
-                              {slide.title}
-                            </span>
-                            <div className={`p-1.5 rounded-lg bg-gradient-to-tr ${slide.gradient} text-white shrink-0 shadow-xs order-1 pointer-events-none select-none`}>
-                              <IconComponent className="w-3.5 h-3.5" />
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
                   </div>
 
                   {/* Navigation controls next, back and get started */}
@@ -11651,8 +12754,8 @@ export default function App() {
                               <span className="font-mono text-indigo-400">95%</span>
                               <span className="text-slate-350">خدمت</span>
                             </div>
-                            <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden">
-                              <div className="bg-indigo-505 h-full rounded-full" style={{ width: '95%' }} />
+                            <div className="w-full bg-slate-955 h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-indigo-500 h-full rounded-full" style={{ width: '95%' }} />
                             </div>
                           </div>
                         </div>
@@ -11672,6 +12775,55 @@ export default function App() {
                         className={`w-full py-2.5 ${tc.bg} ${tc.hoverBg} text-white rounded-xl text-xs font-bold transition mt-2`}
                       >
                         {appLanguage === 'en' ? 'Close' : 'بند کړئ'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Contact form modal */}
+                  {activeModal === 'contact' && (
+                    <div className="space-y-4 text-right font-sans">
+                      {contactSuccess ? (
+                        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-center">
+                          <Check className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
+                          <p className="text-xs font-bold">ستاسو پیغام په بریالیتوب سره واستول شو!</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <p className="text-[11px] text-slate-400 leading-relaxed">زموږ د ملاتړ متخصص سره د اړیکې لپاره لاندې فارم ډک کړئ:</p>
+                          {contactError && <div className="text-[10px] text-rose-500 bg-rose-500/5 p-2 rounded-lg">{contactError}</div>}
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="ستاسو نوم"
+                              value={contactName}
+                              onChange={(e) => setContactName(e.target.value)}
+                              className="w-full text-right p-2.5 bg-slate-950/50 border border-slate-800 rounded-xl text-xs select-auto text-white"
+                            />
+                          </div>
+                          <div>
+                            <textarea
+                              placeholder="ستاسو پیغام..."
+                              value={contactMsg}
+                              rows={4}
+                              onChange={(e) => setContactMsg(e.target.value)}
+                              className="w-full text-right p-2.5 bg-slate-950/50 border border-slate-800 rounded-xl text-xs select-auto text-white"
+                            />
+                          </div>
+                          <button
+                            onClick={handleSendTelegramContact}
+                            disabled={contactSending}
+                            className={`w-full py-2.5 ${tc.bg} ${tc.hoverBg} text-white rounded-xl text-xs font-bold transition disabled:opacity-50`}
+                          >
+                            {contactSending ? 'پیغام لیږل کیږي...' : 'پیغام واستوئ'}
+                          </button>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setActiveModal(null)}
+                        style={{ cursor: 'pointer' }}
+                        className="w-full py-2 bg-slate-800 hover:bg-slate-755 text-slate-300 rounded-xl text-xs font-semibold transition"
+                      >
+                        بند کړئ
                       </button>
                     </div>
                   )}
@@ -11734,307 +12886,6 @@ export default function App() {
               </motion.div>
             </div>
           </>
-        )}
-      </AnimatePresence>
-
-      {/* 4. PHOTO LIGHTBOX (د انځور د زومولو او ليدلو ځانګړی ماډل) */}
-      <AnimatePresence>
-        {zoomPhotoUrl && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setZoomPhotoUrl(null)}
-              className="fixed inset-0 bg-black/95 z-[999] flex flex-col items-center justify-center cursor-zoom-out p-4 select-none backdrop-blur-md"
-            >
-              {/* Controls Header */}
-              <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-50">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setZoomPhotoUrl(null);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                  className="p-3 bg-slate-900/90 hover:bg-slate-800 rounded-full border border-slate-800 text-white transition active:scale-95"
-                >
-                  <X className="w-5 h-5 text-white" />
-                </button>
-                <div className="flex gap-2 items-center">
-                  {zoomPhotoUrlsList.length > 1 && (
-                    <span className="bg-slate-900/95 text-white px-3 py-1.5 rounded-xl text-xs font-mono font-black border border-slate-800 select-none">
-                      {zoomPhotoIndex + 1} / {zoomPhotoUrlsList.length}
-                    </span>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setZoomScale(prev => Math.max(1, prev - 0.5));
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    className="py-2 px-3.5 bg-slate-900/90 hover:bg-slate-800 rounded-xl border border-slate-800 text-xs font-bold text-white transition active:scale-95"
-                  >
-                    کوچنی کول (-)
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setZoomScale(prev => Math.min(4, prev + 0.5));
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    className="py-2 px-3.5 bg-slate-900/90 hover:bg-slate-800 rounded-xl border border-slate-800 text-xs font-bold text-white transition active:scale-95"
-                  >
-                    زوم کول (+)
-                  </button>
-                </div>
-              </div>
-
-              {/* Navigation arrows for multi-image switching */}
-              {zoomPhotoUrlsList.length > 1 && (
-                <>
-                  {/* Previous Button (Left Arrow) */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const prevIndex = (zoomPhotoIndex - 1 + zoomPhotoUrlsList.length) % zoomPhotoUrlsList.length;
-                      setZoomPhotoIndex(prevIndex);
-                      setZoomPhotoUrl(zoomPhotoUrlsList[prevIndex]);
-                      setZoomScale(1);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3.5 bg-black/60 hover:bg-black/90 text-white rounded-full transition active:scale-90 z-[1000] border border-white/10"
-                    title="مخکینی انځور"
-                  >
-                    <ChevronLeft className="w-6 h-6 text-white" />
-                  </button>
-
-                  {/* Next Button (Right Arrow) */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const nextIndex = (zoomPhotoIndex + 1) % zoomPhotoUrlsList.length;
-                      setZoomPhotoIndex(nextIndex);
-                      setZoomPhotoUrl(zoomPhotoUrlsList[nextIndex]);
-                      setZoomScale(1);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3.5 bg-black/60 hover:bg-black/90 text-white rounded-full transition active:scale-90 z-[1000] border border-white/10"
-                    title="بل انځور"
-                  >
-                    <ChevronRight className="w-6 h-6 text-white" />
-                  </button>
-                </>
-              )}
-
-              {/* Zoom Preview Canvas */}
-              <motion.div
-                initial={{ scale: 0.9 }}
-                animate={{ scale: zoomScale }}
-                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className="max-w-full max-h-[80vh] flex items-center justify-center p-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  // Cycle zoom scale between 1x, 2x, and 3x
-                  setZoomScale(prev => {
-                    if (prev === 1) return 2;
-                    if (prev === 2) return 3;
-                    return 1;
-                  });
-                }}
-              >
-                <img
-                  src={zoomPhotoUrl}
-                  referrerPolicy="no-referrer"
-                  alt="Zoom detail view"
-                  className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl cursor-pointer"
-                />
-              </motion.div>
-              
-              <div className="absolute bottom-6 text-center text-xs text-slate-400 bg-slate-900/50 py-1.5 px-4 rounded-full backdrop-blur-xs">
-                بېرته وتلو لپاره په شا او خوا تور پړاو کلیک وکړئ
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* 5. GLASSMORPHIC BOTTOM SHEET (د بشپړ متن د لیدلو او شاته تګ ښکلی بار کښته شیټ) */}
-      <AnimatePresence>
-        {bottomSheetPost && (
-          <>
-            {/* Backdrop layer */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/65 z-[1001] backdrop-blur-xs"
-              onClick={() => setBottomSheetPost(null)}
-            />
-            {/* Slide up sheet */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-              className="fixed bottom-0 left-0 right-0 max-w-[580px] w-full mx-auto md:max-w-xl bg-slate-900/85 backdrop-blur-xl border-t border-white/15 rounded-t-3xl z-[1002] shadow-[0_-15px_40px_rgba(0,0,0,0.5)] flex flex-col max-h-[82vh]"
-              style={{ direction: 'rtl' }}
-            >
-              {/* Drag handle block */}
-              <div className="w-full flex justify-center py-3 select-none cursor-pointer" onClick={() => setBottomSheetPost(null)}>
-                <div className="w-12 h-1.5 bg-slate-400/35 rounded-full" />
-              </div>
-
-              {/* Title Header */}
-              <div className="px-5 pb-3 border-b border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-1.5 self-end">
-                  <span className="text-[11px] text-indigo-400 font-sans font-bold">
-                    {getRelativeTimeInPashto(bottomSheetPost.date, bottomSheetPost.timeLabel || 'وروستی')}
-                  </span>
-                </div>
-                
-                {/* Back / Close button */}
-                <button
-                  onClick={() => setBottomSheetPost(null)}
-                  style={{ cursor: 'pointer' }}
-                  className="p-1 px-3 bg-slate-800/80 hover:bg-rose-500/10 hover:text-rose-400 border border-slate-700/60 rounded-lg text-[10.5px] font-black text-slate-300 transition active:scale-95 flex items-center gap-1 self-start"
-                >
-                  ◀ شاته / بندول
-                </button>
-              </div>
-
-              {/* Scrollable text content */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-                {/* Progress bar */}
-                <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden relative mb-1">
-                  <div className={`h-full ${tc.bg} rounded-full`} style={{ width: '100%' }} />
-                </div>
-
-                <div className="telegram-styles pr-1 leading-relaxed">
-                  <BeautifulTelegramText
-                    text={getPostTextWithFallback(bottomSheetPost)}
-                    isDark={isDark}
-                    fs={{ body: 'text-sm sm:text-base font-medium' }}
-                    showExpander={false}
-                  />
-                </div>
-
-                {/* Optional items such as audios within bottom sheet */}
-                {bottomSheetPost.audioList && bottomSheetPost.audioList.length > 0 && (
-                  <div className="space-y-2.5 pt-3 border-t border-white/5">
-                    {bottomSheetPost.audioList.map((audioItem, idx) => {
-                      const cleanTitle = getBeautifulAudioTitle(audioItem.title, bottomSheetPost.title, getPostTextWithFallback(bottomSheetPost), idx);
-                      return (
-                        <BeautifulAudioPlayer key={idx} url={audioItem.url} title={cleanTitle} duration={audioItem.duration} isDark={isDark} tc={tc} />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Footer safe area padding */}
-              <div className="p-4 bg-slate-950/20 border-t border-white/15 flex justify-center safe-padding-bottom">
-                <button
-                  onClick={() => setBottomSheetPost(null)}
-                  style={{ cursor: 'pointer' }}
-                  className="w-full py-3 bg-indigo-650 hover:bg-indigo-600 text-white font-heavy rounded-2xl text-xs font-black shadow-lg shadow-indigo-600/20 transition active:scale-[0.98]"
-                >
-                  لوستل پای ته ورسېدل
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* G. IMMERSIVE REAL CAPTION GLASSY BOTTOM SHEET (د ویډیو او انځور د پوره متن لوستلو شیشه یي bottom sheet) */}
-      <AnimatePresence>
-        {overlayActiveText && (
-          <>
-            {/* Backdrop filter */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.7 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/75 z-[10001] backdrop-blur-sm"
-              onClick={() => setOverlayActiveText(null)}
-            />
-            {/* Slide up bottom-sheet with drag-handle and back button */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-              className="fixed bottom-0 left-0 right-0 max-w-[580px] w-full mx-auto md:max-w-xl bg-slate-950/80 backdrop-blur-2xl border-t border-white/15 rounded-t-3xl z-[10002] shadow-[0_-15px_45px_rgba(0,0,0,0.6)] flex flex-col max-h-[80vh]"
-              style={{ direction: 'rtl' }}
-            >
-              {/* Drag handle header bar */}
-              <div 
-                className="w-full flex justify-center py-3.5 select-none cursor-pointer" 
-                onClick={() => setOverlayActiveText(null)}
-              >
-                <div className="w-12 h-1.5 bg-white/20 rounded-full" />
-              </div>
-
-              {/* Title and Close toolbar */}
-              <div className="px-5 pb-3 border-b border-white/5 flex items-center justify-between">
-                <span className="text-[12px] text-indigo-300 font-bold font-sans">
-                  د شعر پوره متن
-                </span>
-                
-                {/* Back / Close button */}
-                <button
-                  onClick={() => setOverlayActiveText(null)}
-                  style={{ cursor: 'pointer' }}
-                  className="p-1 px-3 bg-white/10 hover:bg-rose-500/20 hover:text-rose-350 border border-white/10 rounded-lg text-xs font-black text-slate-100 transition active:scale-95 flex items-center gap-1.5"
-                >
-                  <ArrowRight className="w-4 h-4" />
-                  <span>◀ تړنې / شاته</span>
-                </button>
-              </div>
-
-              {/* Scrollable text body */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 leading-relaxed text-right font-sans">
-                <p className="text-white text-sm sm:text-base whitespace-pre-line font-medium leading-relaxed select-text">
-                  {overlayActiveText}
-                </p>
-              </div>
-
-              {/* Bottom dismissal button */}
-              <div className="p-4 bg-black/30 border-t border-white/10 flex justify-center safe-padding-bottom">
-                <button
-                  onClick={() => setOverlayActiveText(null)}
-                  style={{ cursor: 'pointer' }}
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-heavy rounded-2xl text-xs font-black shadow-lg shadow-indigo-600/20 transition active:scale-[0.98]"
-                >
-                  بیا کتنې ته ورګرځېدل
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* FLOATING SCROLL TO TOP BUTTON (د پورته تللو ښکلې کارول اسانه بټنه) */}
-      <AnimatePresence>
-        {showScrollTop && (
-          <motion.button
-            id="scroll-to-top-floating-btn"
-            initial={{ opacity: 0, scale: 0.5, y: 15 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.5, y: 15 }}
-            whileHover={{ scale: 1.1, y: -2 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={scrollToTop}
-            style={{ cursor: 'pointer' }}
-            className={`fixed bottom-[105px] right-5 sm:right-7 z-[9900] w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center shadow-lg border outline-none transition-all duration-300 select-none ${
-              isDark 
-                ? 'bg-slate-900/95 border-indigo-500/35 text-indigo-400 hover:text-white hover:bg-indigo-600 shadow-[0_5px_20px_rgba(99,102,241,0.2)]' 
-                : 'bg-white/95 border-indigo-150 text-indigo-600 hover:text-white hover:bg-indigo-600 shadow-[0_5px_16px_rgba(79,70,229,0.15)]'
-            }`}
-            title="پورته تللو بټنه"
-          >
-            <ChevronUp className="w-5.5 h-5.5 sm:w-6 sm:h-6 stroke-[3] animate-pulse" />
-          </motion.button>
         )}
       </AnimatePresence>
 
@@ -12234,6 +13085,230 @@ export default function App() {
         })()}
       </AnimatePresence>
 
+      {/* ==========================================================
+         GLASSMORPHIC BOTTOM SHEET FOR READ MODE (د متن او آډیو لوستلو ښکلی بار کښته شیټ)
+         ========================================================== */}
+      <AnimatePresence>
+        {bottomSheetPost && (
+          <>
+            {/* Backdrop layer */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/75 z-[99990] backdrop-blur-xs"
+              onClick={() => setBottomSheetPost(null)}
+            />
+            {/* Slide up sheet */}
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+              className={`fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-[32px] border-t backdrop-blur-xl z-[99995] flex flex-col overflow-hidden select-none ${
+                isDark 
+                  ? 'bg-slate-900/95 border-slate-800 text-white' 
+                  : 'bg-white/95 border-slate-200 text-slate-900 shadow-2xl'
+              }`}
+              style={{ paddingBottom: 'calc(1.5rem + var(--safe-bottom))' }}
+            >
+              {/* Drag indicator bar */}
+              <div className="w-12 h-1 bg-slate-500/30 rounded-full mx-auto my-3 shrink-0" />
+
+              {/* Action Close buttons header */}
+              <div className="px-6 pb-2.5 flex items-center justify-between border-b border-slate-500/10">
+                <span className="text-[10px] font-bold text-slate-400 select-none ltr font-sans">
+                  Detail View Mode
+                </span>
+                <button
+                  onClick={() => setBottomSheetPost(null)}
+                  style={{ cursor: 'pointer' }}
+                  className="p-1.5 px-4 bg-slate-850/80 hover:bg-rose-500/10 hover:text-rose-450 border border-slate-700/30 rounded-xl text-xs font-black text-slate-300 transition active:scale-95 flex items-center gap-1.5 self-start flex-row-reverse"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>◀ شاته / بندول</span>
+                </button>
+              </div>
+
+              {/* Scrollable text content container */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+                
+                {/* Visual completion bar indicator */}
+                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden relative mb-2">
+                  <div className={`h-full ${tc.bg} rounded-full`} style={{ width: '100%' }} />
+                </div>
+
+                {/* Main text message */}
+                <div className="telegram-styles pr-1 leading-relaxed text-right select-text">
+                  <BeautifulTelegramText
+                    text={getPostTextWithFallback(bottomSheetPost)}
+                    isDark={isDark}
+                    fs={{ body: 'text-sm sm:text-base font-semibold' }}
+                    showExpander={false}
+                  />
+                </div>
+
+                {/* Optional audios inside this post */}
+                {bottomSheetPost.audioList && bottomSheetPost.audioList.length > 0 && (
+                  <div className="space-y-3 pt-4 border-t border-slate-500/10">
+                    <p className="text-[10px] text-slate-400 text-right font-black mb-1.5">
+                      د پست غږیز فایلونه / Audio Recorders:
+                    </p>
+                    {bottomSheetPost.audioList.map((audioItem, idx) => {
+                      const cleanTitle = getBeautifulAudioTitle(audioItem.title, bottomSheetPost.title, getPostTextWithFallback(bottomSheetPost), idx);
+                      return (
+                        <BeautifulAudioPlayer 
+                          key={idx} 
+                          url={audioItem.url} 
+                          title={cleanTitle} 
+                          duration={audioItem.duration} 
+                          isDark={isDark} 
+                          tc={tc} 
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom control safe area action bar */}
+              <div className="p-4 bg-slate-950/15 border-t border-slate-500/5 flex justify-center">
+                <button
+                  onClick={() => setBottomSheetPost(null)}
+                  style={{ cursor: 'pointer' }}
+                  className={`w-full py-3.5 ${tc.bg} ${tc.hoverBg} text-white font-extrabold rounded-2xl text-[12px] shadow-lg transition active:scale-[0.98]`}
+                >
+                  لوستل پای ته ورسېدل (بشپړ شو)
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+{/* Dynamic Admin Detail Modal (وحیدالله قلمیار پېژندندپاڼه په کليک کولو سره) */}
+      <AnimatePresence>
+        {isAdminDetailOpen && (
+          <div key="admin-detail-modal" className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
+            {/* Backdrop cover overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAdminDetailOpen(false)}
+              className="absolute inset-0 bg-slate-950/85 backdrop-blur-md"
+            />
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 30 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 245 }}
+              className={`relative w-full max-w-lg rounded-3xl overflow-hidden border shadow-2xl flex flex-col text-right ${
+                isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+              }`}
+            >
+              {/* Header Image Header / Aesthetic Banner */}
+              <div className="relative h-44 w-full">
+                <img
+                  src={adminPost?.photoUrl || adminAvatarImg}
+                  alt="Wahidullah Qalamyar"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
+                
+                {/* Admin Role Emblem Badge */}
+                <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-amber-500 text-slate-950 px-3 py-1.5 rounded-full shadow-lg border border-amber-300/30 text-[11px] font-black z-20 animate-pulse">
+                  <Shield className="w-3.5 h-3.5 fill-current text-slate-950" />
+                  <span>د اپلیکیشن اډمین</span>
+                </div>
+                
+                {/* Close Button top-left */}
+                <button
+                  onClick={() => setIsAdminDetailOpen(false)}
+                  style={{ cursor: 'pointer' }}
+                  className="absolute top-4 left-4 p-2 bg-slate-950/70 hover:bg-slate-900/95 text-white rounded-full transition border border-white/10 z-20 active:scale-90"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                {/* Overlaid Title on Image Bottom */}
+                <div className="absolute bottom-4 right-5 text-right z-10 select-none">
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-amber-400 bg-amber-400/10 border border-amber-500/20 px-2 py-0.5 rounded-md drop-shadow">
+                    وحیدالله قلمیار / Wahidullah Qalamyar
+                  </span>
+                  <h3 className="text-base font-black text-white font-sans mt-1 shadow-sm">
+                    د محتوا تنظیموونکی او مینووال
+                  </h3>
+                </div>
+              </div>
+
+              {/* Scrollable Bio Text Content */}
+              <div className="p-5 space-y-4 max-h-[55vh] overflow-y-auto scrollbar-thin text-right font-sans">
+                {/* Active Indicator status ribbon */}
+                <div className={`p-3.5 rounded-2xl flex items-center justify-between flex-row-reverse border ${
+                  isDark ? 'bg-slate-850/50 border-slate-800' : 'bg-slate-50 border-slate-100'
+                }`}>
+                  <div className="flex items-center gap-2 flex-row-reverse">
+                    <div className="relative">
+                      <img
+                        src={adminPost?.photoUrl || adminAvatarImg}
+                        className="w-10 h-10 rounded-full object-cover border border-slate-600/30"
+                        referrerPolicy="no-referrer"
+                      />
+                      <span className="absolute bottom-0 left-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-900 rounded-full animate-pulse" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black">وحیدالله قلمیار</h4>
+                      <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'} font-bold`}>Publisher & Administrator</p>
+                    </div>
+                  </div>
+
+                  <span className="text-[9px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">
+                    فعال او انلاین اډمین
+                  </span>
+                </div>
+
+                {/* Paragraph Content */}
+                <div className={`p-1.5 rounded-xl space-y-2.5 text-right leading-relaxed text-xs sm:text-sm font-semibold select-all ${
+                  isDark ? 'text-slate-200' : 'text-slate-700'
+                }`}>
+                  {adminPost?.text ? (
+                    adminPost.text.replace(/#admin/gi, '').trim().split('\n').map((line, idx) => (
+                      <p key={idx} className="mb-2 font-medium leading-relaxed font-sans">{line}</p>
+                    ))
+                  ) : (
+                    <>
+                      <p className="font-sans leading-relaxed text-right">
+                        ښاغلی <strong>وحیدالله قلمیار</strong> د پښتو خوږې ژبې، ادب او مینه وال، د دې پښتو ادبي خزانې د ځانګړې نشراتي څانګې مسؤل دی.
+                      </p>
+                      <p className="font-sans leading-relaxed text-right">
+                        په دې غوښتنلیک کې د ټولو ادبیاتو انتخاب، د خوږو شعرونو، کلامونو او نثرونو تفصیلي راټولونه او تصحیح د اډمین قلمیار صاحب له لوري په پوره امانتدارۍ او مینه ترسره کېږي ترڅو د پښتو مینه والو ته کره محتوا ورسېږي.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Close Buttons footer */}
+              <div className={`p-4 border-t flex justify-end gap-2.5 flex-row-reverse ${
+                isDark ? 'border-slate-800 bg-slate-850/30' : 'border-slate-150 bg-slate-50/50'
+              }`}>
+                <button
+                  onClick={() => setIsAdminDetailOpen(false)}
+                  style={{ cursor: 'pointer' }}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition-all shadow-md active:scale-95 flex items-center gap-1.5 flex-row-reverse"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>ومنل شو (بندول)</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* GLOBAL FLOATING BACKGROUND AUDIO CONTROL (په شالید کې د غږیزو خپرونو وقفه او کنټرول) */}
       <GlobalFloatingAudioPlayer isDark={isDark} tc={tc} />
     </div>
@@ -12401,6 +13476,7 @@ function GlobalFloatingAudioPlayer({ isDark, tc }: { isDark: boolean; tc: any })
         </AnimatePresence>
 
       </motion.div>
+
     </AnimatePresence>
   );
 }
