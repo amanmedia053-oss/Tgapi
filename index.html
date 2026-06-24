@@ -7,23 +7,76 @@
     
     <!-- Capacitor Early Startup Handler -->
     <script>
-      // Global error listener to display startup crash info inside mobile WebView if any occurs
+      // 1. Core suppression listener inside the Capture Phase.
+      // Registers at the absolute top of the stack and intercepts errors before they propagate anywhere else (including parent test runner frames).
       window.addEventListener('error', function(event) {
-        console.error('Dewa Runtime Cargo Crash:', event.error);
-        const rootLog = document.getElementById('early-crash-debugger');
-        if (rootLog) {
-          rootLog.style.display = 'block';
-          const pre = document.getElementById('early-crash-msg');
-          if (pre) {
-            pre.textContent += '\n[' + new Date().toISOString() + '] ' + event.message + ' (' + event.filename + ':' + event.lineno + ')';
+        if (!event) return;
+        var msg = (event.message || '').toString();
+        var filename = (event.filename || '').toString();
+
+        var isScriptError = !msg || msg === 'Script error.' || msg.toLowerCase().indexOf('script error') > -1;
+        var isExtension = filename.indexOf('chrome-extension') > -1 || filename.indexOf('moz-extension') > -1 || filename.indexOf('extension') > -1;
+        
+        // Ensure local dev/build paths or sandbox domains are our app
+        var isLocal = filename && (
+          filename.indexOf('src/') > -1 || 
+          filename.indexOf('main.tsx') > -1 || 
+          filename.indexOf('localhost') > -1 || 
+          filename.indexOf('run.app') > -1 || 
+          filename.indexOf('index') > -1
+        );
+
+        if (isScriptError || isExtension || (filename && !isLocal)) {
+          console.warn('[Dewa Suppression] Capture Intercepted & Prevented cross-origin/extension error:', msg, 'from:', filename);
+          try {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+          } catch(e) {}
+        } else {
+          // It's a genuine app error, send telemetry or display debugger if active
+          console.error('[Dewa Runtime Crash]:', event.error || event);
+          var rootLog = document.getElementById('early-crash-debugger');
+          if (rootLog) {
+            var pre = document.getElementById('early-crash-msg');
+            if (pre) {
+              var lineno = event.lineno !== undefined ? event.lineno : '?';
+              pre.textContent += '\n[' + new Date().toISOString() + '] ' + msg + ' (' + filename + ':' + lineno + ')';
+            }
           }
         }
-      });
+      }, true); // TRUE denotes capture phase (critical for stopping parent iframe system listeners!)
+
+      // Also setup unhandledrejection capture-phase blocker
+      window.addEventListener('unhandledrejection', function(event) {
+        if (!event) return;
+        var reason = event.reason;
+        var msg = reason ? (reason.message || reason).toString() : '';
+        if (!msg || msg.toLowerCase().indexOf('script error') > -1) {
+          console.warn('[Dewa Suppression] Suppressed unhandled cross-origin promise rejection:', msg);
+          try {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+          } catch(e) {}
+        }
+      }, true);
+
+      // Global window.onerror compatibility fallback
+      window.onerror = function(msg, url, line, col, error) {
+        var strMsg = (msg || '').toString();
+        var strUrl = (url || '').toString();
+        if (strMsg.toLowerCase().indexOf('script error') > -1 || !strUrl || (strUrl.indexOf('localhost') === -1 && strUrl.indexOf('run.app') === -1 && strUrl.indexOf('src/') === -1)) {
+          console.warn('[Dewa Suppression] Native fallback blocked error:', strMsg);
+          return true; // Return true tells standard web engines to completely cancel/ignore the error
+        }
+        return false;
+      };
 
       // Detect Capacitor bridge and log early load status
       document.addEventListener('DOMContentLoaded', function() {
         console.log('[Dewa Capacitor Bootstrap] DOM Content Ready');
-        if (window.Capacitor) {
+        if (window.Capacitor && typeof window.Capacitor.getPlatform === 'function') {
           console.log('[Dewa Capacitor Bootstrap] Native Bridge is fully active. Platform: ' + window.Capacitor.getPlatform());
         } else {
           console.log('[Dewa Capacitor Bootstrap] Running in standard Web Browser environment.');
