@@ -1699,6 +1699,204 @@ export function removeHashtagsOnly(text: string): string {
   return beautifullyFormatPashtoText(text, false);
 }
 
+/* Beautiful inline SVGs for social icons to be accessible globally */
+export const WhatsAppIcon = ({ className = "w-5 h-5 shrink-0" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.335 4.97L2 22l5.233-1.371a9.957 9.957 0 004.779 1.218h.004c5.506 0 9.989-4.478 9.99-9.984A9.993 9.993 0 0012.012 2zm5.727 14.173c-.25.702-1.25 1.285-1.733 1.348-.483.064-.966.113-3.111-.733a11.111 11.111 0 01-4.833-4.246c-.95-1.272-1.533-2.733-1.533-4.246 0-1.728.895-2.584 1.218-2.918.322-.334.717-.417.95-.417.234 0 .467.013.667.025.213.013.433-.075.602.321.213.513.717 1.742.784 1.88.067.138.113.3.012.5-.1.2-.15.321-.3.5-.15.178-.312.3-.446.463-.15.178-.313.375-.125.7.188.325.833 1.371 1.783 2.221.95.85 1.75 1.112 2.083 1.25.334.138.533.113.733-.112.2-.226.85-.984 1.084-1.321.233-.338.466-.275.783-.163.317.112 2.017.996 2.367 1.171.35.175.583.263.667.413.083.15.083.863-.167 1.563z"/>
+  </svg>
+);
+
+export const TelegramIcon = ({ className = "w-5 h-5 shrink-0" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.37.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .29z"/>
+  </svg>
+);
+
+/* Global helper function for extracting links and text from developer/admin posts */
+export function extractProfileLinksAndText(rawText: string) {
+  if (!rawText) return { cleanText: '', links: [] };
+  
+  // Robust regex to match any URLs (http, https, www, t.me, wa.me, etc.)
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\/[^\s]*)/gi;
+  const linksSet = new Set<string>();
+  const matches = rawText.match(urlRegex);
+  
+  if (matches) {
+    matches.forEach(url => {
+      let cleanUrl = url;
+      // Strip trailing punctuation from URL
+      while (cleanUrl && (cleanUrl.endsWith('.') || cleanUrl.endsWith(',') || cleanUrl.endsWith(')') || cleanUrl.endsWith(']') || cleanUrl.endsWith('؛') || cleanUrl.endsWith('،'))) {
+        cleanUrl = cleanUrl.slice(0, -1);
+      }
+      if (cleanUrl) {
+        // Ensure protocol exists for absolute links
+        if (!cleanUrl.match(/^https?:\/\//i) && !cleanUrl.startsWith('tel:')) {
+          cleanUrl = 'https://' + cleanUrl;
+        }
+        linksSet.add(cleanUrl);
+      }
+    });
+  }
+
+  // Remove URLs completely
+  let cleanText = rawText.replace(urlRegex, '');
+  // Remove all hashtags completely
+  cleanText = cleanText.replace(/#[\u0600-\u06FFa-zA-Z0-9_]+/g, '');
+  
+  // Deduplicate consecutive or identical paragraphs/sentences/clauses
+  cleanText = cleanText.replace(/[ \t]+/g, ' ').trim();
+  
+  // Try splitting the entire cleanText in half to check if it's duplicated (very common when text is doubled)
+  const mid = Math.floor(cleanText.length / 2);
+  if (cleanText.length > 20) {
+    for (let offset = -15; offset <= 15; offset++) {
+      const splitPoint = mid + offset;
+      if (splitPoint > 5 && splitPoint < cleanText.length - 5) {
+        const firstHalf = cleanText.substring(0, splitPoint).trim();
+        const secondHalf = cleanText.substring(splitPoint).trim();
+        
+        const norm1 = firstHalf.replace(/[\s\p{P}]/gu, '');
+        const norm2 = secondHalf.replace(/[\s\p{P}]/gu, '');
+        if (norm1 === norm2 && norm1.length > 10) {
+          cleanText = firstHalf;
+          break;
+        }
+      }
+    }
+  }
+
+  // Split into paragraphs and deduplicate paragraphs/sentences
+  const paragraphs = cleanText.split('\n');
+  const uniqueParagraphs: string[] = [];
+  const seenParagraphs = new Set<string>();
+  
+  for (let para of paragraphs) {
+    para = para.trim();
+    if (!para) {
+      if (uniqueParagraphs.length > 0 && uniqueParagraphs[uniqueParagraphs.length - 1] !== '') {
+        uniqueParagraphs.push('');
+      }
+      continue;
+    }
+    
+    // Normalize paragraph for duplicate check
+    const normalizedPara = para.replace(/[\s\p{P}]/gu, '').toLowerCase();
+    
+    // Check if paragraph is similar or substring of already seen paragraphs
+    let isDuplicate = false;
+    for (const seen of seenParagraphs) {
+      if (seen.includes(normalizedPara) || normalizedPara.includes(seen)) {
+        isDuplicate = true;
+        break;
+      }
+    }
+    if (isDuplicate) {
+      continue;
+    }
+    seenParagraphs.add(normalizedPara);
+    
+    // Check if the paragraph itself consists of duplicate halves (even without punctuation)
+    const pMid = Math.floor(para.length / 2);
+    let pResolved = para;
+    if (para.length > 20) {
+      for (let offset = -10; offset <= 10; offset++) {
+        const splitPoint = pMid + offset;
+        if (splitPoint > 5 && splitPoint < para.length - 5) {
+          const firstHalf = para.substring(0, splitPoint).trim();
+          const secondHalf = para.substring(splitPoint).trim();
+          
+          const norm1 = firstHalf.replace(/[\s\p{P}]/gu, '').toLowerCase();
+          const norm2 = secondHalf.replace(/[\s\p{P}]/gu, '').toLowerCase();
+          if (norm1 === norm2 && norm1.length > 8) {
+            pResolved = firstHalf;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Also deduplicate sentences/phrases inside the paragraph split by common punctuation/spaces
+    const sentences = pResolved.split(/(?<=[.!؟?])\s+/);
+    const uniqueSentences: string[] = [];
+    const seenSentences = new Set<string>();
+    
+    for (let sentence of sentences) {
+      sentence = sentence.trim();
+      if (!sentence) continue;
+      
+      const normalizedSentence = sentence.replace(/[\s\p{P}]/gu, '').toLowerCase();
+      
+      let isSentenceDup = false;
+      for (const seenS of seenSentences) {
+        if (seenS.includes(normalizedSentence) || normalizedSentence.includes(seenS)) {
+          isSentenceDup = true;
+          break;
+        }
+      }
+      if (isSentenceDup) {
+        continue;
+      }
+      seenSentences.add(normalizedSentence);
+      uniqueSentences.push(sentence);
+    }
+    
+    uniqueParagraphs.push(uniqueSentences.join(' '));
+  }
+
+  cleanText = uniqueParagraphs.join('\n').trim();
+
+  return { cleanText, links: Array.from(linksSet) };
+}
+
+/* Reusable, beautifully-styled component to render social & link icons that work flawlessly in light and dark mode */
+export function ProfileSocialLinks({ links }: { links: string[] }) {
+  if (!links || links.length === 0) return null;
+  
+  return (
+    <div className="mt-5 pt-4 border-t border-slate-500/10 flex justify-center items-center gap-5 flex-wrap">
+      {links.map((link, idx) => {
+        let IconComponent: any = ExternalLink;
+        let btnStyle = "";
+        let title = "تړونی وګورئ";
+        const lower = link.toLowerCase();
+
+        if (lower.includes('wa.me') || lower.includes('whatsapp')) {
+          IconComponent = WhatsAppIcon;
+          btnStyle = "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-500/30 dark:hover:bg-emerald-500 dark:hover:text-white dark:hover:border-emerald-500 shadow-md shadow-emerald-500/5 hover:shadow-lg hover:shadow-emerald-500/20";
+          title = "واټساپ اړیکه";
+        } else if (lower.includes('t.me') || lower.includes('telegram')) {
+          IconComponent = TelegramIcon;
+          btnStyle = "bg-sky-50 text-sky-600 border border-sky-200 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:bg-sky-950/40 dark:text-sky-400 dark:border-sky-500/30 dark:hover:bg-sky-500 dark:hover:text-white dark:hover:border-sky-500 shadow-md shadow-sky-500/5 hover:shadow-lg hover:shadow-sky-500/20";
+          title = "ټیلیګرام";
+        } else if (lower.includes('github')) {
+          IconComponent = Globe;
+          btnStyle = "bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-800 hover:text-white hover:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-200 dark:hover:text-slate-900 dark:hover:border-slate-200 shadow-md shadow-slate-500/5 hover:shadow-lg";
+          title = "ګېټ هب";
+        } else if (lower.includes('tel:') || lower.match(/phone|\+93/)) {
+          IconComponent = Phone;
+          btnStyle = "bg-teal-50 text-teal-600 border border-teal-200 hover:bg-teal-600 hover:text-white hover:border-teal-600 dark:bg-teal-950/40 dark:text-teal-400 dark:border-teal-500/30 dark:hover:bg-teal-500 dark:hover:text-white dark:hover:border-teal-500 shadow-md shadow-teal-500/5 hover:shadow-lg hover:shadow-teal-500/20";
+          title = "تلیفون";
+        } else {
+          btnStyle = "bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-500/30 dark:hover:bg-indigo-500 dark:hover:text-white dark:hover:border-indigo-500 shadow-md shadow-indigo-500/5 hover:shadow-lg hover:shadow-indigo-500/20";
+        }
+
+        return (
+          <a
+            key={idx}
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={title}
+            className={`inline-flex items-center justify-center w-12 h-12 rounded-2xl transition-all duration-300 hover:scale-110 active:scale-95 border hover:rotate-2 ${btnStyle}`}
+          >
+            <IconComponent className="w-6 h-6 shrink-0" />
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
 /* Helper to format clumped/glued Pashto text into beautiful, spaced paragraphs, dialogue stanzas, and metadata lines */
 export function beautifullyFormatPashtoText(text: string, keepHashtags: boolean = false): string {
   if (!text) return '';
@@ -2516,6 +2714,7 @@ export default function App() {
   const [isCategoryPageOpen, setIsCategoryPageOpen] = useState(false);
   const [isNovelsPageOpen, setIsNovelsPageOpen] = useState(false);
   const [selectedAuthorName, setSelectedAuthorName] = useState<string | null>(null);
+  const [profileBackOrigin, setProfileBackOrigin] = useState<'reels' | 'photo_reels' | null>(null);
   const [profileSelectedCategory, setProfileSelectedCategory] = useState<string>('all');
   const [hasReachedEnd, setHasReachedEnd] = useState(false);
   const [novelsFeedData, setNovelsFeedData] = useState<FeedResponse | null>(null);
@@ -5582,6 +5781,7 @@ export default function App() {
                   setSearchQuery('');
                   setContactSuccess(false);
                   setContactError(null);
+                  setProfileBackOrigin(null);
                 }}
                 style={{ cursor: 'pointer' }}
                 className={`px-3 py-1.5 ${tc.bg} ${tc.hoverBg} active:scale-95 rounded-lg text-xs font-bold text-white transition flex items-center gap-1.5 shrink-0`}
@@ -7273,9 +7473,20 @@ export default function App() {
              ========================================================== */
           <div className="animate-fade-in text-right flex flex-col w-full min-h-screen">
             {/* Custom Transparent/Glassy Header overlaying the cover image */}
-            <div className="sticky top-0 z-50 w-full px-4 py-3 bg-slate-950/20 backdrop-blur-md border-b border-white/5 flex items-center justify-between shadow-xs">
+            <div 
+              style={{ paddingTop: 'calc(0.75rem + var(--safe-top))' }}
+              className="sticky top-0 z-50 w-full px-4 pb-3 bg-slate-950/20 backdrop-blur-md border-b border-white/5 flex items-center justify-between shadow-xs"
+            >
               <button
-                onClick={() => setSelectedAuthorName(null)}
+                onClick={() => {
+                  if (profileBackOrigin === 'reels') {
+                    setIsReelsOpen(true);
+                  } else if (profileBackOrigin === 'photo_reels') {
+                    setIsPhotoReelsOpen(true);
+                  }
+                  setSelectedAuthorName(null);
+                  setProfileBackOrigin(null);
+                }}
                 style={{ cursor: 'pointer' }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition active:scale-95 font-bold text-xs shrink-0 select-none"
                 title="شاته کورپاڼې ته"
@@ -7356,7 +7567,7 @@ export default function App() {
                     <div className="px-4 sm:px-6 pt-3 flex flex-col items-center text-center">
                       {/* 3. Beautifully Styled Name (نوم ښايسته سټايل) */}
                       <div className="space-y-1.5">
-                        <h2 className="text-2xl sm:text-3xl font-black text-white font-sans tracking-tight drop-shadow-md select-none">
+                        <h2 className={`text-2xl sm:text-3xl font-black font-sans tracking-tight drop-shadow-md select-none ${isDark ? 'text-white' : 'text-slate-900'}`}>
                           {selectedAuthorName}
                         </h2>
                         <p className="text-xs text-indigo-400 font-extrabold tracking-wide flex items-center justify-center gap-1.5 bg-indigo-500/10 px-4 py-1.5 rounded-full border border-indigo-500/20 shadow-sm">
@@ -7366,14 +7577,14 @@ export default function App() {
                       </div>
 
                       {/* Stats Row */}
-                      <div className="grid grid-cols-2 gap-4 w-full max-w-sm border-t border-b border-slate-900/60 py-4 mt-6">
+                      <div className={`grid grid-cols-2 gap-4 w-full max-w-sm border-t border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} py-4 mt-6`}>
                         <div className="text-center">
-                          <span className="block text-xl font-black text-white font-mono">{baseAuthorPosts.length}</span>
-                          <span className="text-[10px] text-slate-400 font-bold">ټول خپاره شوي پوسټونه</span>
+                          <span className={`block text-xl font-black font-mono ${isDark ? 'text-white' : 'text-slate-900'}`}>{baseAuthorPosts.length}</span>
+                          <span className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-550'} font-bold`}>ټول خپاره شوي پوسټونه</span>
                         </div>
                         <div className="text-center border-r border-slate-900/60">
-                          <span className="block text-xl font-black text-white font-mono">{totalViewsCount.toLocaleString()}</span>
-                          <span className="text-[10px] text-slate-400 font-bold">ټولې لیدنې (Views)</span>
+                          <span className={`block text-xl font-black font-mono ${isDark ? 'text-white' : 'text-slate-900'}`}>{totalViewsCount.toLocaleString()}</span>
+                          <span className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-550'} font-bold`}>ټولې لیدنې (Views)</span>
                         </div>
                       </div>
                     </div>
@@ -8140,6 +8351,7 @@ export default function App() {
                             onClick={() => {
                               const authorName = activeReel.post.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه";
                               setSelectedAuthorName(authorName);
+                              setProfileBackOrigin('reels');
                               setIsReelsOpen(false);
                               if (reelVideoRef.current) {
                                 reelVideoRef.current.pause();
@@ -8454,6 +8666,7 @@ export default function App() {
                             onClick={() => {
                               const authorName = activePhotoReel.post.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه";
                               setSelectedAuthorName(authorName);
+                              setProfileBackOrigin('photo_reels');
                               setIsPhotoReelsOpen(false);
                             }}
                             className="pointer-events-auto flex items-center gap-2 justify-end cursor-pointer hover:scale-105 active:scale-95 transition duration-200"
@@ -9381,20 +9594,20 @@ export default function App() {
                   </div>
                   {devPost ? (
                     <div className="text-right leading-[1.8]">
-                      {devPost.htmlText ? (
-                        <div 
-                          className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} whitespace-pre-wrap`}
-                          dangerouslySetInnerHTML={{ __html: makeHtmlHashtagsClickable(devPost.htmlText.replace(/#dev/gi, '').trim()) }}
-                        />
-                      ) : (
-                        <BeautifulTelegramText 
-                          text={devPost.text.replace(/#dev/gi, '').trim()} 
-                          isDark={isDark}
-                          fs={fs}
-                          showExpander={false}
-                          limitLines={100}
-                        />
-                      )}
+                      {(() => {
+                        const { cleanText, links } = extractProfileLinksAndText(devPost.text);
+                        return (
+                          <>
+                            <div className={`text-xs sm:text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'} whitespace-pre-wrap leading-relaxed`}>
+                              {cleanText.split('\n').map((line, lIdx) => (
+                                <p key={lIdx} className="mb-2 font-medium leading-relaxed font-sans">{line}</p>
+                              ))}
+                            </div>
+                            
+                            {links.length > 0 && <ProfileSocialLinks links={links} />}
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : (
                     <>
@@ -10269,7 +10482,7 @@ export default function App() {
               <div 
                 onClick={() => {
                   setIsPhotoReelsOpen(true);
-                  setActivePhotoReelIndex(0);
+                  // Preserve existing activePhotoReelIndex instead of resetting to 0
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 style={{ cursor: 'pointer' }}
@@ -10295,19 +10508,23 @@ export default function App() {
               <div 
                 onClick={() => {
                   setIsReelsOpen(true);
-                  let targetIndex = 0;
-                  const lastWatched = (window as any).lastWatchedVideo;
-                  if (lastWatched && lastWatched.videoUrl) {
-                    const idx = reelsList.findIndex(r => 
-                      r.videoUrl === lastWatched.videoUrl || 
-                      (r.videoUrl && r.videoUrl.includes(lastWatched.videoUrl)) || 
-                      (lastWatched.videoUrl && lastWatched.videoUrl.includes(r.videoUrl))
-                    );
-                    if (idx !== -1) {
-                      targetIndex = idx;
+                  // Preserve existing activeReelIndex so we stay on the same video,
+                  // unless it's the first time and there is a specific lastWatched video.
+                  if (activeReelIndex === 0) {
+                    let targetIndex = 0;
+                    const lastWatched = (window as any).lastWatchedVideo;
+                    if (lastWatched && lastWatched.videoUrl) {
+                      const idx = reelsList.findIndex(r => 
+                        r.videoUrl === lastWatched.videoUrl || 
+                        (r.videoUrl && r.videoUrl.includes(lastWatched.videoUrl)) || 
+                        (lastWatched.videoUrl && lastWatched.videoUrl.includes(r.videoUrl))
+                      );
+                      if (idx !== -1) {
+                        targetIndex = idx;
+                      }
                     }
+                    setActiveReelIndex(targetIndex);
                   }
-                  setActiveReelIndex(targetIndex);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 style={{ cursor: 'pointer' }}
@@ -12594,7 +12811,7 @@ export default function App() {
                               rel="noreferrer"
                               className="py-1.5 px-3 bg-indigo-650/10 hover:bg-indigo-600/20 text-indigo-400 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
                             >
-                              <Globe className="w-3" />
+                              <Globe className="w-3 h-3" />
                               <span>Website</span>
                             </a>
                             <a
@@ -12625,23 +12842,23 @@ export default function App() {
                         </div>
                         {devPost ? (
                           <div className="text-right text-[11px] leading-relaxed">
-                            {devPost.htmlText ? (
-                              <div 
-                                className={`${isDark ? 'text-slate-300' : 'text-slate-700'} whitespace-pre-wrap`}
-                                dangerouslySetInnerHTML={{ __html: makeHtmlHashtagsClickable(devPost.htmlText.replace(/#dev/gi, '').trim()) }}
-                              />
-                            ) : (
-                              <BeautifulTelegramText 
-                                text={devPost.text.replace(/#dev/gi, '').trim()} 
-                                isDark={isDark}
-                                fs={fs}
-                                showExpander={false}
-                                limitLines={50}
-                              />
-                            )}
+                            {(() => {
+                              const { cleanText, links } = extractProfileLinksAndText(devPost.text);
+                              return (
+                                <>
+                                  <div className={`${isDark ? 'text-slate-300' : 'text-slate-700'} whitespace-pre-wrap leading-relaxed`}>
+                                    {cleanText.split('\n').map((line, lIdx) => (
+                                      <p key={lIdx} className="mb-2 font-medium leading-relaxed font-sans">{line}</p>
+                                    ))}
+                                  </div>
+                                  
+                                  {links.length > 0 && <ProfileSocialLinks links={links} />}
+                                </>
+                              );
+                            })()}
                           </div>
                         ) : (
-                          <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                          <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-705'} leading-relaxed`}>
                             زه عبیدالله غفاري یم، د لوګر ولایت اوسېدونکی. د ټکنالوژۍ، ویب پرافتیا, مصنوعي ځیرکتیا او زده کړې سره ځانګړې مینه لرم او هڅه کوم چې د دین، هېواد او پښتو ژبې لپاره ګټور ډیجیټلي خدمتونه وړاندې کړم.
                           </p>
                         )}
@@ -12653,7 +12870,7 @@ export default function App() {
                           <span className="text-xs">زما موخه</span>
                           <Rocket className="w-4 h-4" />
                         </div>
-                        <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-705'} leading-relaxed`}>
                           دین ته خدمت، هېواد ته خدمت، پښتو ژبې ته وده ورکول، امت او بشریت ته ګټور پاتې کېدل، د پوهې خپرول، نوښت او پرمختګ.
                         </p>
                       </div>
@@ -12664,7 +12881,7 @@ export default function App() {
                           <span className="text-xs">ورځنۍ بوختیاوې</span>
                           <Calendar className="w-4 h-4" />
                         </div>
-                        <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-relaxed`}>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-705'} leading-relaxed`}>
                           مطالعه، دیني زده کړې، AI او ټکنالوژي، ویب پرافتیا، کتاب لوستل، آنلاین کورسونه، ټولنیزې رسنۍ، نوې تجربې.
                         </p>
                       </div>
@@ -12708,8 +12925,8 @@ export default function App() {
                             "بریالیتوب منزل نه دی، بلکې د زده کړې، هڅې او خدمت دوامداره سفر دی."
                           </p>
                           <Quote className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                        </div>
-                      </div>
+                         </div>
+                       </div>
 
                       {/* Statistics Section */}
                       <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-3 text-right`}>
@@ -12754,7 +12971,7 @@ export default function App() {
                               <span className="font-mono text-indigo-400">95%</span>
                               <span className="text-slate-350">خدمت</span>
                             </div>
-                            <div className="w-full bg-slate-955 h-1.5 rounded-full overflow-hidden">
+                            <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden">
                               <div className="bg-indigo-500 h-full rounded-full" style={{ width: '95%' }} />
                             </div>
                           </div>
@@ -12889,425 +13106,259 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* ==========================================================
-         STORIES IMMERSIVE FULLSCREEN VIEWER (د کیسو د کتلو پرمختللی د سمارټ فون د کیسو په شان سکرین)
-         ========================================================== */}
-      <AnimatePresence>
-        {isStoryViewerOpen && storiesList.length > 0 && (() => {
-          const activeStory = storiesList[activeStoryIndex];
-          if (!activeStory) return null;
-
-          const storyImage = activeStory.photoUrl || (activeStory.photoUrls && activeStory.photoUrls[0]);
-          const storyVideo = activeStory.videoUrl;
-
-          return (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.25 }}
-              className="fixed inset-0 w-screen h-screen bg-black z-[10000] overflow-hidden flex flex-col justify-between select-none"
-            >
-              {/* Blurred background image/gradient for premium atmosphere */}
-              <div className="absolute inset-0 z-0 opacity-40 blur-3xl pointer-events-none scale-110">
-                {storyImage ? (
-                  <img src={storyImage} alt="bg-ambient" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
-                ) : (
-                  <div className={`w-full h-full bg-gradient-to-tr ${tc.gradient}`} />
-                )}
-              </div>
-
-              {/* Top Navigation Bar */}
-              <div className="relative z-20 w-full px-4 pb-2 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex flex-col gap-3" style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
-                
-                {/* 1. Progress indicators */}
-                <div className="flex gap-1.5 w-full">
-                  {storiesList.map((_, index) => {
-                    let progressPct = 0;
-                    if (index < activeStoryIndex) progressPct = 100;
-                    else if (index === activeStoryIndex) progressPct = storyProgress;
-
-                    return (
-                      <div key={index} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 transition-all duration-[40ms] ease-linear"
-                          style={{ width: `${progressPct}%` }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* 2. Channel header */}
-                <div className="flex items-center justify-between w-full" style={{ direction: 'rtl' }}>
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-full p-[2.5px] bg-gradient-to-tr from-rose-500 via-purple-600 to-indigo-500 shadow-md">
-                      <div className="w-full h-full rounded-full overflow-hidden border border-black/20">
-                        <img
-                          src={feedData?.channelInfo?.avatarUrl || "https://t.me/i/userpic/320/obaidapp.jpg"}
-                          alt="channel-pic"
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <h4 className="text-xs sm:text-sm font-black text-white drop-shadow">
-                        پښتو ادبي خزانه
-                      </h4>
-                      <p className="text-[9px] text-slate-300 drop-shadow">
-                        {getRelativeTimeInPashto(activeStory.date, activeStory.timeLabel || 'وروستی')}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Close button */}
-                  <button
-                    onClick={() => setIsStoryViewerOpen(false)}
-                    style={{ cursor: 'pointer' }}
-                    className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md border border-white/10 transition active:scale-95"
-                    title="تړل / Close"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Core Media Display */}
-              <div className="relative flex-1 w-full flex items-center justify-center p-4">
-                
-                {/* Touches for navigating Left/Right */}
-                <div
-                  onMouseDown={() => setIsStoryPaused(true)}
-                  onMouseUp={() => setIsStoryPaused(false)}
-                  onTouchStart={() => setIsStoryPaused(true)}
-                  onTouchEnd={() => setIsStoryPaused(false)}
-                  className="absolute inset-y-0 right-0 w-1/3 z-10 cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleNextStory();
-                  }}
-                />
-                
-                <div
-                  onMouseDown={() => setIsStoryPaused(true)}
-                  onMouseUp={() => setIsStoryPaused(false)}
-                  onTouchStart={() => setIsStoryPaused(true)}
-                  onTouchEnd={() => setIsStoryPaused(false)}
-                  className="absolute inset-y-0 left-0 w-1/3 z-10 cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handlePrevStory();
-                  }}
-                />
-
-                {/* Content Layout */}
-                <div className="w-full max-w-lg h-full flex flex-col justify-center items-center z-5">
-                  {storyVideo ? (
-                    <video
-                      ref={storyVideoRef}
-                      src={storyVideo}
-                      autoPlay
-                      playsInline
-                      muted={false}
-                      onTimeUpdate={(e) => {
-                        const vid = e.currentTarget;
-                        if (vid.duration) {
-                          setStoryProgress((vid.currentTime / vid.duration) * 100);
-                        }
-                      }}
-                      onDurationChange={(e) => {
-                        const vid = e.currentTarget;
-                        if (vid.duration) {
-                          setStoryProgress((vid.currentTime / vid.duration) * 100);
-                        }
-                      }}
-                      onEnded={handleNextStory}
-                      className="max-h-[70vh] max-w-full rounded-2xl shadow-2xl object-contain border border-white/10 bg-black/40"
-                    />
-                  ) : storyImage ? (
-                    <CachedImage
-                      simple={true}
-                      src={storyImage}
-                      alt="story-media"
-                      className="max-h-[70vh] max-w-full rounded-2xl shadow-2xl object-contain border border-white/10 bg-black/20"
-                    />
-                  ) : (
-                    // Poetry background
-                    <div className={`p-8 rounded-3xl bg-gradient-to-br ${tc.gradient} border border-white/15 shadow-[0_15px_50px_rgba(0,0,0,0.5)] text-center text-white max-w-sm mx-auto flex flex-col justify-center gap-4`}>
-                      <Feather className="w-10 h-10 mx-auto text-white/50 animate-bounce-slow" />
-                      <p className="text-sm font-black font-sans leading-relaxed tracking-wide select-text whitespace-pre-line text-center direction-rtl" style={{ direction: 'rtl' }}>
-                        {activeStory.text ? activeStory.text.replace(/#سټوري|#ستوری|#story|#سټوريانې/g, '').trim() : ''}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Text caption overlay for media */}
-                  {(storyVideo || storyImage) && activeStory.text && (
-                    <div className="absolute bottom-6 inset-x-8 z-20" style={{ direction: 'rtl' }}>
-                      <div className="p-4 sm:p-5 rounded-2xl bg-black/65 backdrop-blur-md border border-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.3)] text-right flex flex-col gap-1 max-w-md mx-auto">
-                        <p className="text-white text-xs sm:text-[13px] leading-relaxed font-sans font-semibold break-words text-right select-text whitespace-pre-line line-clamp-4">
-                          {activeStory.text.replace(/#سټوري|#ستوری|#story|#سټوريانې/g, '').trim()}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-              </div>
-
-              {/* Premium Share Footer */}
-              <div className="relative z-20 w-full pt-4 px-4 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-center gap-3" style={{ paddingBottom: 'calc(1.5rem + var(--safe-bottom))' }}>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const shareUrl = activeStory.postUrl || window.location.href;
-                    if (navigator.share) {
-                      navigator.share({
-                        title: 'د مينې ډېوه سټوري',
-                        text: activeStory.text || '',
-                        url: shareUrl
-                      }).catch(err => console.log(err));
-                    } else {
-                      navigator.clipboard.writeText(shareUrl);
-                      setToast('د سټوري پيوند ادرس کاپي شو!');
-                    }
-                  }}
-                  style={{ cursor: 'pointer' }}
-                  className="px-6 py-2.5 bg-white/15 hover:bg-white/20 active:scale-95 text-white font-bold rounded-xl text-xs transition-all border border-white/10 flex items-center gap-2"
-                >
-                  <Share2 className="w-3.5 h-3.5 text-pink-400" />
-                  <span>سټوري شریک کړئ</span>
-                </button>
-              </div>
-            </motion.div>
-          );
-        })()}
-      </AnimatePresence>
-
-      {/* ==========================================================
-         GLASSMORPHIC BOTTOM SHEET FOR READ MODE (د متن او آډیو لوستلو ښکلی بار کښته شیټ)
-         ========================================================== */}
-      <AnimatePresence>
-        {bottomSheetPost && (
+      {(() => {
+        return (
           <>
-            {/* Backdrop layer */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/75 z-[99990] backdrop-blur-xs"
-              onClick={() => setBottomSheetPost(null)}
-            />
-            {/* Slide up sheet */}
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-              className={`fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-[32px] border-t backdrop-blur-xl z-[99995] flex flex-col overflow-hidden select-none ${
-                isDark 
-                  ? 'bg-slate-900/95 border-slate-800 text-white' 
-                  : 'bg-white/95 border-slate-200 text-slate-900 shadow-2xl'
-              }`}
-              style={{ paddingBottom: 'calc(1.5rem + var(--safe-bottom))' }}
-            >
-              {/* Drag indicator bar */}
-              <div className="w-12 h-1 bg-slate-500/30 rounded-full mx-auto my-3 shrink-0" />
+            {/* Dynamic Admin Detail Modal (وحیدالله قلمیار پېژندندپاڼه په کليک کولو سره) */}
+            <AnimatePresence>
+              {isAdminDetailOpen && (() => {
+                const rawText = adminPost?.text || "ښاغلی وحیدالله قلمیار د پښتو خوږې ژبې، ادب او مینه وال، د دې پښتو ادبي خزانې د ځانګړې نشراتي څانګې مسؤل دی.\n\nپه دې غوښتنلیک کې د ټولو ادبیاتو انتخاب، د خوږو شعرونو, کلامونو او نثرونو تفصیلي راټولونه او تصحیح د اډمین قلمیار صاحب له لوري په پوره امانتدارۍ او مینه ترسره کېږي ترڅو د پښتو مینه والو ته کره محتوا ورسېږي.";
+                const { cleanText, links } = extractProfileLinksAndText(rawText);
+                const profileImg = adminPost?.photoUrls?.[0] || adminPost?.photoUrl || adminAvatarImg;
+                const coverImg = adminPost?.photoUrls?.[1] || "https://images.unsplash.com/photo-1557683316-973673baf926?w=800&q=80";
 
-              {/* Action Close buttons header */}
-              <div className="px-6 pb-2.5 flex items-center justify-between border-b border-slate-500/10">
-                <span className="text-[10px] font-bold text-slate-400 select-none ltr font-sans">
-                  Detail View Mode
-                </span>
-                <button
-                  onClick={() => setBottomSheetPost(null)}
-                  style={{ cursor: 'pointer' }}
-                  className="p-1.5 px-4 bg-slate-850/80 hover:bg-rose-500/10 hover:text-rose-450 border border-slate-700/30 rounded-xl text-xs font-black text-slate-300 transition active:scale-95 flex items-center gap-1.5 self-start flex-row-reverse"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  <span>◀ شاته / بندول</span>
-                </button>
-              </div>
-
-              {/* Scrollable text content container */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-                
-                {/* Visual completion bar indicator */}
-                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden relative mb-2">
-                  <div className={`h-full ${tc.bg} rounded-full`} style={{ width: '100%' }} />
-                </div>
-
-                {/* Main text message */}
-                <div className="telegram-styles pr-1 leading-relaxed text-right select-text">
-                  <BeautifulTelegramText
-                    text={getPostTextWithFallback(bottomSheetPost)}
-                    isDark={isDark}
-                    fs={{ body: 'text-sm sm:text-base font-semibold' }}
-                    showExpander={false}
-                  />
-                </div>
-
-                {/* Optional audios inside this post */}
-                {bottomSheetPost.audioList && bottomSheetPost.audioList.length > 0 && (
-                  <div className="space-y-3 pt-4 border-t border-slate-500/10">
-                    <p className="text-[10px] text-slate-400 text-right font-black mb-1.5">
-                      د پست غږیز فایلونه / Audio Recorders:
-                    </p>
-                    {bottomSheetPost.audioList.map((audioItem, idx) => {
-                      const cleanTitle = getBeautifulAudioTitle(audioItem.title, bottomSheetPost.title, getPostTextWithFallback(bottomSheetPost), idx);
-                      return (
-                        <BeautifulAudioPlayer 
-                          key={idx} 
-                          url={audioItem.url} 
-                          title={cleanTitle} 
-                          duration={audioItem.duration} 
-                          isDark={isDark} 
-                          tc={tc} 
+                return (
+                  <div key="admin-detail-modal" className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
+                    {/* Backdrop cover overlay */}
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => setIsAdminDetailOpen(false)}
+                      className="absolute inset-0 bg-slate-950/85 backdrop-blur-md"
+                    />
+                    {/* Modal Box */}
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 30 }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 245 }}
+                      className={`relative w-full max-w-lg rounded-3xl overflow-hidden border shadow-2xl flex flex-col text-right ${
+                        isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      {/* Header Image Header / Aesthetic Banner Cover (Second photo) */}
+                      <div className="relative h-44 w-full bg-slate-950">
+                        <img
+                          src={coverImg}
+                          alt="Cover Banner"
+                          className="w-full h-full object-cover opacity-90"
+                          referrerPolicy="no-referrer"
                         />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent" />
+                        
+                        {/* Admin Role Emblem Badge */}
+                        <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-amber-500 text-slate-950 px-2.5 py-1 rounded-full shadow-md border border-amber-300/30 text-[10px] font-black z-20">
+                          <Shield className="w-3 h-3 fill-current text-slate-950" />
+                          <span>د اپلیکیشن اډمین</span>
+                        </div>
+                        
+                        {/* Close Button top-left */}
+                        <button
+                          onClick={() => setIsAdminDetailOpen(false)}
+                          style={{ cursor: 'pointer' }}
+                          className="absolute top-4 left-4 p-2 bg-slate-950/70 hover:bg-slate-900/95 text-white rounded-full transition border border-white/10 z-20 active:scale-90"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
 
-              {/* Bottom control safe area action bar */}
-              <div className="p-4 bg-slate-950/15 border-t border-slate-500/5 flex justify-center">
-                <button
-                  onClick={() => setBottomSheetPost(null)}
-                  style={{ cursor: 'pointer' }}
-                  className={`w-full py-3.5 ${tc.bg} ${tc.hoverBg} text-white font-extrabold rounded-2xl text-[12px] shadow-lg transition active:scale-[0.98]`}
-                >
-                  لوستل پای ته ورسېدل (بشپړ شو)
-                </button>
-              </div>
-            </motion.div>
+                        {/* Circular Avatar Overlapping at bottom-right (First photo) */}
+                        <div className="absolute -bottom-9 right-5 z-20 p-1 bg-slate-900 rounded-full shadow-xl">
+                          <img
+                            src={profileImg}
+                            alt="Avatar"
+                            className="w-20 h-20 rounded-full object-cover border-2 border-amber-500"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Scrollable Bio Text Content */}
+                      <div className="p-5 pt-12 space-y-4 max-h-[55vh] overflow-y-auto scrollbar-thin text-right font-sans">
+                        <div className="text-right">
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                            وحیدالله قلمیار / Wahidullah Qalamyar
+                          </span>
+                          <h3 className={`text-base font-black font-sans mt-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                            د پښتو ادبي خزانې د محتوا تنظیموونکی
+                          </h3>
+                        </div>
+
+                        {/* Active status ribbon */}
+                        <div className={`p-3 rounded-2xl flex items-center justify-between flex-row-reverse border ${
+                          isDark ? 'bg-slate-850/50 border-slate-800' : 'bg-slate-50 border-slate-100'
+                        }`}>
+                          <span className="text-[9px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">
+                            فعال او انلاین اډمین
+                          </span>
+                          <span className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'} font-bold`}>
+                            Publisher & Administrator
+                          </span>
+                        </div>
+
+                        {/* Clean Text Content */}
+                        <div className={`p-1.5 space-y-2.5 text-right leading-relaxed text-xs sm:text-sm font-semibold select-all ${
+                          isDark ? 'text-slate-200' : 'text-slate-700'
+                        }`}>
+                          {cleanText.split('\n').map((line, idx) => (
+                            <p key={idx} className="mb-2 font-medium leading-relaxed font-sans">{line}</p>
+                          ))}
+                        </div>
+
+                        {/* Beautifully styled circular icon-only buttons for extracted links */}
+                        {links.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-slate-500/10 text-center space-y-3">
+                            <h4 className="text-xs font-black text-amber-500">ارتباطي شبکې / اړيکې:</h4>
+                            <ProfileSocialLinks links={links} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Close Buttons footer */}
+                      <div className={`p-4 border-t flex justify-end gap-2.5 flex-row-reverse ${
+                        isDark ? 'border-slate-800 bg-slate-850/30' : 'border-slate-150 bg-slate-50/50'
+                      }`}>
+                        <button
+                          onClick={() => setIsAdminDetailOpen(false)}
+                          style={{ cursor: 'pointer' }}
+                          className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black transition-all shadow-md active:scale-95 flex items-center gap-1.5 flex-row-reverse"
+                        >
+                          <Check className="w-4 h-4 text-slate-950" />
+                          <span>بندول</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  </div>
+                );
+              })()}
+            </AnimatePresence>
+
+            {/* Dynamic Developer Detail Modal (عبیدالله غفاري پېژندپاڼه په کليک کولو سره) */}
+            <AnimatePresence>
+              {isDevDetailOpen && (() => {
+                const rawText = devPost?.text || "زه عبیدالله غفاري یم، د علم، مطالعې او ټکنالوژۍ مینهوال. زما هڅه دا ده چې د اسلامي ارزښتونو، ګټورو معلوماتو او مثبتو افکارو د خپرولو لپاره له عصري وسایلو او ټکنالوژۍ څخه ګټه واخلم.\n\nځان د ټول عمر زده کوونکی ګڼم او باور لرم چې علم د انسان د پرمختګ او نېکمرغۍ تر ټولو ستره وسیله ده. له دیني زده کړو سره سره د کمپیوټر، ویبپاڼو، مصنوعي ځیرکتیا (AI)، لیکوالۍ او ډیجیټلي نړۍ په اړه هم زده کړې او تجربې ترلاسه کوم.\n\nتاسو زما سره په لاندې لېنکونو اړیکه نیولی شئ:";
+                const { cleanText, links } = extractProfileLinksAndText(rawText);
+                const profileImg = devPost?.photoUrls?.[0] || devPost?.photoUrl || developerAvatarImg;
+                const coverImg = devPost?.photoUrls?.[1] || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80";
+
+                return (
+                  <div key="dev-detail-modal" className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
+                    {/* Backdrop cover overlay */}
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => setIsDevDetailOpen(false)}
+                      className="absolute inset-0 bg-slate-950/85 backdrop-blur-md"
+                    />
+                    {/* Modal Box */}
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 30 }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 245 }}
+                      className={`relative w-full max-w-lg rounded-3xl overflow-hidden border shadow-2xl flex flex-col text-right ${
+                        isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      {/* Header Image Header / Aesthetic Banner Cover (Second photo) */}
+                      <div className="relative h-44 w-full bg-slate-950">
+                        <img
+                          src={coverImg}
+                          alt="Cover Banner"
+                          className="w-full h-full object-cover opacity-90"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent" />
+                        
+                        {/* Dev Role Emblem Badge */}
+                        <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-indigo-600 text-slate-100 px-2.5 py-1 rounded-full shadow-md border border-indigo-300/30 text-[10px] font-black z-20">
+                          <Cpu className="w-3 h-3 text-slate-100" />
+                          <span>سافټویر انجینر / جوړونکی</span>
+                        </div>
+                        
+                        {/* Close Button top-left */}
+                        <button
+                          onClick={() => setIsDevDetailOpen(false)}
+                          style={{ cursor: 'pointer' }}
+                          className="absolute top-4 left-4 p-2 bg-slate-950/70 hover:bg-slate-900/95 text-white rounded-full transition border border-white/10 z-20 active:scale-90"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+
+                        {/* Circular Avatar Overlapping at bottom-right (First photo) */}
+                        <div className="absolute -bottom-9 right-5 z-20 p-1 bg-slate-900 rounded-full shadow-xl">
+                          <img
+                            src={profileImg}
+                            alt="Avatar"
+                            className="w-20 h-20 rounded-full object-cover border-2 border-indigo-500"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Scrollable Bio Text Content */}
+                      <div className="p-5 pt-12 space-y-4 max-h-[55vh] overflow-y-auto scrollbar-thin text-right font-sans">
+                        <div className="text-right">
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-400 bg-indigo-450/10 border border-indigo-500/20 px-2 py-0.5 rounded-md">
+                            عبیدالله غفاري / Obaidullah Ghaffari
+                          </span>
+                          <h3 className={`text-base font-black font-sans mt-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                            د غوښتنلیک سافټویر انجینر او منځپانګه جوړونکی
+                          </h3>
+                        </div>
+
+                        {/* Active status ribbon */}
+                        <div className={`p-3 rounded-2xl flex items-center justify-between flex-row-reverse border ${
+                          isDark ? 'bg-slate-850/50 border-slate-800' : 'bg-slate-50 border-slate-100'
+                        }`}>
+                          <span className="text-[9px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">
+                            فعال او انلاین جوړونکی
+                          </span>
+                          <span className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'} font-bold`}>
+                            Software Developer
+                          </span>
+                        </div>
+
+                        {/* Clean Text Content */}
+                        <div className={`p-1.5 space-y-2.5 text-right leading-relaxed text-xs sm:text-sm font-semibold select-all ${
+                          isDark ? 'text-slate-200' : 'text-slate-700'
+                        }`}>
+                          {cleanText.split('\n').map((line, idx) => (
+                            <p key={idx} className="mb-2 font-medium leading-relaxed font-sans">{line}</p>
+                          ))}
+                        </div>
+
+                        {/* Beautifully styled circular icon-only buttons for extracted links */}
+                        {links.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-slate-500/10 text-center space-y-3">
+                            <h4 className="text-xs font-black text-indigo-400">ارتباطي شبکې / اړيکې:</h4>
+                            <ProfileSocialLinks links={links} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Close Buttons footer */}
+                      <div className={`p-4 border-t flex justify-end gap-2.5 flex-row-reverse ${
+                        isDark ? 'border-slate-800 bg-slate-850/30' : 'border-slate-150 bg-slate-50/50'
+                      }`}>
+                        <button
+                          onClick={() => setIsDevDetailOpen(false)}
+                          style={{ cursor: 'pointer' }}
+                          className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition-all shadow-md active:scale-95 flex items-center gap-1.5 flex-row-reverse"
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>بندول</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  </div>
+                );
+              })()}
+            </AnimatePresence>
           </>
-        )}
-      </AnimatePresence>
-
-{/* Dynamic Admin Detail Modal (وحیدالله قلمیار پېژندندپاڼه په کليک کولو سره) */}
-      <AnimatePresence>
-        {isAdminDetailOpen && (
-          <div key="admin-detail-modal" className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
-            {/* Backdrop cover overlay */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsAdminDetailOpen(false)}
-              className="absolute inset-0 bg-slate-950/85 backdrop-blur-md"
-            />
-            {/* Modal Box */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 30 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 30 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 245 }}
-              className={`relative w-full max-w-lg rounded-3xl overflow-hidden border shadow-2xl flex flex-col text-right ${
-                isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
-              }`}
-            >
-              {/* Header Image Header / Aesthetic Banner */}
-              <div className="relative h-44 w-full">
-                <img
-                  src={adminPost?.photoUrl || adminAvatarImg}
-                  alt="Wahidullah Qalamyar"
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
-                
-                {/* Admin Role Emblem Badge */}
-                <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-amber-500 text-slate-950 px-3 py-1.5 rounded-full shadow-lg border border-amber-300/30 text-[11px] font-black z-20 animate-pulse">
-                  <Shield className="w-3.5 h-3.5 fill-current text-slate-950" />
-                  <span>د اپلیکیشن اډمین</span>
-                </div>
-                
-                {/* Close Button top-left */}
-                <button
-                  onClick={() => setIsAdminDetailOpen(false)}
-                  style={{ cursor: 'pointer' }}
-                  className="absolute top-4 left-4 p-2 bg-slate-950/70 hover:bg-slate-900/95 text-white rounded-full transition border border-white/10 z-20 active:scale-90"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-
-                {/* Overlaid Title on Image Bottom */}
-                <div className="absolute bottom-4 right-5 text-right z-10 select-none">
-                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-amber-400 bg-amber-400/10 border border-amber-500/20 px-2 py-0.5 rounded-md drop-shadow">
-                    وحیدالله قلمیار / Wahidullah Qalamyar
-                  </span>
-                  <h3 className="text-base font-black text-white font-sans mt-1 shadow-sm">
-                    د محتوا تنظیموونکی او مینووال
-                  </h3>
-                </div>
-              </div>
-
-              {/* Scrollable Bio Text Content */}
-              <div className="p-5 space-y-4 max-h-[55vh] overflow-y-auto scrollbar-thin text-right font-sans">
-                {/* Active Indicator status ribbon */}
-                <div className={`p-3.5 rounded-2xl flex items-center justify-between flex-row-reverse border ${
-                  isDark ? 'bg-slate-850/50 border-slate-800' : 'bg-slate-50 border-slate-100'
-                }`}>
-                  <div className="flex items-center gap-2 flex-row-reverse">
-                    <div className="relative">
-                      <img
-                        src={adminPost?.photoUrl || adminAvatarImg}
-                        className="w-10 h-10 rounded-full object-cover border border-slate-600/30"
-                        referrerPolicy="no-referrer"
-                      />
-                      <span className="absolute bottom-0 left-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-900 rounded-full animate-pulse" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-black">وحیدالله قلمیار</h4>
-                      <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'} font-bold`}>Publisher & Administrator</p>
-                    </div>
-                  </div>
-
-                  <span className="text-[9px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">
-                    فعال او انلاین اډمین
-                  </span>
-                </div>
-
-                {/* Paragraph Content */}
-                <div className={`p-1.5 rounded-xl space-y-2.5 text-right leading-relaxed text-xs sm:text-sm font-semibold select-all ${
-                  isDark ? 'text-slate-200' : 'text-slate-700'
-                }`}>
-                  {adminPost?.text ? (
-                    adminPost.text.replace(/#admin/gi, '').trim().split('\n').map((line, idx) => (
-                      <p key={idx} className="mb-2 font-medium leading-relaxed font-sans">{line}</p>
-                    ))
-                  ) : (
-                    <>
-                      <p className="font-sans leading-relaxed text-right">
-                        ښاغلی <strong>وحیدالله قلمیار</strong> د پښتو خوږې ژبې، ادب او مینه وال، د دې پښتو ادبي خزانې د ځانګړې نشراتي څانګې مسؤل دی.
-                      </p>
-                      <p className="font-sans leading-relaxed text-right">
-                        په دې غوښتنلیک کې د ټولو ادبیاتو انتخاب، د خوږو شعرونو، کلامونو او نثرونو تفصیلي راټولونه او تصحیح د اډمین قلمیار صاحب له لوري په پوره امانتدارۍ او مینه ترسره کېږي ترڅو د پښتو مینه والو ته کره محتوا ورسېږي.
-                      </p>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Action Close Buttons footer */}
-              <div className={`p-4 border-t flex justify-end gap-2.5 flex-row-reverse ${
-                isDark ? 'border-slate-800 bg-slate-850/30' : 'border-slate-150 bg-slate-50/50'
-              }`}>
-                <button
-                  onClick={() => setIsAdminDetailOpen(false)}
-                  style={{ cursor: 'pointer' }}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition-all shadow-md active:scale-95 flex items-center gap-1.5 flex-row-reverse"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>ومنل شو (بندول)</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+        );
+      })()}
 
       {/* GLOBAL FLOATING BACKGROUND AUDIO CONTROL (په شالید کې د غږیزو خپرونو وقفه او کنټرول) */}
       <GlobalFloatingAudioPlayer isDark={isDark} tc={tc} />
