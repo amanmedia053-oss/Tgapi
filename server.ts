@@ -183,7 +183,7 @@ app.get('/api/telegram-feed', async (req, res) => {
         const timeLabel = $time.text().trim();
 
         // Message content
-        const $textEl = $post.find('.tgme_widget_message_text');
+        const $textEl = $post.find('.tgme_widget_message_text').first();
         
         // Clone message element to replace <br> tags with native newlines (\n) to keep poem stanzas and spacing intact
         const $textClone = $textEl.clone();
