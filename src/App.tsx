@@ -1715,49 +1715,83 @@ export const TelegramIcon = ({ className = "w-5 h-5 shrink-0" }: { className?: s
 );
 
 /* Global helper function for extracting links and text from developer/admin posts */
-export function extractProfileLinksAndText(rawText: string) {
-  if (!rawText) return { cleanText: '', links: [] };
+export function extractProfileLinksAndText(rawText: string, htmlText?: string) {
+  if (!rawText && !htmlText) return { cleanText: '', links: [] };
   
   // Robust regex to match any URLs, emails, or custom contact schemas
   const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|mailto:[^\s]+|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
   const linksSet = new Set<string>();
-  const matches = rawText.match(urlRegex);
   
-  if (matches) {
-    matches.forEach(url => {
-      let cleanUrl = url;
-      // Strip trailing punctuation from URL
-      while (cleanUrl && (cleanUrl.endsWith('.') || cleanUrl.endsWith(',') || cleanUrl.endsWith(')') || cleanUrl.endsWith(']') || cleanUrl.endsWith('؛') || cleanUrl.endsWith('،'))) {
-        cleanUrl = cleanUrl.slice(0, -1);
-      }
+  if (rawText) {
+    const matches = rawText.match(urlRegex);
+    if (matches) {
+      matches.forEach(url => {
+        let cleanUrl = url;
+        // Strip trailing punctuation from URL
+        while (cleanUrl && (cleanUrl.endsWith('.') || cleanUrl.endsWith(',') || cleanUrl.endsWith(')') || cleanUrl.endsWith(']') || cleanUrl.endsWith('؛') || cleanUrl.endsWith('،'))) {
+          cleanUrl = cleanUrl.slice(0, -1);
+        }
+        if (cleanUrl) {
+          const lowerUrl = cleanUrl.toLowerCase();
+          
+          // Handle https://mailto: or http://mailto: typo
+          if (lowerUrl.startsWith('https://mailto:')) {
+            cleanUrl = 'mailto:' + cleanUrl.slice(15);
+          } else if (lowerUrl.startsWith('http://mailto:')) {
+            cleanUrl = 'mailto:' + cleanUrl.slice(14);
+          }
+          
+          // If it's a pure email (contains @, has no mailto: or http(s):// prefix), make it mailto:
+          const nowLower = cleanUrl.toLowerCase();
+          if (nowLower.includes('@') && !nowLower.startsWith('mailto:') && !nowLower.startsWith('http://') && !nowLower.startsWith('https://')) {
+            cleanUrl = 'mailto:' + cleanUrl;
+          }
+
+          // Ensure protocol exists for absolute links (except tel: and mailto:)
+          const finalLower = cleanUrl.toLowerCase();
+          if (!finalLower.startsWith('http://') && !finalLower.startsWith('https://') && !finalLower.startsWith('tel:') && !finalLower.startsWith('mailto:')) {
+            cleanUrl = 'https://' + cleanUrl;
+          }
+          linksSet.add(cleanUrl);
+        }
+      });
+    }
+  }
+
+  if (htmlText) {
+    const hrefRegex = /href=["']([^"']+)["']/gi;
+    let match;
+    while ((match = hrefRegex.exec(htmlText)) !== null) {
+      let cleanUrl = match[1];
       if (cleanUrl) {
-        const lowerUrl = cleanUrl.toLowerCase();
+        // Strip trailing punctuation
+        while (cleanUrl && (cleanUrl.endsWith('.') || cleanUrl.endsWith(',') || cleanUrl.endsWith(')') || cleanUrl.endsWith(']') || cleanUrl.endsWith('؛') || cleanUrl.endsWith('،'))) {
+          cleanUrl = cleanUrl.slice(0, -1);
+        }
         
-        // Handle https://mailto: or http://mailto: typo
+        const lowerUrl = cleanUrl.toLowerCase();
         if (lowerUrl.startsWith('https://mailto:')) {
           cleanUrl = 'mailto:' + cleanUrl.slice(15);
         } else if (lowerUrl.startsWith('http://mailto:')) {
           cleanUrl = 'mailto:' + cleanUrl.slice(14);
         }
         
-        // If it's a pure email (contains @, has no mailto: or http(s):// prefix), make it mailto:
         const nowLower = cleanUrl.toLowerCase();
         if (nowLower.includes('@') && !nowLower.startsWith('mailto:') && !nowLower.startsWith('http://') && !nowLower.startsWith('https://')) {
           cleanUrl = 'mailto:' + cleanUrl;
         }
 
-        // Ensure protocol exists for absolute links (except tel: and mailto:)
         const finalLower = cleanUrl.toLowerCase();
         if (!finalLower.startsWith('http://') && !finalLower.startsWith('https://') && !finalLower.startsWith('tel:') && !finalLower.startsWith('mailto:')) {
           cleanUrl = 'https://' + cleanUrl;
         }
         linksSet.add(cleanUrl);
       }
-    });
+    }
   }
 
   // Remove URLs completely
-  let cleanText = rawText.replace(urlRegex, '');
+  let cleanText = rawText ? rawText.replace(urlRegex, '') : '';
   // Remove all hashtags completely
   cleanText = cleanText.replace(/#[\u0600-\u06FFa-zA-Z0-9_]+/g, '');
   
@@ -2762,6 +2796,28 @@ export default function App() {
   const [isCategoryPageOpen, setIsCategoryPageOpen] = useState(false);
   const [isNovelsPageOpen, setIsNovelsPageOpen] = useState(false);
   const [selectedAuthorName, setSelectedAuthorName] = useState<string | null>(null);
+  const isHistoryPushedRef = useRef(false);
+  useEffect(() => {
+    if (selectedAuthorName) {
+      window.history.pushState({ view: 'profile' }, '');
+      isHistoryPushedRef.current = true;
+      
+      const handlePopState = (e: PopStateEvent) => {
+        isHistoryPushedRef.current = false;
+        setSelectedAuthorName(null);
+      };
+      
+      window.addEventListener('popstate', handlePopState);
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+        if (isHistoryPushedRef.current) {
+          isHistoryPushedRef.current = false;
+          window.history.back();
+        }
+      };
+    }
+  }, [selectedAuthorName]);
+
   const [profileBackAuthorName, setProfileBackAuthorName] = useState<string | null>(null);
   const [profileBackOrigin, setProfileBackOrigin] = useState<'reels' | 'photo_reels' | null>(null);
   const [profileBackReelIndex, setProfileBackReelIndex] = useState<number>(0);
@@ -3209,6 +3265,7 @@ export default function App() {
   const [pullDistance, setPullDistance] = useState<number>(0);
   const [pullState, setPullState] = useState<'idle' | 'pulling' | 'ready' | 'refreshing'>('idle');
   const pullStartYRef = useRef<number | null>(null);
+  const pullStartXRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Only bind if we are on the home screen view of the feed (no modal pages, no sub views)
@@ -3231,21 +3288,34 @@ export default function App() {
       // Check if we are scrolled to the absolute top
       if (window.scrollY <= 2) {
         pullStartYRef.current = e.touches[0].clientY;
+        pullStartXRef.current = e.touches[0].clientX;
       } else {
         pullStartYRef.current = null;
+        pullStartXRef.current = null;
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (pullStartYRef.current === null) return;
+      if (pullStartYRef.current === null || pullStartXRef.current === null) return;
 
       const currentY = e.touches[0].clientY;
+      const currentX = e.touches[0].clientX;
       const deltaY = currentY - pullStartYRef.current;
+      const deltaX = Math.abs(currentX - pullStartXRef.current);
+
+      // Cancel the pull gesture if it's primarily a horizontal swipe (so carousels can swipe beautifully)
+      if (deltaX > Math.abs(deltaY) && deltaX > 8) {
+        pullStartYRef.current = null;
+        pullStartXRef.current = null;
+        setPullDistance(0);
+        setPullState('idle');
+        return;
+      }
 
       if (deltaY > 0) {
         // We are pulling down!
-        // Apply friction to the pull distance
-        const friction = 0.45;
+        // Apply responsive friction for instant and easy pull down
+        const friction = 0.85;
         const dragDist = deltaY * friction;
         const limitedDistance = Math.min(130, dragDist);
 
@@ -3255,11 +3325,12 @@ export default function App() {
             e.preventDefault();
           }
           setPullDistance(limitedDistance);
-          setPullState(limitedDistance > 75 ? 'ready' : 'pulling');
+          setPullState(limitedDistance > 55 ? 'ready' : 'pulling');
         }
       } else {
         // Scrolled upwards during a pull
         pullStartYRef.current = null;
+        pullStartXRef.current = null;
         setPullDistance(0);
         setPullState('idle');
       }
@@ -3268,8 +3339,9 @@ export default function App() {
     const handleTouchEnd = () => {
       if (pullStartYRef.current === null) return;
       pullStartYRef.current = null;
+      pullStartXRef.current = null;
 
-      if (pullDistance > 75) {
+      if (pullDistance > 55) {
         // Trigger refetch
         setPullState('refreshing');
         // Smoothly stick indicator to an active refreshing height
@@ -4699,6 +4771,9 @@ export default function App() {
             setSelectedAuthorName(profileBackAuthorName);
             setProfileBackAuthorName(null);
           }
+        } else if (selectedAuthorName) {
+          setSelectedAuthorName(null);
+          setProfileBackAuthorName(null);
         } else if (isFullFeedOpen) {
           setIsFullFeedOpen(false);
         } else if (isSearchOpen) {
@@ -4721,7 +4796,7 @@ export default function App() {
         appListener.remove();
       }
     };
-  }, [zoomPhotoUrl, activeModal, isSettingsPageOpen, isAboutPageOpen, isContactPageOpen, isSidebarOpen, selectedPost, isFullFeedOpen, isSearchOpen, showExitConfirmation, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen, overlayActiveText, profileBackAuthorName]);
+  }, [zoomPhotoUrl, activeModal, isSettingsPageOpen, isAboutPageOpen, isContactPageOpen, isSidebarOpen, selectedPost, isFullFeedOpen, isSearchOpen, showExitConfirmation, isReelsOpen, isPhotoReelsOpen, isCategoryPageOpen, overlayActiveText, profileBackAuthorName, selectedAuthorName]);
 
   // Dynamic status bar styling implementation matching current primary/theme modes
   useEffect(() => {
@@ -4744,9 +4819,9 @@ export default function App() {
   }, [themeMode, primaryColorTheme]);
 
   useEffect(() => {
-    // Increment progress bar over 5 seconds (5000ms)
+    // Increment progress bar over 4 seconds (4000ms)
     const intervalTime = 50; 
-    const totalSteps = 5000 / intervalTime; // 100 steps
+    const totalSteps = 4000 / intervalTime; // 80 steps
     let currentStep = 0;
     
     const progressInterval = setInterval(() => {
@@ -6263,37 +6338,6 @@ export default function App() {
                     <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400" />
                   </motion.button>
 
-                  {/* ۴. زمونږ سره اړیکه */}
-                  <motion.button
-                    whileHover={{ x: -6, scale: 1.01 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      setIsSidebarOpen(false);
-                      setSelectedPost(null);
-                      setIsSettingsPageOpen(false);
-                      setIsAboutPageOpen(false);
-                      setIsFullFeedOpen(false);
-                      setIsSearchOpen(false);
-                      setSearchQuery('');
-                      setContactSuccess(false);
-                      setContactError(null);
-                      setIsContactPageOpen(true);
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    className={`w-full text-right px-4 py-3 ${subCardBg} ${
-                      isDark 
-                        ? 'hover:bg-slate-800/85 text-slate-200 hover:text-indigo-400 hover:border-indigo-500/40' 
-                        : 'hover:bg-slate-200/85 text-slate-800 hover:text-indigo-700 hover:border-indigo-400/40'
-                    } rounded-xl text-xs font-black transition border flex items-center justify-between gap-3 shadow-xs group`}
-                  >
-                    <div className="flex items-center gap-2 text-right">
-                      <Mail className={`w-4 h-4 text-indigo-500`} />
-                      <span className="font-extrabold">زمونږ سره اړیکه نیول</span>
-                    </div>
-                    <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400" />
-                  </motion.button>
-
                   {/* ۵. د ټلیګرام چینل */}
                   <motion.a
                     whileHover={{ x: -6, scale: 1.01 }}
@@ -6316,12 +6360,14 @@ export default function App() {
                   </motion.a>
 
                   {/* ۶. نور اپليکيشنونه */}
-                  <motion.button
+                  <motion.a
                     whileHover={{ x: -6, scale: 1.01 }}
                     whileTap={{ scale: 0.98 }}
+                    href="https://t.me/obaidapp"
+                    target="_blank"
+                    rel="noreferrer"
                     onClick={() => {
                       setIsSidebarOpen(false);
-                      setActiveModal('apps');
                     }}
                     style={{ cursor: 'pointer' }}
                     className={`w-full text-right px-4 py-3 ${subCardBg} ${
@@ -6335,7 +6381,7 @@ export default function App() {
                       <span className="font-extrabold">نور ښکلي اپليکيشنونه</span>
                     </div>
                     <ChevronLeft className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400" />
-                  </motion.button>
+                  </motion.a>
 
                   {/* لارښود او پېژندنه */}
                   <motion.button
@@ -6865,10 +6911,10 @@ export default function App() {
                     <div>
                       <div className="flex flex-wrap items-center gap-1.5 justify-start mb-1 select-none">
                         <span className="bg-indigo-505/10 text-indigo-400 font-sans font-black text-[9px] px-2 py-0.5 rounded border border-indigo-505/10">
-                          {selectedPost.hasAudio ? '🔊 غږیز رومان' : '✍️ لیکل شوی رومان'}
+                          {selectedPost.hasAudio ? '🔊 غږيز ناول' : '✍️ ليکل شوی ناول'}
                         </span>
                         <span className="bg-emerald-500/15 text-emerald-500 font-sans font-black text-[9px] px-2 py-0.5 rounded border border-emerald-500/10">
-                          📖 : : بشپړ رومان
+                          📖 : : بشپړ ناول
                         </span>
                         <span className="font-mono text-[9px] text-slate-400 flex items-center gap-1 mr-1">
                           <Eye className="w-3 h-3 text-slate-500" />
@@ -7495,7 +7541,7 @@ export default function App() {
                             <span className="truncate max-w-full font-bold">{partLabel}</span>
                             {!isPartProfile && (
                               <span className="text-[8px] opacity-70">
-                                {part.hasAudio ? '🔊 غږیز' : '✍️ لیکل شوی'}
+                                {part.hasAudio ? '🔊 غږيز' : '✍️ ليکل شوی'}
                               </span>
                             )}
                           </button>
@@ -9057,12 +9103,10 @@ export default function App() {
           </div>
         ) : isCategoryPageOpen ? (
           /* ==========================================================
-             C2. CATEGORY HASHTAGS BROWSER (د شعرونو موضوعي ډلبندي)
+             C. CATEGORIES / HASHTAGS LIST (کتګورۍ او موضوعات)
              ========================================================== */
-          <div className="space-y-5 animate-fade-in text-right select-none">
+          <div className="space-y-5 animate-fade-in text-right">
             <div className={`p-5 sm:p-6 rounded-3xl ${cardBg} border border-slate-500/10 dark:border-slate-800 overflow-hidden shadow-xl text-right`}>
-              
-              {/* Header inside card */}
               <div className={`px-5 py-4 ${isDark ? 'bg-slate-950/70 border-slate-800/20' : 'bg-slate-100/90 border-slate-200'} border-b flex items-center justify-between rounded-t-3xl -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 mb-5`}>
                 <button
                   onClick={() => setIsCategoryPageOpen(false)}
@@ -9074,60 +9118,19 @@ export default function App() {
                   <span>کورپاڼه</span>
                 </button>
                 <div className="flex items-center gap-2">
-                  <Hash className={`w-4 h-4 ${tc.text}`} />
-                  <span className={`text-[12px] sm:text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
-                    کټګوري او هشټاګونه
+                  <Grid className={`w-4 h-4 ${tc.text}`} />
+                  <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'} font-sans`}>
+                    کتګورۍ او موضوعات
                   </span>
                 </div>
               </div>
 
-              {/* Description */}
-              <div className="mb-5 text-right">
-                <h4 className={`text-sm font-black mb-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  د پښتو شعرونو موضوعي ډلبندي
-                </h4>
-                <p className={`text-xs ${textMuted} leading-relaxed`}>
-                  د اسانتیا لپاره، لاندې د ټولو شعرونو او پوسټونو څخه ترلاسه شوي هشټاګونه لیست شوي دي. په نښه شوي موضوع باندې کلیک کولو سره به هماغه موضوع اړوند ټول شعرونه نندارې ته وړاندې شي.
-                </p>
-              </div>
-
-              {/* Instant Search Bar for Hashtags */}
-              <div className="relative mb-5">
-                <input
-                  type="text"
-                  value={categorySearchQuery}
-                  onChange={(e) => setCategorySearchQuery(e.target.value)}
-                  placeholder="دلته اړونده موضوع یا هشټاګ پیدا کړئ (مثلا: #مینه)..."
-                  className={`w-full focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl py-3 pr-10 pl-4 text-xs font-medium outline-none transition duration-200 text-right font-sans ${isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-100 border-slate-300 text-slate-900'}`}
-                />
-                <Search className="absolute right-3.5 top-3.5 w-4 h-4 text-slate-500 pointer-events-none" />
-                {categorySearchQuery && (
-                  <button
-                    onClick={() => setCategorySearchQuery('')}
-                    style={{ cursor: 'pointer' }}
-                    className={`absolute left-3 top-2 text-[10px] font-bold px-2.5 py-1.5 rounded transition ${isDark ? 'bg-slate-800 hover:bg-slate-755 text-slate-300' : 'bg-slate-200 hover:bg-slate-300'}`}
-                  >
-                    بیا پیل
-                  </button>
-                )}
-              </div>
-
-              {/* Hashtags Grid */}
               {(() => {
                 const filteredTags = hashtagsWithCount.filter(item => 
-                  item.tag.toLowerCase().includes(categorySearchQuery.toLowerCase())
+                  item.tag !== '#غږیز' && item.tag !== '#غږیزه' && item.tag !== '#صوتي' &&
+                  item.tag !== '#کتابونه' && item.tag !== '#کتاب' && item.tag !== '#اډمین' &&
+                  item.tag !== '#admin' && item.tag !== '#dev' && item.tag !== '#ډیجیټل'
                 );
-
-                if (filteredTags.length === 0) {
-                  return (
-                    <div className="text-center py-10 px-4 rounded-2xl bg-slate-500/5 border border-dashed border-slate-500/10">
-                      <Hash className="w-10 h-10 text-slate-400 mx-auto opacity-40 mb-3" />
-                      <p className={`text-xs ${textMuted} font-semibold`}>
-                        {categorySearchQuery ? 'هیڅ کټګوري یا هشټاګ پیدا نه شو!' : 'لا تر اوسه هیڅ یو هشټاګ نه دی ترلاسه شوی.'}
-                      </p>
-                    </div>
-                  );
-                }
 
                 return (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5" style={{ direction: 'rtl' }}>
@@ -9219,26 +9222,6 @@ export default function App() {
                   <h3 className="text-base font-black text-white tracking-tight">{devName}</h3>
                   <p className="text-[10px] text-slate-400 font-medium mt-1">د علم، مطالعې او ټکنالوژۍ مینهوال</p>
                 </div>
-
-                {/* Direct quick action contacts on about page */}
-                <div className="relative z-10 flex flex-wrap items-center justify-center gap-2 w-full mt-2">
-                  <a
-                    href="https://wa.me/93779705897"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="py-1.5 px-3 bg-emerald-600/90 hover:bg-emerald-600 border border-emerald-500 text-white rounded-lg text-[10.5px] font-bold transition flex items-center gap-1 shadow-sm font-sans"
-                  >
-                    <Phone className="w-3.5 h-3.5 text-white" />
-                    <span>واټساپ اړیکه (+93779705897)</span>
-                  </a>
-                  <a
-                    href="mailto:obaidkhanghafari@gmail.com"
-                    className="py-1.5 px-3 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-bold transition flex items-center gap-1 shadow-sm font-sans"
-                  >
-                    <Mail className="w-3.5 h-3.5 text-rose-400" />
-                    <span>obaidkhanghafari@gmail.com</span>
-                  </a>
-                </div>
               </div>
 
               {/* Developer full characteristics and biographies */}
@@ -9251,7 +9234,7 @@ export default function App() {
                   {devPost ? (
                     <div className="text-right leading-[1.8]">
                       {(() => {
-                        const { cleanText, links } = extractProfileLinksAndText(devPost.text);
+                        const { cleanText, links } = extractProfileLinksAndText(devPost.text, devPost.htmlText);
                         return (
                           <>
                             <div className={`text-xs sm:text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'} whitespace-pre-wrap leading-relaxed`}>
@@ -9275,16 +9258,6 @@ export default function App() {
                       </p>
                     </>
                   )}
-                </div>
-
-                <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
-                  <div className="flex items-center gap-1.5 text-indigo-400 font-bold border-b border-slate-500/5 pb-1.5 justify-end">
-                    <span className="text-xs">زما اساسي هدفونه</span>
-                    <Rocket className="w-4 h-4" />
-                  </div>
-                  <p className={`text-[11.5px] ${isDark ? 'text-slate-300' : 'text-slate-700'} leading-[1.8]`}>
-                    زما موخه د اسلام خدمت، د ګټورې پوهې خپرول او د داسې محتوا وړاندې کول دي چې د خلکو لپاره د خیر، پوهې او مثبت بدلون سبب شي. هڅه کوم چې د خپلو وړتیاوو او امکاناتو په اندازه د اسلامي او تعلیمي خدمتونو په برخه کې اغېزمن رول ولرم.
-                  </p>
                 </div>
 
                 <div className={`p-4 rounded-xl border border-slate-500/10 ${subCardBg} space-y-2`}>
@@ -12701,7 +12674,7 @@ export default function App() {
                         {devPost ? (
                           <div className="text-right text-[11px] leading-relaxed">
                             {(() => {
-                              const { cleanText, links } = extractProfileLinksAndText(devPost.text);
+                              const { cleanText, links } = extractProfileLinksAndText(devPost.text, devPost.htmlText);
                               return (
                                 <>
                                   <div className={`${isDark ? 'text-slate-300' : 'text-slate-700'} whitespace-pre-wrap leading-relaxed`}>
@@ -12971,7 +12944,7 @@ export default function App() {
             <AnimatePresence>
               {isAdminDetailOpen && (() => {
                 const rawText = adminPost?.text || "ښاغلی وحیدالله قلمیار د پښتو خوږې ژبې، ادب او مینه وال، د دې پښتو ادبي خزانې د ځانګړې نشراتي څانګې مسؤل دی.\n\nپه دې غوښتنلیک کې د ټولو ادبیاتو انتخاب، د خوږو شعرونو, کلامونو او نثرونو تفصیلي راټولونه او تصحیح د اډمین قلمیار صاحب له لوري په پوره امانتدارۍ او مینه ترسره کېږي ترڅو د پښتو مینه والو ته کره محتوا ورسېږي.";
-                const { cleanText, links } = extractProfileLinksAndText(rawText);
+                const { cleanText, links } = extractProfileLinksAndText(rawText, adminPost?.htmlText);
                 const profileImg = adminPost?.photoUrls?.[0] || adminPost?.photoUrl || adminAvatarImg;
                 const coverImg = adminPost?.photoUrls?.[1] || "https://images.unsplash.com/photo-1557683316-973673baf926?w=800&q=80";
 
@@ -13115,7 +13088,7 @@ export default function App() {
             <AnimatePresence>
               {isDevDetailOpen && (() => {
                 const rawText = devPost?.text || "زه عبیدالله غفاري یم، د علم، مطالعې او ټکنالوژۍ مینهوال. زما هڅه دا ده چې د اسلامي ارزښتونو، ګټورو معلوماتو او مثبتو افکارو د خپرولو لپاره له عصري وسایلو او ټکنالوژۍ څخه ګټه واخلم.\n\nځان د ټول عمر زده کوونکی ګڼم او باور لرم چې علم د انسان د پرمختګ او نېکمرغۍ تر ټولو ستره وسیله ده. له دیني زده کړو سره سره د کمپیوټر، ویبپاڼو، مصنوعي ځیرکتیا (AI)، لیکوالۍ او ډیجیټلي نړۍ په اړه هم زده کړې او تجربې ترلاسه کوم.\n\nتاسو زما سره په لاندې لېنکونو اړیکه نیولی شئ:";
-                const { cleanText, links } = extractProfileLinksAndText(rawText);
+                const { cleanText, links } = extractProfileLinksAndText(rawText, devPost?.htmlText);
                 const profileImg = devPost?.photoUrls?.[0] || devPost?.photoUrl || developerAvatarImg;
                 const coverImg = devPost?.photoUrls?.[1] || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80";
 
@@ -13307,7 +13280,7 @@ export default function App() {
           return (
             <div className="fixed inset-0 w-screen h-screen bg-black z-[9999] overflow-hidden flex flex-col justify-center items-center font-sans animate-fade-in">
               <div 
-                className="w-full h-full relative bg-black flex flex-col justify-center items-center overflow-hidden"
+                className="w-full h-full relative bg-black flex flex-col justify-center items-center overflow-hidden touch-none select-none"
                 onWheel={handleReelWheel}
                 onTouchStart={onReelTouchStart}
                 onTouchMove={onReelTouchMove}
@@ -13760,7 +13733,7 @@ export default function App() {
           return (
             <div className="fixed inset-0 w-screen h-screen bg-black z-[9999] overflow-hidden flex flex-col justify-center items-center font-sans animate-fade-in">
               <div 
-                className="w-full h-full relative bg-black flex flex-col justify-center items-center overflow-hidden animate-fade-in"
+                className="w-full h-full relative bg-black flex flex-col justify-center items-center overflow-hidden animate-fade-in touch-none select-none"
                 onWheel={handlePhotoReelWheel}
                 onTouchStart={onPhotoReelTouchStart}
                 onTouchMove={onPhotoReelTouchMove}
@@ -14027,6 +14000,117 @@ export default function App() {
             </div>
           );
         })()}
+      </AnimatePresence>
+
+      {/* BEAUTIFUL CUSTOM BOTTOM SHEET (بارک شیټ) FOR DISPLAYING FULL REEL TEXT */}
+      <AnimatePresence>
+        {overlayActiveText && (
+          <>
+            {/* Backdrop with elegant blur */}
+            <motion.div
+              key="text-sheet-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setOverlayActiveText(null)}
+              className="fixed inset-0 bg-black/65 backdrop-blur-xs z-[10000] cursor-pointer"
+            />
+
+            {/* Bottom Sheet Container */}
+            <motion.div
+              key="text-sheet-panel"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 280 }}
+              className={`fixed inset-x-0 bottom-0 max-h-[82vh] rounded-t-[32px] border-t z-[10001] shadow-2xl overflow-hidden flex flex-col font-sans text-right ${
+                isDark 
+                  ? 'bg-slate-950 border-slate-850 text-white shadow-slate-950/60' 
+                  : 'bg-white border-slate-200 text-slate-900 shadow-slate-200/60'
+              }`}
+            >
+              {/* Top drag handle indicator */}
+              <div 
+                className="w-full py-3.5 flex justify-center items-center cursor-pointer select-none shrink-0"
+                onClick={() => setOverlayActiveText(null)}
+              >
+                <div className={`w-12 h-1.5 rounded-full ${isDark ? 'bg-slate-800' : 'bg-slate-200'}`} />
+              </div>
+
+              {/* Bottom Sheet Header */}
+              <div className="px-6 pb-4 border-b border-slate-100 dark:border-slate-850 flex flex-row-reverse justify-between items-center shrink-0">
+                <div className="flex items-center gap-2 flex-row-reverse">
+                  <div className={`p-2 rounded-full ${isDark ? 'bg-indigo-950/40 text-indigo-400' : 'bg-indigo-555/10 text-indigo-650 dark:text-indigo-400'}`}>
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-base font-black font-sans leading-none">
+                    {appLanguage === 'en' ? 'Complete Description' : 'پوره متن او کلام'}
+                  </h3>
+                </div>
+
+                <button
+                  onClick={() => setOverlayActiveText(null)}
+                  style={{ cursor: 'pointer' }}
+                  className={`p-2 rounded-full transition ${isDark ? 'hover:bg-slate-850 text-slate-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-900'}`}
+                  title="تړل"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Bottom Sheet Content (Scrollable text) */}
+              <div className="p-6 overflow-y-auto flex-1 select-text scrollbar-thin scrollbar-thumb-indigo-500/10">
+                <p className="text-[14.5px] sm:text-[15.5px] leading-relaxed font-semibold font-sans whitespace-pre-wrap break-words text-right" style={{ direction: 'rtl' }}>
+                  {overlayActiveText}
+                </p>
+              </div>
+
+              {/* Bottom Sheet Action Bar */}
+              <div className={`p-5 px-6 border-t flex flex-row-reverse gap-4 items-center shrink-0 ${isDark ? 'bg-slate-900/45 border-slate-850' : 'bg-slate-50 border-slate-100'}`}>
+                {/* Copy Text Button */}
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(overlayActiveText);
+                    showToast(appLanguage === 'en' ? 'Text copied successfully!' : 'د شعر متن په بریالیتوب سره کاپي شو!');
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  className={`flex-1 py-3 px-4 rounded-2xl flex items-center justify-center gap-2 text-xs font-black transition active:scale-[0.98] ${
+                    isDark
+                      ? 'bg-indigo-600 hover:bg-indigo-550 text-white shadow-lg shadow-indigo-600/15'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/15'
+                  }`}
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>{appLanguage === 'en' ? 'Copy Text' : 'متن کاپي کړئ'}</span>
+                </button>
+
+                {/* Share Button */}
+                <button
+                  onClick={() => {
+                    if (navigator.share) {
+                      navigator.share({
+                        title: 'د مينې ډېوه',
+                        text: overlayActiveText
+                      }).catch(err => console.log(err));
+                    } else {
+                      navigator.clipboard.writeText(overlayActiveText);
+                      showToast(appLanguage === 'en' ? 'Text copied to share!' : 'د شریکولو لپاره کاپي شو!');
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  className={`px-5 py-3 rounded-2xl flex items-center justify-center gap-2 text-xs font-black border transition active:scale-[0.98] ${
+                    isDark
+                      ? 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:bg-slate-850'
+                      : 'bg-white border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>{appLanguage === 'en' ? 'Share' : 'شریک کړئ'}</span>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
       </AnimatePresence>
 
       {/* GLOBAL FLOATING BACKGROUND AUDIO CONTROL (په شالید کې د غږیزو خپرونو وقفه او کنټرول) */}
