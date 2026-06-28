@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@actions/exec": "^3.0.0",
     "@capacitor/app": "^8.1.0",
     "@capacitor/local-notifications": "^8.2.0",
     "@capacitor/status-bar": "^8.0.2",
