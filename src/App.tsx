@@ -1122,6 +1122,10 @@ function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride, autoPl
         playPromise.then(() => {
           setIsPlaying(true);
         }).catch(err => {
+          if (err && (err.name === 'AbortError' || err.message?.includes('interrupted'))) {
+            // Interrupted by pause or new src load, ignore silently
+            return;
+          }
           console.warn("Autoplay unmuted blocked by browser, trying muted:", err);
           if (videoRef.current) {
             videoRef.current.muted = true;
@@ -1129,6 +1133,10 @@ function BeautifulVideoPlayer({ url, poster, isDark, tc, onClickOverride, autoPl
             videoRef.current.play().then(() => {
               setIsPlaying(true);
             }).catch(e => {
+              if (e && (e.name === 'AbortError' || e.message?.includes('interrupted'))) {
+                // Interrupted by pause or new src load, ignore silently
+                return;
+              }
               console.warn("Muted autoplay blocked too:", e);
             });
           }
@@ -3414,11 +3422,10 @@ export default function App() {
         }
       }
       // Toggle Scroll to Top button after scrolling 500 pixels
-      if (currentScroll > 500) {
-        setShowScrollTop(true);
-      } else {
-        setShowScrollTop(false);
-      }
+      setShowScrollTop(prev => {
+        const shouldShow = currentScroll > 500;
+        return prev === shouldShow ? prev : shouldShow;
+      });
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
@@ -4845,23 +4852,61 @@ export default function App() {
   }, []);
 
   // Dynamic filtering of all posts by search string, always sorted latest first
-  const allPosts = feedData?.posts ? feedData.posts.filter(p => {
-    if (!p) return false;
-    
-    // 1. Filter out the '#dev' and '#admin' posts
-    const textLower = (p.text || '').toLowerCase();
-    if (textLower.includes('#dev') || textLower.includes('#admin')) {
-      return false;
-    }
-    
-    // 2. Filter out 'channel created' post or post ID '1'
-    if (textLower.includes('channel created') || p.id === '1') {
-      return false;
-    }
+  const allPosts = React.useMemo(() => {
+    if (!feedData?.posts) return [];
+    return feedData.posts.filter(p => {
+      if (!p) return false;
+      
+      // 1. Filter out the '#dev' and '#admin' posts
+      const textLower = (p.text || '').toLowerCase();
+      if (textLower.includes('#dev') || textLower.includes('#admin')) {
+        return false;
+      }
+      
+      // 2. Filter out 'channel created' post or post ID '1'
+      if (textLower.includes('channel created') || p.id === '1') {
+        return false;
+      }
 
-    const matchesSearch = !searchQuery || (p.text && p.text.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesSearch;
-  }).sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0)) : [];
+      const matchesSearch = !searchQuery || (p.text && p.text.toLowerCase().includes(searchQuery.toLowerCase()));
+      return matchesSearch;
+    }).sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0));
+  }, [feedData?.posts, searchQuery]);
+
+  // Pre-calculate favorite counts in a single pass to avoid heavy filtering during render
+  const favoriteCounts = React.useMemo(() => {
+    const counts = {
+      videos: 0,
+      images: 0,
+      writings: 0,
+      pdf: 0,
+      audio: 0,
+      toread: 0
+    };
+    
+    allPosts.forEach(p => {
+      if (!p) return;
+      const isFav = favoritePostIds.includes(p.id);
+      const isToRead = toReadPostIds.includes(p.id);
+      
+      if (isToRead) counts.toread++;
+      if (isFav) {
+        if (!!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl) {
+          counts.videos++;
+        } else if (!!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0)) {
+          counts.images++;
+        } else if (!!p.hasAudio || !!p.audioUrl) {
+          counts.audio++;
+        } else if (getIsBook(p)) {
+          counts.pdf++;
+        } else {
+          counts.writings++;
+        }
+      }
+    });
+    
+    return counts;
+  }, [allPosts, favoritePostIds, toReadPostIds]);
 
   // Find the custom '#dev' post (from raw posts pool) to dynamically populate the About Us section
   const devPost = React.useMemo(() => {
@@ -5550,25 +5595,43 @@ export default function App() {
   };
 
   const [reelTouchStartY, setReelTouchStartY] = useState<number | null>(null);
-  const [reelTouchEndY, setReelTouchEndY] = useState<number | null>(null);
+  const [reelTouchStartX, setReelTouchStartX] = useState<number | null>(null);
 
   const onReelTouchStart = (e: React.TouchEvent) => {
-    setReelTouchEndY(null);
-    setReelTouchStartY(e.targetTouches[0].clientY);
+    const touch = e.touches[0] || e.targetTouches[0];
+    setReelTouchStartY(touch.clientY);
+    setReelTouchStartX(touch.clientX);
   };
 
   const onReelTouchMove = (e: React.TouchEvent) => {
-    setReelTouchEndY(e.targetTouches[0].clientY);
+    // Keep standard handler for event propagation or default prevention if needed
   };
 
-  const onReelTouchEnd = () => {
-    if (!reelTouchStartY || !reelTouchEndY) return;
-    const distance = reelTouchStartY - reelTouchEndY;
+  const onReelTouchEnd = (e: React.TouchEvent) => {
+    const touch = e.changedTouches[0];
+    if (!touch || reelTouchStartY === null || reelTouchStartX === null) return;
+    
+    const distanceY = reelTouchStartY - touch.clientY;
+    const distanceX = reelTouchStartX - touch.clientX;
     const minSwipeDistance = 35;
-    if (distance > minSwipeDistance) {
-      handleNextReel();
-    } else if (distance < -minSwipeDistance) {
-      handlePrevReel();
+
+    // Detect if the swipe is vertical or horizontal and handle accordingly
+    if (Math.abs(distanceY) > Math.abs(distanceX)) {
+      if (Math.abs(distanceY) > minSwipeDistance) {
+        if (distanceY > 0) {
+          handleNextReel();
+        } else {
+          handlePrevReel();
+        }
+      }
+    } else {
+      if (Math.abs(distanceX) > minSwipeDistance) {
+        if (distanceX > 0) {
+          handleNextReel();
+        } else {
+          handlePrevReel();
+        }
+      }
     }
   };
 
@@ -5627,9 +5690,25 @@ export default function App() {
         setReelLoading(false);
         setReelPlaying(true);
       }).catch(err => {
-        console.warn('Autoplay failed or was blocked by browser:', err);
-        setReelPlaying(false);
-        setReelLoading(false);
+        if (err && (err.name === 'AbortError' || err.message?.includes('interrupted'))) {
+          // Play request was interrupted, expected during scrolling/swiping
+          return;
+        }
+        console.warn('Autoplay unmuted blocked by browser, trying muted as safe fallback:', err);
+        video.muted = true;
+        setReelMuted(true);
+        video.play().then(() => {
+          setReelLoading(false);
+          setReelPlaying(true);
+        }).catch(err2 => {
+          if (err2 && (err2.name === 'AbortError' || err2.message?.includes('interrupted'))) {
+            // Interrupted by pause or new source load, ignore
+            return;
+          }
+          console.warn('Muted autoplay blocked too or failed:', err2);
+          setReelPlaying(false);
+          setReelLoading(false);
+        });
       });
     }
 
@@ -5709,25 +5788,43 @@ export default function App() {
   };
 
   const [photoReelTouchStartY, setPhotoReelTouchStartY] = useState<number | null>(null);
-  const [photoReelTouchEndY, setPhotoReelTouchEndY] = useState<number | null>(null);
+  const [photoReelTouchStartX, setPhotoReelTouchStartX] = useState<number | null>(null);
 
   const onPhotoReelTouchStart = (e: React.TouchEvent) => {
-    setPhotoReelTouchEndY(null);
-    setPhotoReelTouchStartY(e.targetTouches[0].clientY);
+    const touch = e.touches[0] || e.targetTouches[0];
+    setPhotoReelTouchStartY(touch.clientY);
+    setPhotoReelTouchStartX(touch.clientX);
   };
 
   const onPhotoReelTouchMove = (e: React.TouchEvent) => {
-    setPhotoReelTouchEndY(e.targetTouches[0].clientY);
+    // Keep standard handler
   };
 
-  const onPhotoReelTouchEnd = () => {
-    if (!photoReelTouchStartY || !photoReelTouchEndY) return;
-    const distance = photoReelTouchStartY - photoReelTouchEndY;
+  const onPhotoReelTouchEnd = (e: React.TouchEvent) => {
+    const touch = e.changedTouches[0];
+    if (!touch || photoReelTouchStartY === null || photoReelTouchStartX === null) return;
+    
+    const distanceY = photoReelTouchStartY - touch.clientY;
+    const distanceX = photoReelTouchStartX - touch.clientX;
     const minSwipeDistance = 35;
-    if (distance > minSwipeDistance) {
-      handleNextPhotoReel();
-    } else if (distance < -minSwipeDistance) {
-      handlePrevPhotoReel();
+
+    // Detect if the swipe is vertical or horizontal and handle accordingly
+    if (Math.abs(distanceY) > Math.abs(distanceX)) {
+      if (Math.abs(distanceY) > minSwipeDistance) {
+        if (distanceY > 0) {
+          handleNextPhotoReel();
+        } else {
+          handlePrevPhotoReel();
+        }
+      }
+    } else {
+      if (Math.abs(distanceX) > minSwipeDistance) {
+        if (distanceX > 0) {
+          handleNextPhotoReel();
+        } else {
+          handlePrevPhotoReel();
+        }
+      }
     }
   };
 
@@ -10461,18 +10558,7 @@ export default function App() {
                         ].map((fav) => {
                           const FavIcon = fav.icon;
                           const isActive = activeFavoriteFilter === fav.id;
-                          const count = allPosts.filter(p => {
-                            if (fav.id === 'toread') {
-                              return toReadPostIds.includes(p.id);
-                            }
-                            if (!favoritePostIds.includes(p.id)) return false;
-                            if (fav.id === 'videos') return !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl;
-                            if (fav.id === 'images') return !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0);
-                            if (fav.id === 'audio') return !!p.hasAudio || !!p.audioUrl;
-                            if (fav.id === 'pdf') return getIsBook(p);
-                            if (fav.id === 'writings') return !p.hasVideo && !p.photoUrl && !(p.photoUrls && p.photoUrls.length > 0) && !p.hasAudio && !getIsBook(p);
-                            return false;
-                          }).length;
+                          const count = favoriteCounts[fav.id as keyof typeof favoriteCounts] || 0;
 
                           return (
                             <button
