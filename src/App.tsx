@@ -404,7 +404,8 @@ function BeautifulTelegramText({
   fs, 
   limitLines = 6, 
   showExpander = true,
-  onReadMoreClick 
+  onReadMoreClick,
+  hideHashtags = false
 }: { 
   text: string; 
   isDark: boolean; 
@@ -412,12 +413,13 @@ function BeautifulTelegramText({
   limitLines?: number; 
   showExpander?: boolean;
   onReadMoreClick?: () => void;
+  hideHashtags?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (!text) return null;
 
   // 1. Format the text beautifully to ensure proper spacing on clumped/glued texts, keeping hashtags
-  const formattedText = beautifullyFormatPashtoText(text, true);
+  const formattedText = beautifullyFormatPashtoText(text, !hideHashtags);
 
   // 2. Normalize literal \n, double escaped \\n, HTML line breaks, and empty lines
   const cleanText = formattedText
@@ -451,6 +453,30 @@ function BeautifulTelegramText({
   // 3. Render and highlight hashtags to be fully clickable search queries
   const renderWithHashtags = (rawText: string, isTruncated: boolean) => {
     if (!rawText) return '';
+    if (hideHashtags) {
+      if (isTruncated && !expanded) {
+        if (onReadMoreClick) {
+          return rawText;
+        } else {
+          return (
+            <>
+              {rawText}
+              <span
+                className="text-indigo-400 font-bold hover:text-indigo-350 transition select-none mr-2 inline-block whitespace-nowrap align-middle cursor-pointer"
+                style={{ direction: 'rtl' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded(true);
+                }}
+              >
+                ... نور وګورئ
+              </span>
+            </>
+          );
+        }
+      }
+      return rawText;
+    }
     const regex = /(#[\u0600-\u06FFa-zA-Z0-9_]+)/g;
     const parts = rawText.split(regex);
     const elements = parts.map((part, index) => {
@@ -499,7 +525,7 @@ function BeautifulTelegramText({
   // Extract all hashtags from complete cleanText and find those that are currently hidden
   const allHashtags = Array.from(new Set(cleanText.match(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g) || []));
   const displayedHashtags = Array.from(new Set(displayedText.match(/(#[\u0600-\u06FFa-zA-Z0-9_]+)/g) || []));
-  const missingHashtags = (needsTruncation && !expanded) ? allHashtags.filter(tag => !displayedHashtags.includes(tag)) : [];
+  const missingHashtags = (needsTruncation && !expanded && !hideHashtags) ? allHashtags.filter(tag => !displayedHashtags.includes(tag)) : [];
 
   return (
     <div className="space-y-2.5 text-right w-full select-text" style={{ direction: 'rtl' }}>
@@ -572,6 +598,7 @@ interface GlobalAudioState {
   totalDuration: string;
   isPlaying: boolean;
   playbackRate?: number;
+  isLoading?: boolean;
 }
 
 let globalAudioElement: HTMLAudioElement | null = null;
@@ -584,6 +611,7 @@ let globalAudioState: GlobalAudioState = {
   totalDuration: '0:00',
   isPlaying: false,
   playbackRate: 1.0,
+  isLoading: false,
 };
 
 const audioSubscribers = new Set<(state: GlobalAudioState) => void>();
@@ -605,6 +633,31 @@ function playGlobalAudio(url: string, title: string, duration?: string) {
   if (!globalAudioElement) {
     globalAudioElement = new Audio();
     
+    globalAudioElement.addEventListener('loadstart', () => {
+      updateGlobalAudio({ isLoading: true });
+    });
+    globalAudioElement.addEventListener('waiting', () => {
+      updateGlobalAudio({ isLoading: true });
+    });
+    globalAudioElement.addEventListener('playing', () => {
+      updateGlobalAudio({ isLoading: false });
+    });
+    globalAudioElement.addEventListener('canplay', () => {
+      updateGlobalAudio({ isLoading: false });
+    });
+    globalAudioElement.addEventListener('seeking', () => {
+      updateGlobalAudio({ isLoading: true });
+    });
+    globalAudioElement.addEventListener('seeked', () => {
+      updateGlobalAudio({ isLoading: false });
+    });
+    globalAudioElement.addEventListener('stalled', () => {
+      updateGlobalAudio({ isLoading: true });
+    });
+    globalAudioElement.addEventListener('error', () => {
+      updateGlobalAudio({ isLoading: false });
+    });
+    
     globalAudioElement.addEventListener('play', () => {
       if (globalAudioElement) {
         globalAudioElement.playbackRate = globalAudioState.playbackRate || 1.0;
@@ -612,7 +665,7 @@ function playGlobalAudio(url: string, title: string, duration?: string) {
       updateGlobalAudio({ isPlaying: true });
     });
     globalAudioElement.addEventListener('pause', () => {
-      updateGlobalAudio({ isPlaying: false });
+      updateGlobalAudio({ isPlaying: false, isLoading: false });
     });
     globalAudioElement.addEventListener('timeupdate', () => {
       if (!globalAudioElement) return;
@@ -647,7 +700,7 @@ function playGlobalAudio(url: string, title: string, duration?: string) {
       });
     });
     globalAudioElement.addEventListener('ended', () => {
-      updateGlobalAudio({ isPlaying: false, progress: 0, currentTime: '0:00' });
+      updateGlobalAudio({ isPlaying: false, progress: 0, currentTime: '0:00', isLoading: false });
     });
   }
 
@@ -659,7 +712,11 @@ function playGlobalAudio(url: string, title: string, duration?: string) {
     if (globalAudioElement) {
       globalAudioElement.playbackRate = globalAudioState.playbackRate || 1.0;
     }
-    globalAudioElement.play().catch(err => console.warn(err));
+    updateGlobalAudio({ isLoading: true });
+    globalAudioElement.play().catch(err => {
+      console.warn(err);
+      updateGlobalAudio({ isLoading: false });
+    });
   } else {
     globalAudioElement.src = url;
     globalAudioElement.preload = 'auto';
@@ -673,10 +730,12 @@ function playGlobalAudio(url: string, title: string, duration?: string) {
       progress: 0,
       currentTime: '0:00',
       totalDuration: duration || '0:00',
-      isPlaying: true
+      isPlaying: true,
+      isLoading: true
     });
     globalAudioElement.play().catch(err => {
       console.warn("Background audio play failed:", err);
+      updateGlobalAudio({ isLoading: false });
     });
   }
 }
@@ -907,7 +966,12 @@ function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { key?: any;
           style={{ cursor: 'pointer' }}
           className={`w-11 h-11 rounded-full ${tc.bg || 'bg-indigo-650'} ${tc.hoverBg || 'bg-indigo-600'} hover:scale-105 active:scale-95 text-white flex items-center justify-center relative z-10 transition duration-300 shadow-[0_3px_10px_rgba(30,30,30,0.15)]`}
         >
-          {isPlaying ? (
+          {isThisActive && globalAudio.isLoading ? (
+            <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          ) : isPlaying ? (
             <svg className="w-3.5 h-3.5 fill-current text-white animate-pulse" viewBox="0 0 24 24">
               <rect x="5" y="4" width="4" height="16" rx="1.5" />
               <rect x="15" y="4" width="4" height="16" rx="1.5" />
@@ -957,12 +1021,18 @@ function BeautifulAudioPlayer({ url, title, duration, isDark, tc }: { key?: any;
           />
         </div>
 
-        {/* Bottom bar: Timers */}
+        {/* Bottom bar: Timers & Loading Text */}
         <div className="flex items-center justify-between py-0.5 select-none text-[9.5px]">
           {/* Time text e.g. 0:04 / 3:15 */}
           <span className="text-slate-400 font-mono tracking-tight shrink-0">
             {currentTime} / {totalDuration}
           </span>
+          {isThisActive && globalAudio.isLoading && (
+            <span className="text-amber-500 font-sans font-bold flex items-center gap-1 animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+              غږیز لوډېږي...
+            </span>
+          )}
         </div>
 
       </div>
@@ -1672,6 +1742,130 @@ export function getVideoThumbnail(post: any | null): string {
   const idStr = String(post.id || '');
   const charSum = idStr.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return fallbacks[charSum % fallbacks.length];
+}
+
+/* Authentic Video Thumbnail generator that uses actual video streams if no static image exists */
+export function AuthenticVideoThumbnail({ post, className = "w-full h-full object-cover" }: { post: any; className?: string }) {
+  const videoUrl = post?.videoUrl || (post?.videoList && post.videoList[0]?.url) || (post?.videoList && post.videoList[0]);
+  const thumbUrl = post?.videoThumbUrl || (post?.videoList && post.videoList[0]?.thumbUrl);
+  const photoUrl = post?.photoUrl || (post?.photoUrls && post.photoUrls[0]);
+
+  if (thumbUrl) {
+    return (
+      <img
+        src={thumbUrl}
+        referrerPolicy="no-referrer"
+        alt="video thumb"
+        className={className}
+        loading="lazy"
+      />
+    );
+  }
+
+  if (photoUrl) {
+    return (
+      <CachedImage
+        src={photoUrl}
+        alt="video thumb"
+        className={className}
+        simple={true}
+      />
+    );
+  }
+
+  if (videoUrl) {
+    return (
+      <video
+        src={videoUrl}
+        className={className}
+        muted
+        playsInline
+        preload="metadata"
+        style={{ pointerEvents: 'none' }}
+      />
+    );
+  }
+
+  // Cinematographic fallbacks
+  const fallbacks = [
+    "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?w=600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=600&auto=format&fit=crop&q=80"
+  ];
+  const idStr = String(post?.id || '');
+  const charSum = idStr.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const fallbackSrc = fallbacks[charSum % fallbacks.length];
+
+  return (
+    <img
+      src={fallbackSrc}
+      alt="video fallback"
+      className={className}
+      loading="lazy"
+    />
+  );
+}
+
+/* Beautiful Swipe Guidance Overlay for First-Time Users */
+export function SwipeGuidanceOverlay({ onClose }: { onClose: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 bg-black/85 backdrop-blur-md z-[10000] flex flex-col items-center justify-center text-white p-6 select-none cursor-pointer"
+      onClick={onClose}
+    >
+      <div className="max-w-xs text-center space-y-6 flex flex-col items-center">
+        {/* Animated Swipe Gestures and Arrows */}
+        <div className="relative w-28 h-40 flex items-center justify-center">
+          {/* Track representation */}
+          <div className="absolute w-1.5 h-32 bg-white/20 rounded-full" />
+          
+          {/* Animated arrows and touch point going upwards */}
+          <motion.div
+            className="absolute flex flex-col items-center gap-1 text-indigo-400"
+            animate={{
+              y: [45, -45],
+              opacity: [0, 1, 1, 0]
+            }}
+            transition={{
+              repeat: Infinity,
+              duration: 2.2,
+              ease: "easeInOut"
+            }}
+          >
+            <ChevronUp className="w-8 h-8 animate-pulse text-indigo-400" />
+            {/* Elegant glowing pulse circle representing a hand/touch */}
+            <div className="w-10 h-10 rounded-full bg-indigo-500/30 border-2 border-indigo-400 flex items-center justify-center shadow-[0_0_25px_rgba(99,102,241,0.7)]">
+              <div className="w-4 h-4 rounded-full bg-indigo-400" />
+            </div>
+          </motion.div>
+        </div>
+
+        <div className="space-y-2.5">
+          <h3 className="text-base font-black text-white font-sans tracking-tight">
+            پورته کش کول (Swipe Up)
+          </h3>
+          <p className="text-xs text-slate-300 leading-relaxed font-semibold">
+            د بلې ویډیو یا انځور د لیدلو لپاره سکرین پورته کش کړئ یا ماوس سکرول کړئ.
+          </p>
+        </div>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl transition shadow-lg active:scale-95 border border-indigo-500/20"
+        >
+          پوه شوم / مړول
+        </button>
+      </div>
+    </motion.div>
+  );
 }
 
 /* Global helper function for identifying novels and their parts */
@@ -2801,6 +2995,28 @@ export default function App() {
   const [isPhotoReelsOpen, setIsPhotoReelsOpen] = useState(false);
   const [activePhotoReelIndex, setActivePhotoReelIndex] = useState(0);
   const [photoSwipeDirection, setPhotoSwipeDirection] = useState<'next' | 'prev'>('next');
+  const [showReelsGuide, setShowReelsGuide] = useState(false);
+  const [showPhotoReelsGuide, setShowPhotoReelsGuide] = useState(false);
+
+  useEffect(() => {
+    if (isReelsOpen) {
+      const hasSeen = localStorage.getItem('hasSeenReelsGuide');
+      if (!hasSeen) {
+        setShowReelsGuide(true);
+        localStorage.setItem('hasSeenReelsGuide', 'true');
+      }
+    }
+  }, [isReelsOpen]);
+
+  useEffect(() => {
+    if (isPhotoReelsOpen) {
+      const hasSeen = localStorage.getItem('hasSeenPhotoReelsGuide');
+      if (!hasSeen) {
+        setShowPhotoReelsGuide(true);
+        localStorage.setItem('hasSeenPhotoReelsGuide', 'true');
+      }
+    }
+  }, [isPhotoReelsOpen]);
   const [isCategoryPageOpen, setIsCategoryPageOpen] = useState(false);
   const [isNovelsPageOpen, setIsNovelsPageOpen] = useState(false);
   const [selectedAuthorName, setSelectedAuthorName] = useState<string | null>(null);
@@ -3219,6 +3435,47 @@ export default function App() {
   const [activeOnboardingPage, setActiveOnboardingPage] = useState(0);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [splashProgress, setSplashProgress] = useState(0);
+
+  // Storage Permission dialog state
+  const [showStoragePermissionDialog, setShowStoragePermissionDialog] = useState(false);
+  const [pendingDownloadMedia, setPendingDownloadMedia] = useState<{ url: string; filename: string } | null>(null);
+
+  const downloadMediaFile = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url, { mode: 'cors' });
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      setToast('فایل په بریا سره په ډانلوډ فولډر کې خوندي شو!');
+    } catch (err) {
+      console.warn("Direct fetch download failed, fallback to direct anchor click:", err);
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setToast('فایل ستاسو ډانلوډ فولډر ته د لیږلو لپاره خلاص شو!');
+    }
+  };
+
+  const handleRequestDownload = (url: string, filename: string) => {
+    const isGranted = localStorage.getItem('storage_permission_granted') === 'true';
+    if (isGranted) {
+      setToast('د فایل ډاونلوډ پروسه پیل شوه...');
+      downloadMediaFile(url, filename);
+    } else {
+      setPendingDownloadMedia({ url, filename });
+      setShowStoragePermissionDialog(true);
+    }
+  };
 
   // Active modal state for sidebar actions (settings, about, contact, apps)
   const [activeModal, setActiveModal] = useState<'settings' | 'about' | 'contact' | 'apps' | null>(null);
@@ -5008,7 +5265,14 @@ export default function App() {
       if (activeFavoriteFilter === 'videos') {
         list = list.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
       } else if (activeFavoriteFilter === 'images') {
-        list = list.filter(p => !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0));
+        list = list.filter(p => {
+          const hasPhoto = !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0);
+          if (!hasPhoto) return false;
+          const text = (p.text || '').toLowerCase();
+          const hasStoryHashtag = text.includes('#کيسه') || text.includes('#کیسه') || text.includes('#کیسې') || text.includes('#کيسې') || text.includes('#سټوري') || text.includes('#ستوری') || text.includes('#story');
+          const hasNovelHashtag = text.includes('#ناول') || text.includes('#novel') || text.includes('#رومان');
+          return !hasStoryHashtag && !hasNovelHashtag;
+        });
       } else if (activeFavoriteFilter === 'audio') {
         list = list.filter(p => !!p.hasAudio || !!p.audioUrl);
       } else if (activeFavoriteFilter === 'pdf') {
@@ -5030,7 +5294,14 @@ export default function App() {
         if (selectedCategory === 'videos') {
           list = list.filter(p => !!p.hasVideo || !!p.videoUrl || !!p.videoThumbUrl);
         } else if (selectedCategory === 'images') {
-          list = list.filter(p => !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0));
+          list = list.filter(p => {
+            const hasPhoto = !!p.photoUrl || (p.photoUrls && p.photoUrls.length > 0);
+            if (!hasPhoto) return false;
+            const text = (p.text || '').toLowerCase();
+            const hasStoryHashtag = text.includes('#کيسه') || text.includes('#کیسه') || text.includes('#کیسې') || text.includes('#کيسې') || text.includes('#سټوري') || text.includes('#ستوری') || text.includes('#story');
+            const hasNovelHashtag = text.includes('#ناول') || text.includes('#novel') || text.includes('#رومان');
+            return !hasStoryHashtag && !hasNovelHashtag;
+          });
         } else if (selectedCategory === 'audio') {
           list = list.filter(p => !!p.hasAudio || !!p.audioUrl);
         } else if (selectedCategory === 'pdf') {
@@ -6705,7 +6976,7 @@ export default function App() {
               </div>
             )}
           </div>
-        ) : selectedPost ? (
+        ) : (selectedPost && !isSettingsPageOpen && !isAboutPageOpen && !isContactPageOpen) ? (
           isPostNovelProfileGlobal(selectedPost) ? (
             activeNovelTextChapter ? (
               /* ==========================================================
@@ -7135,6 +7406,7 @@ export default function App() {
 
                 {/* Chapters List (څپرکي په لیست او ډیزاین کې) */}
                 {(() => {
+                  if (!getIsNovelOrNovelPart(selectedPost)) return null;
                   const uniqueNovelTag = getUniqueNovelHashtagGlobal(selectedPost.text || '');
                   if (!uniqueNovelTag) return null;
 
@@ -7506,6 +7778,7 @@ export default function App() {
 
               {/* UNIQUE NOVEL RELATIONSHIP (د ناول برخې او کيسې تړاو تړون) */}
               {(() => {
+                if (!getIsNovelOrNovelPart(selectedPost)) return null;
                 const getHashtags = (t: string): string[] => {
                   if (!t) return [];
                   const matches = t.match(/#[^\s#\.,'\?\!\"🗺️✨🎙️🎵📚✍️():؛،«»\-]+/g) || [];
@@ -7764,7 +8037,7 @@ export default function App() {
             </div>
           </article>
         )
-      ) : selectedAuthorName ? (
+      ) : (selectedAuthorName && !isSettingsPageOpen && !isAboutPageOpen && !isContactPageOpen) ? (
           /* ==========================================================
              AUTHOR PROFILE SCREEN (د لیکوال پېژندڅېرې پاڼه) - Full Screen/Full Width Layout
              ========================================================== */
@@ -8080,42 +8353,23 @@ export default function App() {
                                 className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5`}
                               >
                                 {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
-                                  post.photoUrl ? (
-                                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                                      <CachedImage
-                                        src={post.photoUrl || ''}
-                                        alt="thumb"
-                                        className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
-                                      />
-                                      {post.photoUrls && post.photoUrls.length > 1 && (
-                                        <span className="absolute top-1.5 left-1.5 bg-slate-950/85 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5 border border-white/10 shadow">
-                                          <Images className="w-2.5 h-2.5 text-indigo-400" />
-                                          <span>+{post.photoUrls.length - 1}</span>
-                                        </span>
-                                      )}
-                                      {post.hasVideo && (
-                                        <span className="absolute inset-0 flex items-center justify-center bg-black/35">
-                                          <PlayCircle className="w-6 h-6 text-white drop-shadow" />
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : post.videoThumbUrl ? (
-                                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                                      <img
-                                        src={post.videoThumbUrl || null}
-                                        referrerPolicy="no-referrer"
-                                        alt="thumb"
-                                        className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
-                                      />
+                                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
+                                    <AuthenticVideoThumbnail
+                                      post={post}
+                                      className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                                    />
+                                    {post.photoUrls && post.photoUrls.length > 1 && (
+                                      <span className="absolute top-1.5 left-1.5 bg-slate-950/85 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5 border border-white/10 shadow">
+                                        <Images className="w-2.5 h-2.5 text-indigo-400" />
+                                        <span>+{post.photoUrls.length - 1}</span>
+                                      </span>
+                                    )}
+                                    {post.hasVideo && (
                                       <span className="absolute inset-0 flex items-center justify-center bg-black/35">
                                         <PlayCircle className="w-6 h-6 text-white drop-shadow" />
                                       </span>
-                                    </div>
-                                  ) : post.hasVideo ? (
-                                    <div className={`w-20 h-20 sm:w-24 sm:h-24 rounded-xl ${subCardBg} flex items-center justify-center shrink-0 text-indigo-400`}>
-                                      <Video className={`w-8 h-8 ${tc.text}`} />
-                                    </div>
-                                  ) : null
+                                    )}
+                                  </div>
                                 )}
 
                                 <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5 h-full">
@@ -8188,6 +8442,7 @@ export default function App() {
                                       isDark={isDark}
                                       fs={fs}
                                       limitLines={6}
+                                      hideHashtags={true}
                                     />
 
                                     {post.photoUrls && post.photoUrls.length > 1 && (
@@ -8326,6 +8581,7 @@ export default function App() {
                                     isDark={isDark}
                                     fs={fs}
                                     limitLines={4}
+                                    hideHashtags={true}
                                   />
 
                                   <div className="flex items-center justify-between text-[8.5px] text-slate-400 border-t border-slate-500/10 dark:border-slate-800/60 pt-2" style={{ direction: 'rtl' }}>
@@ -8404,7 +8660,7 @@ export default function App() {
                 );
               })()}
           </div>
-        ) : isSearchOpen ? (
+        ) : (isSearchOpen && !isSettingsPageOpen && !isAboutPageOpen && !isContactPageOpen) ? (
           /* ==========================================================
              G. INTEGRATED DEWA SEARCH SCREEN (د شعرونو د پلټنې ځانګړې صفحه)
              ========================================================== */
@@ -8589,7 +8845,34 @@ export default function App() {
                               if (currentScroll > 0) {
                                 detailScrollPosRef.current = currentScroll;
                               }
-                              setSelectedPost(post);
+                              
+                              const isNovel = getIsNovelOrNovelPart(post) || isStoryPost(post);
+                              const isVideo = post.hasVideo || post.videoUrl || (post.videoList && post.videoList.length > 0);
+                              
+                              if (isNovel) {
+                                setIsReelsOpen(false);
+                                setIsPhotoReelsOpen(false);
+                                setIsNovelsPageOpen(true);
+                                setSelectedPost(post);
+                              } else if (isVideo) {
+                                const idx = reelsList.findIndex(r => r.post.id === post.id);
+                                if (idx !== -1) {
+                                  setActiveReelIndex(idx);
+                                  setIsReelsOpen(true);
+                                } else {
+                                  setSelectedPost(post);
+                                }
+                              } else if (post.photoUrl || (post.photoUrls && post.photoUrls.length > 0)) {
+                                const idx = photoReelsList.findIndex(p => p.post.id === post.id);
+                                if (idx !== -1) {
+                                  setActivePhotoReelIndex(idx);
+                                  setIsPhotoReelsOpen(true);
+                                } else {
+                                  setSelectedPost(post);
+                                }
+                              } else {
+                                setSelectedPost(post);
+                              }
                             }}
                             style={{ cursor: 'pointer' }}
                             className={`${isDark ? 'bg-slate-950/40 border-slate-900 hover:bg-slate-900/60' : 'bg-white border-slate-200 hover:bg-slate-50 shadow-xs'} border p-3.5 rounded-xl flex items-center gap-3.5 transition group select-none text-right`}
@@ -8597,10 +8880,8 @@ export default function App() {
                             {/* Right side teaser */}
                             {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
                               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                                <img
-                                  src={post.photoUrl || post.videoThumbUrl || "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=100&auto=format&fit=crop&q=80"}
-                                  alt="Search item cover"
-                                  referrerPolicy="no-referrer"
+                                <AuthenticVideoThumbnail
+                                  post={post}
                                   className="w-full h-full object-cover"
                                 />
                                 {post.hasVideo && (
@@ -8630,7 +8911,7 @@ export default function App() {
 
             </div>
           </div>
-        ) : isNovelsPageOpen ? (
+        ) : (isNovelsPageOpen && !isSettingsPageOpen && !isAboutPageOpen && !isContactPageOpen) ? (
           /* ==========================================================
              D2. NOVELS & STORIES CHANNEL BROWSER (د پښتو کیسو او ناولونو برخه - انلاین مجله)
              ========================================================== */
@@ -9198,7 +9479,7 @@ export default function App() {
 
             </div>
           </div>
-        ) : isCategoryPageOpen ? (
+        ) : (isCategoryPageOpen && !isSettingsPageOpen && !isAboutPageOpen && !isContactPageOpen) ? (
           /* ==========================================================
              C. CATEGORIES / HASHTAGS LIST (کتګورۍ او موضوعات)
              ========================================================== */
@@ -9720,7 +10001,12 @@ export default function App() {
                       >
                         <div className="relative p-[2.5px] rounded-full bg-gradient-to-tr from-rose-500 via-fuchsia-600 to-purple-600 shadow transform hover:scale-105 active:scale-95 transition duration-300">
                           <div className={`w-12 h-12 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-0.5 relative`}>
-                            {thumb ? (
+                            {hasVideo ? (
+                              <AuthenticVideoThumbnail
+                                post={stPost}
+                                className="w-full h-full object-cover rounded-full"
+                              />
+                            ) : thumb ? (
                               <CachedImage
                                 src={thumb}
                                 alt="thumb"
@@ -10201,170 +10487,234 @@ export default function App() {
               </div>
             )}
 
-            {/* 2. EXQUISITE QUICK ACTIONS DYNAMIC GRID (چټک مینو بټنې: انځورونه، ویډیوګانې، کټګورۍ او پلټنه) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5" style={{ direction: 'rtl' }}>
-              
-              {/* ۱. ښکلي انځورونه */}
-              <div 
-                onClick={() => {
-                  setIsPhotoReelsOpen(true);
-                  // Preserve existing activePhotoReelIndex instead of resetting to 0
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                style={{ cursor: 'pointer' }}
-                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-2 sm:p-2.5 flex flex-row items-center justify-between gap-1.5 h-13 sm:h-15 transition-all duration-350 transform hover:scale-[1.015] active:scale-[0.98] border border-white/15 shadow-[0_4px_15px_rgba(16,185,129,0.15)] hover:shadow-[0_8px_25px_rgba(5,150,105,0.3)] group action-btn-flow action-btn-photos text-white select-none cursor-pointer"
-              >
-                <div className="absolute inset-x-0 top-0 h-[40%] bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-                <Images className="absolute -left-4 -bottom-4 w-14 h-14 text-white/5 pointer-events-none transform rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
-                
-                <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
-                  <span className="text-[10px] sm:text-xs font-black tracking-tight font-sans">
-                    ښکلي انځورونه
-                  </span>
-                  <span className="text-[7.5px] xs:text-[8px] text-emerald-100/90 font-bold font-sans">
-                    البوم (Photo Slides)
-                  </span>
-                </div>
-                <div className="shrink-0 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-xs group-hover:bg-white/25 transition duration-300 z-10">
-                  <ImageIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse" />
-                </div>
-              </div>
-
-              {/* ۲. شارټ ویډیوګانې (Reels) */}
-              <div 
-                onClick={() => {
-                  setIsReelsOpen(true);
-                  // Preserve existing activeReelIndex so we stay on the same video,
-                  // unless it's the first time and there is a specific lastWatched video.
-                  if (activeReelIndex === 0) {
-                    let targetIndex = 0;
-                    const lastWatched = (window as any).lastWatchedVideo;
-                    if (lastWatched && lastWatched.videoUrl) {
-                      const idx = reelsList.findIndex(r => 
-                        r.videoUrl === lastWatched.videoUrl || 
-                        (r.videoUrl && r.videoUrl.includes(lastWatched.videoUrl)) || 
-                        (lastWatched.videoUrl && lastWatched.videoUrl.includes(r.videoUrl))
-                      );
-                      if (idx !== -1) {
-                        targetIndex = idx;
-                      }
-                    }
-                    setActiveReelIndex(targetIndex);
-                  }
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                style={{ cursor: 'pointer' }}
-                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-2 sm:p-2.5 flex flex-row items-center justify-between gap-1.5 h-13 sm:h-15 transition-all duration-350 transform hover:scale-[1.015] active:scale-[0.98] border border-white/15 shadow-[0_4px_15px_rgba(244,63,94,0.15)] hover:shadow-[0_8px_25px_rgba(225,29,72,0.3)] group action-btn-flow action-btn-reels text-white select-none cursor-pointer"
-              >
-                <div className="absolute inset-x-0 top-0 h-[40%] bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-                <Video className="absolute -left-4 -bottom-4 w-14 h-14 text-white/5 pointer-events-none transform rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
-                
-                <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
-                  <span className="text-[10px] sm:text-xs font-black tracking-tight font-sans">
-                    شارټ ویډیوګانې
-                  </span>
-                  <span className="text-[7.5px] xs:text-[8px] text-rose-100/90 font-bold font-sans">
-                    ریلیزونه (Reels)
-                  </span>
-                </div>
-                <div className="shrink-0 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-xs group-hover:bg-white/25 transition duration-300 z-10">
-                  <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse ml-0.5" />
-                </div>
-              </div>
-
-              {/* ۳. د شعرونو ډلبندي */}
-              <div 
-                onClick={() => {
-                  setIsCategoryPageOpen(true);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                style={{ cursor: 'pointer' }}
-                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-2 sm:p-2.5 flex flex-row items-center justify-between gap-1.5 h-13 sm:h-15 transition-all duration-350 transform hover:scale-[1.015] active:scale-[0.98] border border-white/15 shadow-[0_4px_15px_rgba(79,70,229,0.15)] hover:shadow-[0_8px_25px_rgba(67,56,202,0.3)] group action-btn-flow action-btn-categories text-white select-none cursor-pointer"
-              >
-                <div className="absolute inset-x-0 top-0 h-[40%] bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-                <Layers className="absolute -left-4 -bottom-4 w-14 h-14 text-white/5 pointer-events-none transform rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
-                
-                <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
-                  <span className="text-[10px] sm:text-xs font-black tracking-tight font-sans">
-                    موضوعي ډلبندي
-                  </span>
-                  <span className="text-[7.5px] xs:text-[8px] text-blue-100/90 font-bold font-sans">
-                    کټګورۍ (Category)
-                  </span>
-                </div>
-                <div className="shrink-0 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-xs group-hover:bg-white/25 transition duration-300 z-10">
-                  <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse" />
-                </div>
-              </div>
-
-              {/* ۴. پلټنه */}
-              <div 
-                onClick={() => {
-                  setIsSearchOpen(true);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                style={{ cursor: 'pointer' }}
-                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-2 sm:p-2.5 flex flex-row items-center justify-between gap-1.5 h-13 sm:h-15 transition-all duration-350 transform hover:scale-[1.015] active:scale-[0.98] border border-white/15 shadow-[0_4px_15px_rgba(245,158,11,0.15)] hover:shadow-[0_8px_25px_rgba(217,119,6,0.3)] group action-btn-flow action-btn-search text-white select-none cursor-pointer"
-              >
-                <div className="absolute inset-x-0 top-0 h-[40%] bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-                <Search className="absolute -left-4 -bottom-4 w-14 h-14 text-white/5 pointer-events-none transform rotate-12 group-hover:scale-110 transition-all duration-500 ease-out" />
-                
-                <div className="flex-1 min-w-0 text-right z-10 flex flex-col justify-center">
-                  <span className="text-[10px] sm:text-xs font-black tracking-tight font-sans">
-                    په پوسټونو پلټنه
-                  </span>
-                  <span className="text-[7.5px] xs:text-[8px] text-amber-100/90 font-bold font-sans">
-                    لټون (Fast Search)
-                  </span>
-                </div>
-                <div className="shrink-0 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-xs group-hover:bg-white/25 transition duration-300 z-10">
-                  <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse" />
-                </div>
-              </div>
-
-            </div>
-
-            {/* د کیسو او ناولونو یو نوی، ښکلی او د پام وړ کمپیګټ بټن (Sleek Interactive Novels & Stories Button) */}
+            {/* 2. EXQUISITE QUICK ACTIONS GLASSMORPHIC TRAY (۶ ګډې بټنې: په دوه قطارونو کې) */}
             <div 
-              id="dewa-novels-stories-banner"
-              onClick={() => {
-                setIsNovelsPageOpen(true);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              style={{ cursor: 'pointer' }}
-              className="relative overflow-hidden rounded-2xl p-2.5 px-3.5 flex flex-row-reverse items-center justify-between gap-3 transition-all duration-500 transform hover:scale-[1.015] hover:-translate-y-0.5 active:scale-[0.985] border border-white/20 bg-gradient-to-r from-red-550 via-pink-600 via-fuchsia-600 to-indigo-600 bg-[size:200%_200%] animate-gradient-shift shadow-[0_4px_18px_rgba(219,39,119,0.3)] hover:shadow-[0_8px_28px_rgba(219,39,119,0.55)] group text-white select-none cursor-pointer mt-3.5 mb-2.5"
+              className="grid grid-cols-3 gap-2 sm:gap-2.5 md:gap-3 py-2 px-1.5" 
+              style={{ direction: 'rtl' }}
             >
-              {/* Dynamic diagonal sweep shimmer line */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -translate-x-full group-hover:animate-shimmer pointer-events-none" />
-              <BookOpen className="absolute -left-2 -bottom-2 w-12 h-12 text-white/10 pointer-events-none transform -rotate-12 group-hover:scale-115 transition-all duration-500 ease-out" />
-              
-              <div className="flex flex-row-reverse items-center gap-2.5 z-10 text-right min-w-0">
-                <div className="shrink-0 w-7 h-7 rounded-lg bg-white/20 border border-white/25 flex items-center justify-center text-white shadow-sm group-hover:rotate-6 transition duration-300">
-                  <Sparkles className="w-3.5 h-3.5 animate-pulse text-amber-300" />
-                </div>
-                <div className="min-w-0 flex flex-col justify-center text-right">
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                    </span>
-                    <h3 className="text-xs font-black tracking-tight font-sans text-white">
-                      د رومان غني برخه (کیسې او ناولونه)
-                    </h3>
-                  </div>
-                  <p className="text-[9px] sm:text-[10px] text-white/90 font-medium font-sans mt-0.5" style={{ direction: 'rtl' }}>
-                    په زړه پورې غږیز او لیکلي رومانونه دلته ولولئ 🎧📖
-                  </p>
-                </div>
-              </div>
-              
-              <div className="shrink-0 flex items-center justify-end z-10">
-                <div className="px-2.5 py-1 rounded-lg bg-black/25 hover:bg-black/35 text-white border border-white/10 font-sans font-black text-[9px] sm:text-[10px] flex items-center justify-center gap-1 shadow-sm transition duration-300">
-                  <span>دلته کلیک کړئ ⚡</span>
-                  <ArrowLeft className="w-2.5 h-2.5 group-hover:-translate-x-0.5 transition-transform" />
-                </div>
-              </div>
+              {[
+                {
+                  label: 'ويډيوګانې',
+                  sub: 'شارټونه (Reels)',
+                  Icon: Play,
+                  color: 'text-rose-500 dark:text-rose-400',
+                  bgColor: 'bg-rose-500/10 dark:bg-rose-500/20',
+                  borderColor: 'hover:border-rose-500/30 dark:hover:border-rose-500/40',
+                  glowColor: 'shadow-rose-500/5',
+                  onClick: () => {
+                    setIsReelsOpen(true);
+                    if (activeReelIndex === 0) {
+                      let targetIndex = 0;
+                      const lastWatched = (window as any).lastWatchedVideo;
+                      if (lastWatched && lastWatched.videoUrl) {
+                        const idx = reelsList.findIndex(r => 
+                          r.videoUrl === lastWatched.videoUrl || 
+                          (r.videoUrl && r.videoUrl.includes(lastWatched.videoUrl)) || 
+                          (lastWatched.videoUrl && lastWatched.videoUrl.includes(r.videoUrl))
+                        );
+                        if (idx !== -1) {
+                          targetIndex = idx;
+                        }
+                      }
+                      setActiveReelIndex(targetIndex);
+                    }
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                },
+                {
+                  label: 'انځورونه',
+                  sub: 'څو اړخیزه البومونه',
+                  Icon: ImageIcon,
+                  color: 'text-emerald-500 dark:text-emerald-400',
+                  bgColor: 'bg-emerald-500/10 dark:bg-emerald-500/20',
+                  borderColor: 'hover:border-emerald-500/30 dark:hover:border-emerald-500/40',
+                  glowColor: 'shadow-emerald-500/5',
+                  onClick: () => {
+                    setIsPhotoReelsOpen(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                },
+                {
+                  label: 'ناولونه او کيسې',
+                  sub: 'رومان برخه (Novels)',
+                  Icon: BookOpen,
+                  color: 'text-pink-500 dark:text-pink-400',
+                  bgColor: 'bg-pink-500/10 dark:bg-pink-500/20',
+                  borderColor: 'hover:border-pink-500/30 dark:hover:border-pink-500/40',
+                  glowColor: 'shadow-pink-500/5',
+                  onClick: () => {
+                    setIsNovelsPageOpen(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                },
+                {
+                  label: 'پلټنه',
+                  sub: 'چټک لټون (Search)',
+                  Icon: Search,
+                  color: 'text-amber-500 dark:text-amber-400',
+                  bgColor: 'bg-amber-500/10 dark:bg-amber-500/20',
+                  borderColor: 'hover:border-amber-500/30 dark:hover:border-amber-500/40',
+                  glowColor: 'shadow-amber-500/5',
+                  onClick: () => {
+                    setIsSearchOpen(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                },
+                {
+                  label: 'کټګوري',
+                  sub: 'موضوعي ډلبندي',
+                  Icon: Layers,
+                  color: 'text-violet-500 dark:text-violet-400',
+                  bgColor: 'bg-violet-500/10 dark:bg-violet-500/20',
+                  borderColor: 'hover:border-violet-500/30 dark:hover:border-violet-500/40',
+                  glowColor: 'shadow-violet-500/5',
+                  onClick: () => {
+                    setIsCategoryPageOpen(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                },
+                {
+                  label: 'خوښ شوي اثار',
+                  sub: 'غوره انتخاب (Liked)',
+                  Icon: Heart,
+                  color: 'text-rose-500 dark:text-rose-400',
+                  bgColor: 'bg-rose-500/10 dark:bg-rose-500/20',
+                  borderColor: 'hover:border-rose-500/30 dark:hover:border-rose-500/40',
+                  glowColor: 'shadow-rose-500/5',
+                  isActiveStatus: isFavoritesMenuOpen,
+                  onClick: () => {
+                    setIsFavoritesMenuOpen(!isFavoritesMenuOpen);
+                  }
+                }
+              ].map((btn, idx) => {
+                const BtnIcon = btn.Icon;
+                const isSelected = btn.isActiveStatus;
+                return (
+                  <motion.div
+                    key={idx}
+                    whileHover={{ scale: 1.02, y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={btn.onClick}
+                    style={{ cursor: 'pointer' }}
+                    className={`rounded-2xl p-2.5 flex flex-col items-center justify-center gap-1.5 transition-all duration-300 border backdrop-blur-md text-center select-none cursor-pointer ${
+                      isSelected
+                        ? 'bg-rose-500/10 dark:bg-rose-500/15 border-rose-500/40 shadow-[0_4px_15px_rgba(244,63,94,0.15)] scale-[1.02]'
+                        : isDark 
+                          ? 'bg-slate-900/60 hover:bg-slate-900/85 border-slate-800/70 hover:border-slate-700/80 shadow-[0_4px_12px_rgba(0,0,0,0.25)]' 
+                          : 'bg-white/70 hover:bg-white/90 border-slate-200/80 hover:border-slate-300/90 shadow-[0_4px_12px_rgba(148,163,184,0.06)]'
+                    } ${btn.borderColor} ${btn.glowColor}`}
+                  >
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${btn.bgColor} ${btn.color} transition duration-300 ${isSelected ? 'animate-pulse' : ''}`}>
+                      <BtnIcon className="w-4.5 h-4.5" />
+                    </div>
+                    <div className="flex flex-col items-center justify-center">
+                      <span className={`text-[10px] md:text-[11px] font-black font-sans leading-tight ${
+                        isDark ? 'text-slate-100' : 'text-slate-800'
+                      }`}>
+                        {btn.label}
+                      </span>
+                      <span className={`text-[7.5px] md:text-[8px] font-medium font-sans leading-none mt-0.5 ${
+                        isDark ? 'text-slate-400' : 'text-slate-500'
+                      }`}>
+                        {btn.sub}
+                      </span>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
+
+            {/* د خوښو شویو تفصیلي مینو چې د 'خوښ شوي اثار' په خلاصولو سره دلته ښکاره کېږي */}
+            <AnimatePresence>
+              {isFavoritesMenuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                  exit={{ opacity: 0, height: 0, scale: 0.96 }}
+                  transition={{ duration: 0.35, ease: 'easeInOut' }}
+                  className="overflow-hidden mt-1 mb-2.5 px-1.5"
+                >
+                  <div className={`p-3 rounded-2xl border ${isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-105 shadow-xs'} space-y-2`}>
+                    <div className="text-right pb-1 border-b border-dashed border-slate-550/10 flex items-center justify-between">
+                      <span className="text-[9.5px] text-slate-400 font-sans font-bold">د کټګورۍ له مخې خپل خوښ شوي توکي ومومئ:</span>
+                      {activeFavoriteFilter && (
+                        <button
+                          onClick={() => setActiveFavoriteFilter(null)}
+                          className="text-[8.5px] text-rose-500 hover:text-rose-600 font-black font-sans"
+                        >
+                          پاکول ✕
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2" style={{ direction: 'rtl' }}>
+                      {[
+                        { id: 'videos', label: 'ويډيوګانې', sub: 'خوښې شوې', icon: Video, color: 'text-rose-500 dark:text-rose-400', bgColor: 'bg-rose-500/10 dark:bg-rose-500/20' },
+                        { id: 'images', label: 'انځورونه', sub: 'خوښ شوي', icon: ImageIcon, color: 'text-emerald-500 dark:text-emerald-400', bgColor: 'bg-emerald-500/10 dark:bg-emerald-500/20' },
+                        { id: 'writings', label: 'ليکنې', sub: 'خوښې شوې', icon: FileText, color: 'text-violet-500 dark:text-violet-400', bgColor: 'bg-violet-500/10 dark:bg-violet-500/20' },
+                        { id: 'pdf', label: 'کتابونه', sub: 'خوښ شوي', icon: BookOpen, color: 'text-pink-500 dark:text-pink-400', bgColor: 'bg-pink-500/10 dark:bg-pink-500/20' },
+                        { id: 'audio', label: 'غږيزې', sub: 'خوښي شوې', icon: Music, color: 'text-sky-500 dark:text-sky-400', bgColor: 'bg-sky-500/10 dark:bg-sky-500/20' },
+                        { id: 'toread', label: 'وروسته لوستل', sub: 'خوندي شوي', icon: Bookmark, color: 'text-amber-500 dark:text-amber-400', bgColor: 'bg-amber-500/10 dark:bg-amber-500/20' },
+                      ].map((fav) => {
+                        const FavIcon = fav.icon;
+                        const isActive = activeFavoriteFilter === fav.id;
+                        const count = favoriteCounts[fav.id as keyof typeof favoriteCounts] || 0;
+
+                        return (
+                          <motion.button
+                            key={fav.id}
+                            whileHover={{ scale: 1.02, y: -0.5 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => {
+                              const newFilter = isActive ? null : fav.id as any;
+                              setActiveFavoriteFilter(newFilter);
+                              if (newFilter) {
+                                setSelectedCategory('all'); // Clear category selection so favorite filter is in primary display
+                              }
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            className={`rounded-xl p-2 flex flex-col items-center justify-center gap-1 transition-all duration-300 border backdrop-blur-md text-center select-none cursor-pointer relative min-h-[68px] ${
+                              isActive
+                                ? 'bg-rose-500/10 dark:bg-rose-500/15 border-rose-500/40 shadow-[0_4px_12px_rgba(244,63,94,0.12)] scale-[1.01]'
+                                : isDark 
+                                  ? 'bg-slate-900/60 hover:bg-slate-900/85 border-slate-800/70 hover:border-slate-700/80 shadow-[0_2px_8px_rgba(0,0,0,0.2)]' 
+                                  : 'bg-white/70 hover:bg-white/90 border-slate-200/80 hover:border-slate-300/90 shadow-[0_2px_8px_rgba(148,163,184,0.04)]'
+                            }`}
+                          >
+                            {/* Micro count badge */}
+                            {count > 0 && (
+                              <span className={`absolute top-1 right-1 font-mono text-[7px] font-bold px-1 py-0.25 rounded-md ${
+                                isActive 
+                                  ? 'bg-rose-500 text-white' 
+                                  : isDark ? 'bg-slate-800 text-slate-300 border border-slate-700/50' : 'bg-slate-100 text-slate-600 border border-slate-200'
+                              }`}>
+                                {count}
+                              </span>
+                            )}
+
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${fav.bgColor} ${fav.color} transition duration-300 ${isActive ? 'animate-pulse' : ''}`}>
+                              <FavIcon className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="flex flex-col items-center justify-center">
+                              <span className={`text-[9px] font-black font-sans leading-tight ${
+                                isDark ? 'text-slate-100' : 'text-slate-800'
+                              }`}>
+                                {fav.label}
+                              </span>
+                              <span className={`text-[6.5px] font-medium font-sans leading-none mt-0.5 ${
+                                isDark ? 'text-slate-400' : 'text-slate-500'
+                              }`}>
+                                {fav.sub}
+                              </span>
+                            </div>
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* 2.5. BEAUTIFUL HORIZONTAL RECYCLER VIEW OF PUBLISHERS/ADMINS */}
             <div id="dewa-admins-recycler-section" className="space-y-2.5 mt-3 mb-2.5" style={{ direction: 'rtl' }}>
@@ -10492,111 +10842,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 4. FAVORITES DASHBOARD (ښایسته خوښ شوي کټګورۍ) */}
-            <div className="space-y-3">
-              {/* د خوښو شویو لیکنو یو بټن چي تل په کورپاڼه کې ښکاره وي */}
-              <button
-                onClick={() => setIsFavoritesMenuOpen(!isFavoritesMenuOpen)}
-                style={{ cursor: 'pointer' }}
-                className={`w-full overflow-hidden rounded-2xl p-3.5 sm:p-4 flex flex-row items-center justify-between gap-3 transition-all duration-350 transform hover:scale-[1.01] active:scale-[0.99] border relative group select-none cursor-pointer ${
-                  isFavoritesMenuOpen 
-                    ? 'bg-rose-955/20 border-rose-500/40 text-rose-500 shadow-[0_4px_18px_rgba(244,63,94,0.18)]' 
-                    : `${isDark ? 'bg-slate-900/60 hover:bg-slate-850 border-slate-800 text-slate-100' : 'bg-slate-100 hover:bg-slate-150 border-slate-205 text-slate-800'}`
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-xl transition-all duration-300 ${isFavoritesMenuOpen ? 'bg-rose-500/20 text-rose-500' : 'bg-slate-500/10 text-slate-500 group-hover:text-rose-500'}`}>
-                    <Heart className={`w-5 h-5 ${isFavoritesMenuOpen ? 'fill-rose-500 animate-pulse' : ''}`} />
-                  </div>
-                  <div className="text-right">
-                    <span className="block text-xs sm:text-sm font-black font-sans leading-tight">
-                      ستاسو خوښ شوي او غوره اثار
-                    </span>
-                    <span className="block text-[8.5px] sm:text-[9.5px] text-slate-400 mt-1">
-                      {favoritePostIds.length > 0 
-                        ? `ټول ${favoritePostIds.length} توکي په دې مینو کې خوندي دي (مینو وازول)`
-                        : 'خپل د خوښې پوسټونه پدې ځای کې د زړه تڼۍ په وازه کولو سره موندلی شئ'}
-                    </span>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                    favoritePostIds.length > 0 
-                      ? 'bg-rose-500 text-white font-bold' 
-                      : 'bg-slate-500/10 text-slate-400'
-                  }`}>
-                    {favoritePostIds.length}
-                  </span>
-                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-350 ${isFavoritesMenuOpen ? 'transform rotate-180 text-rose-500' : ''}`} />
-                </div>
-              </button>
-
-              {/* پنځه په زړه پورې ښایسته بټنې چې په کلسک کولو خلاصېږي */}
-              <AnimatePresence>
-                {isFavoritesMenuOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0, scale: 0.96 }}
-                    animate={{ opacity: 1, height: 'auto', scale: 1 }}
-                    exit={{ opacity: 0, height: 0, scale: 0.96 }}
-                    transition={{ duration: 0.35, ease: 'easeInOut' }}
-                    className="overflow-hidden"
-                  >
-                    <div className={`p-3 rounded-2xl border ${isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-105 shadow-sm'} space-y-2.5`}>
-                      <div className="text-right pb-1 border-b border-dashed border-slate-550/10">
-                        <span className="text-[9.5px] text-slate-400 font-sans font-bold">لاندې په هره کټګورۍ کې خپل خوښ پيغامونه ولولئ (محرک او پاخه رنګونه د ښي څخه چپ لوري ته):</span>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-2" style={{ direction: 'rtl' }}>
-                        {[
-                          { id: 'videos', label: 'خوښې شوې ويډيوګاني', icon: Video, colorClass: 'fav-btn-videos' },
-                          { id: 'images', label: 'خوښ شوي انځورونه', icon: ImageIcon, colorClass: 'fav-btn-images' },
-                          { id: 'writings', label: 'خوښې شوې ليکنی', icon: FileText, colorClass: 'fav-btn-writings' },
-                          { id: 'pdf', label: 'خوښ شوي کتابونه', icon: BookOpen, colorClass: 'fav-btn-pdf' },
-                          { id: 'audio', label: 'خوښي شوي غږيزې', icon: Music, colorClass: 'fav-btn-audio' },
-                          { id: 'toread', label: 'د وروسته لوستلو لیست', icon: Bookmark, colorClass: 'fav-btn-toread' },
-                        ].map((fav) => {
-                          const FavIcon = fav.icon;
-                          const isActive = activeFavoriteFilter === fav.id;
-                          const count = favoriteCounts[fav.id as keyof typeof favoriteCounts] || 0;
-
-                          return (
-                            <button
-                              key={fav.id}
-                              onClick={() => {
-                                const newFilter = isActive ? null : fav.id as any;
-                                setActiveFavoriteFilter(newFilter);
-                                if (newFilter) {
-                                  setSelectedCategory('all'); // Clear category selection so favorite filter is in primary display
-                                }
-                              }}
-                              style={{ cursor: 'pointer' }}
-                              className={`action-btn-flow ${fav.colorClass} relative overflow-hidden flex flex-col items-center justify-between p-2 rounded-xl transition text-center select-none duration-250 border active:scale-95 shadow-md min-h-[74px] sm:min-h-[82px] text-white ${
-                                isActive ? 'ring-2 ring-white/75 border-white scale-[1.02]' : 'border-white/10 opacity-90 hover:opacity-100'
-                              }`}
-                            >
-                              {/* Overlay for glass look */}
-                              <div className="absolute inset-0 bg-black/15 group-hover:bg-black/5 transition pointer-events-none" />
-                              <div className="absolute inset-x-0 top-0 h-[35%] bg-gradient-to-b from-white/15 to-transparent pointer-events-none" />
-
-                              <div className="p-1 rounded-lg mb-0.5 flex items-center justify-center bg-white/20 border border-white/25 shadow-inner z-10 shrink-0">
-                                <FavIcon className="w-3.5 h-3.5 text-white animate-pulse" />
-                              </div>
-                              <span className="text-[9.5px] sm:text-[10px] font-black font-sans leading-tight block truncate-2-lines max-w-full drop-shadow-md z-10 text-white leading-normal">
-                                {fav.label}
-                              </span>
-                              <div className="flex items-center gap-1 mt-0.5 font-mono text-[8px] sm:text-[8.5px] bg-black/35 px-1.5 py-0.25 rounded-md text-white border border-white/10 shadow-inner z-10 shrink-0">
-                                <span className="font-bold">{count}</span>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
 
             {/* Active Favorites filter banner indicator */}
             {activeFavoriteFilter && (
@@ -10676,12 +10922,19 @@ export default function App() {
                           {/* Rich Pink-Purple-Orange Glowing Circle Ring */}
                           <div className="relative p-[3px] rounded-full bg-gradient-to-tr from-pink-500 via-fuchsia-600 to-amber-500 transition-all duration-350 shadow-md group-hover:scale-108 group-hover:rotate-3">
                             <div className={`w-18 h-18 sm:w-22 sm:h-22 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-0.5 relative`}>
-                              <CachedImage
-                                simple={true}
-                                src={thumb}
-                                alt={title}
-                                className="w-full h-full object-cover rounded-full"
-                              />
+                              {hasVideo ? (
+                                <AuthenticVideoThumbnail
+                                  post={post}
+                                  className="w-full h-full object-cover rounded-full"
+                                />
+                              ) : (
+                                <CachedImage
+                                  simple={true}
+                                  src={thumb}
+                                  alt={title}
+                                  className="w-full h-full object-cover rounded-full"
+                                />
+                              )}
                               {/* Dark overlay with play sign on hover */}
                               <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center rounded-full">
                                 <Play className="w-5 h-5 text-white fill-white" />
@@ -10712,77 +10965,9 @@ export default function App() {
                   </div>
                 </div>
               ) : selectedCategory === 'videos' ? (
-                /* BEAUTIFUL CIRCULAR VIEW + HIGH DENSITY CINEMATIC THUMBNAILS FOR VIDEOS (ویډیويي) */
+                /* BEAUTIFUL HIGH DENSITY CINEMATIC THUMBNAILS FOR VIDEOS (ویډیويي) */
                 <div className="space-y-6 animate-fade-in text-right p-1" style={{ direction: 'rtl' }}>
                   
-                  {/* Part A: Circular View List row for Videos */}
-                <div className="relative p-1 bg-slate-500/5 dark:bg-slate-900/10 rounded-2xl border border-slate-500/10 mb-4" style={{ direction: 'rtl' }}>
-                  <div className="px-3 py-1.5 flex items-center justify-between border-b border-slate-500/5">
-                    <div className="flex items-center gap-1.5">
-                      <PlayCircle className="w-4 h-4 text-emerald-500 animate-pulse" />
-                      <span className={`text-[12px] font-black ${isDark ? 'text-white' : 'text-slate-950'} font-sans`}>
-                        ویډیويي چټک ګرد لیست
-                      </span>
-                    </div>
-                    <span className="text-[9px] text-slate-400 font-bold">د کتنې لپاره ورګډ شئ</span>
-                  </div>
-                  
-                  <div className="flex gap-4.5 items-center overflow-x-auto scrollbar-none py-3.5 px-4 justify-start">
-                    {homePosts.map((post) => {
-                      const thumb = getVideoThumbnail(post);
-                      const isRead = readPostIds.includes(post.id);
-                      
-                      const handleVideoClick = () => {
-                        const currentScroll = window.scrollY || document.documentElement.scrollTop;
-                        if (currentScroll > 0) {
-                          detailScrollPosRef.current = currentScroll;
-                        }
-                        const idx = reelsList.findIndex(r => r.post.id === post.id);
-                        if (idx !== -1) {
-                          setActiveReelIndex(idx);
-                          setIsReelsOpen(true);
-                        } else {
-                          setSelectedPost(post);
-                        }
-                        markPostAsRead(post.id);
-                      };
-
-                      const cleanText = post.text 
-                        ? post.text.replace(/#ویډیو|#ويډيو|#video|#ويډيوګانې/g, '').trim()
-                        : 'پښتو ادبی ویډیو';
-                      const title = cleanText.split('\n')[0]?.trim() || 'وېډیو پوسټ';
-                      const displayTitle = title.length > 15 ? title.slice(0, 12) + '...' : title;
-
-                      return (
-                        <div
-                          key={`circle-vid-${post.id}`}
-                          onClick={handleVideoClick}
-                          style={{ cursor: 'pointer' }}
-                          className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 select-none group relative"
-                        >
-                          <div className="relative p-[2.5px] rounded-full bg-gradient-to-tr from-amber-500 via-rose-600 to-indigo-500 shadow transform hover:scale-105 transition duration-300">
-                            <div className={`w-13 h-13 rounded-full ${isDark ? 'bg-slate-900' : 'bg-white'} overflow-hidden p-[1.5px] relative`}>
-                              <CachedImage
-                                simple={true}
-                                src={thumb}
-                                alt={title}
-                                className="w-full h-full object-cover rounded-full filter blur-[15px] scale-110 saturate-[1.35]"
-                              />
-                              <div className="absolute inset-0 bg-black/35 flex items-center justify-center rounded-full">
-                                <Play className="w-4 h-4 text-white fill-white animate-pulse" />
-                              </div>
-                            </div>
-                          </div>
-                          <span className={`text-[8.5px] font-black ${isDark ? 'text-slate-300' : 'text-slate-700'} font-sans truncate w-14 text-center mt-0.5`}>
-                            {displayTitle}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-
                   {/* Part B: Cinematic Videos Grid */}
                   <div className="grid grid-cols-3 gap-2 sm:gap-4" style={{ direction: 'rtl' }}>
                     {homePosts.map((post) => {
@@ -10824,10 +11009,9 @@ export default function App() {
                         >
                           {/* Rich vertical rectangular aspect video ratio wrapper */}
                           <div className="w-full aspect-[9/15.5] bg-slate-950 overflow-hidden relative shadow-inner rounded-xl">
-                            <CachedImage
-                              src={thumb}
-                              alt={shortTitle}
-                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.08] filter blur-[24px] saturate-[1.4] opacity-80"
+                            <AuthenticVideoThumbnail
+                              post={post}
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.08]"
                             />
                             
                             {/* Rich cinematic play overlay */}
@@ -10849,36 +11033,57 @@ export default function App() {
                             </span>
                           </div>
 
-                          {/* Content bottom section */}
-                          <div className="p-2 flex flex-col justify-between flex-grow text-right">
-                            <h4 className={`text-[9px] sm:text-[11px] font-black leading-snug line-clamp-2 font-sans ${isDark ? 'text-slate-100 group-hover:text-amber-400' : 'text-slate-900 group-hover:text-amber-600'} transition-colors duration-200`}>
-                              {shortTitle}
-                            </h4>
-                            
-                            <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-500/10">
-                              <span className="text-[7px] sm:text-[8.5px] text-slate-455 flex items-center gap-0.5 font-sans">
-                                <Clock className="w-2 h-2 text-slate-500 shrink-0" />
-                                <span className="truncate">{getRelativeTimeInPashto(post.date, post.timeLabel || 'Recent')}</span>
-                              </span>
-                              
-                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                                <button
-                                  onClick={() => handleWhatsAppShare(post)}
-                                  className="p-1 rounded text-emerald-500 hover:bg-emerald-550/10 transition-all font-sans"
-                                >
-                                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                                    <path d="M12.012 3c-4.96-.005-9.005 4.02-9.01 8.977a8.94 8.94 0 0 0 1.202 4.492L3 21l4.7-.1.353-.1.332.352c1.082.52 2.274.8 3.518.8h.01c4.965.004 9.01-4.015 9.013-8.977A8.97 8.97 0 0 0 12.012 3zm4.5 12c-.2.5-.9.9-1.4 1-1 .2-2.3-.2-3.8-1.5-1.5-1.3-2.5-2.8-2.8-3.4-.3-.5-.4-.9-.4-1.3 0-.6.3-.9.4-1.1.1-.2.2-.2.3-.2l.7.1c.2 0 .4.1.5.3.3.6.7 1.4.8 1.5.1.2.1.4 0 .6-.1.2-.2.3-.3.4l-.4.3c-.1.1-.1.2 0 .4.4.8 1 1.4 1.8 1.8.2.1.3.1.4 0 .2-.2.4-.5.6-.7l.4-.2c.2 0 .4.1.7.3.7.4 1.2.7 1.3.8.3.1.3.3.2.4-.1.4-.4.8-.8 1z"/>
-                                  </svg>
-                                </button>
-                                <button
-                                  onClick={() => toggleFavorite(post.id)}
-                                  className={`p-1 rounded transition-all ${isFavorite ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}`}
-                                >
-                                  <Heart className={`w-3 h-3 ${isFavorite ? 'fill-rose-550' : ''}`} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
+
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : selectedCategory === 'images' ? (
+                /* ELEGANT HIGH-DENSITY GRID FOR PHOTOS (4x4 sharp-cornered design) */
+                <div className="space-y-4 animate-fade-in text-right p-0.5" style={{ direction: 'rtl' }}>
+                  <div className="grid grid-cols-4 gap-[3px]" style={{ direction: 'rtl' }}>
+                    {homePosts.map((post) => {
+                      const imgUrl = post.photoUrl || (post.photoUrls && post.photoUrls[0]) || "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=350&auto=format&fit=crop&q=80";
+                      
+                      const handlePhotoClick = () => {
+                        const currentScroll = window.scrollY || document.documentElement.scrollTop;
+                        if (currentScroll > 0) {
+                          detailScrollPosRef.current = currentScroll;
+                        }
+                        const idx = photoReelsList.findIndex(p => p.post.id === post.id);
+                        if (idx !== -1) {
+                          setActivePhotoReelIndex(idx);
+                          setIsPhotoReelsOpen(true);
+                        } else {
+                          setSelectedPost(post);
+                        }
+                      };
+
+                      return (
+                        <div
+                          key={`grid-img-${post.id}`}
+                          onClick={handlePhotoClick}
+                          style={{ cursor: 'pointer' }}
+                          className="relative aspect-square overflow-hidden group select-none bg-slate-950 transition duration-300 active:scale-95"
+                        >
+                          <img
+                            src={imgUrl}
+                            alt="Gallery item"
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover rounded-none transition-transform duration-500 group-hover:scale-110"
+                          />
+                          
+                          {/* Minimal interactive dark gradient overlay */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                          
+                          {/* Multi-image indicator */}
+                          {post.photoUrls && post.photoUrls.length > 1 && (
+                            <span className="absolute top-1 right-1 bg-black/75 text-white text-[7.5px] px-1 rounded-sm font-black border border-white/10 flex items-center gap-0.5 scale-90">
+                              <Images className="w-2 h-2 text-pink-400" />
+                              <span>+{post.photoUrls.length - 1}</span>
+                            </span>
+                          )}
                         </div>
                       );
                     })}
@@ -11036,42 +11241,23 @@ export default function App() {
                             className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5`}
                           >
                             {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
-                              post.photoUrl ? (
-                                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                                  <CachedImage
-                                    src={post.photoUrl || ''}
-                                    alt="thumb"
-                                    className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
-                                  />
-                                  {post.photoUrls && post.photoUrls.length > 1 && (
-                                    <span className="absolute top-1.5 left-1.5 bg-slate-950/85 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5 border border-white/10 shadow">
-                                      <Images className="w-2.5 h-2.5 text-indigo-400" />
-                                      <span>+{post.photoUrls.length - 1}</span>
-                                    </span>
-                                  )}
-                                  {post.hasVideo && (
-                                    <span className="absolute inset-0 flex items-center justify-center bg-black/35">
-                                      <PlayCircle className="w-6 h-6 text-white drop-shadow" />
-                                    </span>
-                                  )}
-                                </div>
-                              ) : post.videoThumbUrl ? (
-                                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                                  <img
-                                    src={post.videoThumbUrl || null}
-                                    referrerPolicy="no-referrer"
-                                    alt="thumb"
-                                    className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
-                                  />
+                              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
+                                <AuthenticVideoThumbnail
+                                  post={post}
+                                  className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                                />
+                                {post.photoUrls && post.photoUrls.length > 1 && (
+                                  <span className="absolute top-1.5 left-1.5 bg-slate-950/85 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5 border border-white/10 shadow">
+                                    <Images className="w-2.5 h-2.5 text-indigo-400" />
+                                    <span>+{post.photoUrls.length - 1}</span>
+                                  </span>
+                                )}
+                                {post.hasVideo && (
                                   <span className="absolute inset-0 flex items-center justify-center bg-black/35">
                                     <PlayCircle className="w-6 h-6 text-white drop-shadow" />
                                   </span>
-                                </div>
-                              ) : post.hasVideo ? (
-                                <div className={`w-20 h-20 sm:w-24 sm:h-24 rounded-xl ${subCardBg} flex items-center justify-center shrink-0 text-indigo-400`}>
-                                  <Video className={`w-8 h-8 ${tc.text}`} />
-                                </div>
-                              ) : null
+                                )}
+                              </div>
                             )}
 
                             <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5 h-full">
@@ -11144,6 +11330,7 @@ export default function App() {
                                   isDark={isDark}
                                   fs={fs}
                                   limitLines={6}
+                                  hideHashtags={true}
                                 />
 
                                 {post.photoUrls && post.photoUrls.length > 1 && (
@@ -11342,6 +11529,7 @@ export default function App() {
                                   isDark={isDark}
                                   fs={{ body: 'text-[11.5px] sm:text-xs font-semibold' }}
                                   limitLines={4}
+                                  hideHashtags={true}
                                 />
                                 {post.photoUrls && post.photoUrls.length > 1 && (
                                   <div 
@@ -11414,7 +11602,7 @@ export default function App() {
                             </span>
                             <div className="flex-1 min-w-0 pr-1">
                               <p className={`text-[12.5px] sm:text-[13px] ${isDark ? 'text-slate-200' : 'text-slate-800'} font-semibold truncate`}>
-                                {getPostTextWithFallback(post)}
+                                {removeHashtagsOnly(getPostTextWithFallback(post))}
                               </p>
                               <span className="text-[9px] text-slate-550 flex items-center gap-1.5 mt-0.5 font-sans">
                                 {getRelativeTimeInPashto(post.date, post.timeLabel || 'ثبت شوی')}
@@ -11496,6 +11684,7 @@ export default function App() {
                                 isDark={isDark}
                                 fs={fs}
                                 limitLines={8}
+                                hideHashtags={true}
                               />
                               {post.audioList && post.audioList.length > 0 ? (
                                 <div className="space-y-2.5">
@@ -11551,6 +11740,7 @@ export default function App() {
                               isDark={isDark}
                               fs={fs}
                               limitLines={8}
+                              hideHashtags={true}
                             />
                             {post.audioList && post.audioList.length > 0 ? (
                               <div className="space-y-2.5">
@@ -11719,36 +11909,17 @@ export default function App() {
                     className={`${cardBg} p-4 rounded-xl flex items-center gap-4 transition group active:scale-[0.99] select-none text-right shadow-md border border-slate-500/5`}
                   >
                     {(post.photoUrl || post.videoThumbUrl || post.hasVideo) && (
-                      post.photoUrl ? (
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                          <CachedImage
-                            src={post.photoUrl || ''}
-                            alt="thumb"
-                            className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
-                          />
-                          {post.hasVideo && (
-                            <span className="absolute inset-0 flex items-center justify-center bg-black/35">
-                              <PlayCircle className="w-5 h-5 text-white drop-shadow" />
-                            </span>
-                          )}
-                        </div>
-                      ) : post.videoThumbUrl ? (
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
-                          <img
-                            src={post.videoThumbUrl || undefined}
-                            referrerPolicy="no-referrer"
-                            alt="thumb"
-                            className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
-                          />
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center relative shadow-inner">
+                        <AuthenticVideoThumbnail
+                          post={post}
+                          className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                        />
+                        {post.hasVideo && (
                           <span className="absolute inset-0 flex items-center justify-center bg-black/35">
                             <PlayCircle className="w-5 h-5 text-white drop-shadow" />
                           </span>
-                        </div>
-                      ) : post.hasVideo ? (
-                        <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-xl ${subCardBg} flex items-center justify-center shrink-0 text-indigo-400`}>
-                          <Video className={`w-6 h-6 ${tc.text}`} />
-                        </div>
-                      ) : null
+                        )}
+                      </div>
                     )}
 
                     <div className="flex-1 min-w-0 text-right flex flex-col justify-between py-0.5 h-full">
@@ -11784,7 +11955,7 @@ export default function App() {
                         </div>
 
                         <h3 className={`text-xs font-sans font-black leading-snug truncate-2-lines max-w-full ${isDark ? 'text-slate-100 hover:text-indigo-400' : 'text-slate-900 hover:text-indigo-650'}`}>
-                          {post.text ? post.text.slice(0, 75).trim() + '...' : 'پوسټ'}
+                          {post.text ? removeHashtagsOnly(post.text).slice(0, 75).trim() + '...' : 'پوسټ'}
                         </h3>
                       </div>
                     </div>
@@ -12199,7 +12370,128 @@ export default function App() {
       </AnimatePresence>
 
       {/* ==========================================================
-         STORY VIEWER FULL-SCREEN SYSTEM (د واټساپ سټایل سټوریانې کتل او د پرمختګ بارونه)
+         STORAGE ACCESS PERMISSION DIALOG (د موبایل حافظې ته د لاسرسي ځانګړی ډیالوګ)
+         ========================================================== */}
+      <AnimatePresence>
+        {showStoragePermissionDialog && (
+          <>
+            {/* Overlay backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setShowStoragePermissionDialog(false);
+                setToast('حافظې ته د لاسرسي غوښتنه لغوه شوه.');
+              }}
+              className="fixed inset-0 bg-black/80 z-[100010] backdrop-blur-xs cursor-pointer"
+            />
+            {/* Centered Modal view */}
+            <div className="fixed inset-0 z-[100020] overflow-y-auto flex items-center justify-center p-4">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 30 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 30 }}
+                className={`w-full max-w-sm border rounded-3xl p-6 shadow-2xl relative text-right font-sans ${isDark ? 'bg-slate-900 border-slate-800 text-white shadow-slate-950/95' : 'bg-white border-slate-200 text-slate-800 shadow-slate-400/30'}`}
+                style={{ direction: 'rtl' }}
+              >
+                {/* Smartphone/Storage Permission Icon */}
+                <div className="mx-auto w-14 h-14 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-500 mb-4 animate-bounce">
+                  <Smartphone className="w-7 h-7" />
+                </div>
+                
+                <h3 className="text-sm font-black text-center mb-2 font-sans text-indigo-400">
+                  د موبایل حافظې ته د لاسرسي غوښتنه
+                </h3>
+                
+                <p className={`text-[12px] text-center leading-relaxed mb-6 font-sans ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                  تاسو غواړئ دا فایل (ویډیو/انځور) په خپل موبایل کې خوندي کړئ. د دې لپاره اپلیکیشن ستاسو د موبایل د غږیز او انځوریز ډاونلوډونو فولډر (Storage) ته اړتیا لري ترڅو فایل په سمه توګه ثبت کړي.
+                </p>
+
+                <div className="flex items-center gap-3 w-full font-sans">
+                  {/* Deny Button */}
+                  <button
+                    onClick={() => {
+                      setShowStoragePermissionDialog(false);
+                      setToast('حافظې ته د لاسرسي اجازه رد شوه. فایل خوندي نشو.');
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all text-center ${isDark ? 'bg-slate-800 hover:bg-slate-750 text-slate-200' : 'bg-slate-100 hover:bg-slate-150 text-slate-700'}`}
+                  >
+                    ردول (نه منل)
+                  </button>
+
+                  {/* Allow Button */}
+                  <button
+                    onClick={() => {
+                      setShowStoragePermissionDialog(false);
+                      localStorage.setItem('storage_permission_granted', 'true');
+                      setToast('د حافظې لاسرسی فعال شو! ډاونلوډ پیل شو...');
+                      if (pendingDownloadMedia) {
+                        downloadMediaFile(pendingDownloadMedia.url, pendingDownloadMedia.filename);
+                      }
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    className="flex-1 py-3 bg-gradient-to-r from-indigo-600 to-violet-550 text-white hover:from-indigo-550 hover:to-violet-500 active:scale-95 rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 text-center"
+                  >
+                    اجازه ورکول (Allow)
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ==========================================================
+         CUSTOM INTERACTIVE USER TOAST ALERTS (د کاروونکي د خبرتیا سسټم)
+         ========================================================== */}
+      <AnimatePresence>
+        {toast && (() => {
+          const toastMessage = typeof toast === 'string' ? toast : toast.message;
+          const toastType = typeof toast === 'string' ? 'success' : toast.type || 'success';
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: -50, scale: 0.9, x: '-50%' }}
+              animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }}
+              exit={{ opacity: 0, y: -20, scale: 0.9, x: '-50%' }}
+              className="fixed left-1/2 top-6 z-[100050] w-[90%] max-w-sm"
+              style={{ direction: 'rtl' }}
+            >
+              <div className={`p-4 rounded-2xl shadow-xl border flex items-center gap-3 backdrop-blur-md ${
+                toastType === 'error'
+                  ? 'bg-rose-500/95 text-white border-rose-400'
+                  : toastType === 'info'
+                    ? 'bg-indigo-600/95 text-white border-indigo-550'
+                    : 'bg-emerald-600/95 text-white border-emerald-550'
+              }`}>
+                <div className="shrink-0 w-8 h-8 rounded-full bg-white/15 flex items-center justify-center">
+                  {toastType === 'error' ? (
+                    <AlertCircle className="w-4 h-4" />
+                  ) : toastType === 'info' ? (
+                    <Info className="w-4 h-4" />
+                  ) : (
+                    <Check className="w-4 h-4 stroke-[3]" />
+                  )}
+                </div>
+                <p className="text-xs font-black leading-relaxed flex-1 text-right font-sans">
+                  {toastMessage}
+                </p>
+                <button
+                  onClick={() => setToast(null)}
+                  className="p-1 rounded-full hover:bg-white/10 active:scale-95 transition"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <X className="w-4 h-4 opacity-80" />
+                </button>
+              </div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* ==========================================================
+         STORY VIEWER FULL-SCREEN SYSTEM (د واټساپ سټایل سټوریانې کتل او د پرمګتګ بارونه)
          ========================================================== */}
       <AnimatePresence>
         {isStoryViewerOpen && storiesList.length > 0 && (() => {
@@ -12243,7 +12535,10 @@ export default function App() {
                 )}
               </div>
 
-              <div className="relative z-10 w-full max-w-lg mx-auto h-full flex flex-col justify-between p-4 pb-8">
+              <div 
+                className="relative z-10 w-full max-w-lg mx-auto h-full flex flex-col justify-between p-4 pb-8"
+                style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}
+              >
                 <div className="space-y-3 w-full">
                   <div className="flex gap-1 w-full pt-2">
                     {storiesList.map((_, idx) => {
@@ -13389,6 +13684,19 @@ export default function App() {
                   <span>شاته تګ</span>
                 </button>
 
+                {/* Question mark/help icon button to repeat the guidance */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowReelsGuide(true);
+                  }}
+                  style={{ top: 'calc(1.25rem + var(--safe-top))', right: '8.25rem', cursor: 'pointer' }}
+                  className="absolute z-40 p-2.5 rounded-full bg-black/60 hover:bg-white/10 border border-white/10 text-white shadow-2xl active:scale-95 transition backdrop-blur-md flex items-center justify-center"
+                  title="لارښود وګورئ"
+                >
+                  <HelpCircle className="w-4.5 h-4.5 text-white" />
+                </button>
+
                 {/* Complete black background beautiful fullscreen theater overlay */}
                 <div className="w-full h-full relative bg-black flex items-center justify-center overflow-hidden">
                   <AnimatePresence initial={false} custom={swipeDirection}>
@@ -13621,17 +13929,20 @@ export default function App() {
                           <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">شریک کړئ</span>
                         </button>
 
-                        {/* Copy poetry text button */}
+                        {/* Save video button */}
                         <button 
-                          onClick={handleCopyReelText}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRequestDownload(cachedActiveReelVideoUrl || activeReel.videoUrl, `deewa_video_${activeReel.post.id}.mp4`);
+                          }}
                           style={{ cursor: 'pointer' }}
                           className="flex flex-col items-center group active:scale-90 transition"
-                          title="شعر کاپي کړه"
+                          title="ویډیو ثبت کړه"
                         >
-                          <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-pink-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
-                            <Copy className="w-5 h-5 text-slate-100 group-hover:text-pink-400 group-hover:scale-110 transition duration-250" />
+                          <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-emerald-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
+                            <Download className="w-5 h-5 text-slate-100 group-hover:text-emerald-400 group-hover:scale-110 transition duration-250" />
                           </div>
-                          <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">کاپي کول</span>
+                          <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">ثبتول</span>
                         </button>
 
                         {/* Mute/Volume Toggle */}
@@ -13764,6 +14075,13 @@ export default function App() {
                     </motion.div>
                   </AnimatePresence>
                 </div>
+
+                {/* Swipe Guidance Overlay */}
+                <AnimatePresence>
+                  {showReelsGuide && (
+                    <SwipeGuidanceOverlay onClose={() => setShowReelsGuide(false)} />
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           );
@@ -13840,6 +14158,19 @@ export default function App() {
                 >
                   <ArrowRight className="w-4 h-4 text-white" />
                   <span>شاته تګ</span>
+                </button>
+
+                {/* Question mark/help icon button to repeat the guidance */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowPhotoReelsGuide(true);
+                  }}
+                  style={{ top: 'calc(1.25rem + var(--safe-top))', right: '8.25rem', cursor: 'pointer' }}
+                  className="absolute z-40 p-2.5 rounded-full bg-black/60 hover:bg-white/10 border border-white/10 text-white shadow-2xl active:scale-95 transition backdrop-blur-md flex items-center justify-center"
+                  title="لارښود وګورئ"
+                >
+                  <HelpCircle className="w-4.5 h-4.5 text-white" />
                 </button>
 
                 {/* Complete black background beautiful fullscreen theater overlay */}
@@ -13974,17 +14305,20 @@ export default function App() {
                           <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">شریک کړئ</span>
                         </button>
 
-                        {/* Copy poetry text button */}
+                        {/* Save photo button */}
                         <button 
-                          onClick={handleCopyPhotoReelText}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRequestDownload(activePhotoReel.photoUrl, `deewa_photo_${activePhotoReel.post.id}.jpg`);
+                          }}
                           style={{ cursor: 'pointer' }}
                           className="flex flex-col items-center group active:scale-90 transition"
-                          title="شعر کاپي کړه"
+                          title="انځور ثبت کړه"
                         >
-                          <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-pink-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
-                            <Copy className="w-5 h-5 text-slate-100 group-hover:text-pink-400 group-hover:scale-110 transition duration-250" />
+                          <div className="w-11.5 h-11.5 rounded-full bg-black/60 border border-white/10 hover:border-emerald-400 hover:scale-105 flex items-center justify-center text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-xl">
+                            <Download className="w-5 h-5 text-slate-100 group-hover:text-emerald-400 group-hover:scale-110 transition duration-250" />
                           </div>
-                          <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">کاپي کول</span>
+                          <span className="text-[10px] text-slate-300 mt-1 font-bold shadow-md select-none pr-0.5">ثبتول</span>
                         </button>
 
                         {/* Desktop Up Indicator (Previous image) */}
@@ -14082,6 +14416,13 @@ export default function App() {
                     </motion.div>
                   </AnimatePresence>
                 </div>
+
+                {/* Swipe Guidance Overlay */}
+                <AnimatePresence>
+                  {showPhotoReelsGuide && (
+                    <SwipeGuidanceOverlay onClose={() => setShowPhotoReelsGuide(false)} />
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           );
