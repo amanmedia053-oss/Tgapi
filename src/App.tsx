@@ -80,7 +80,9 @@ import {
   BookmarkCheck,
   RotateCw,
   Archive,
-  Shield
+  Shield,
+  Instagram,
+  Youtube
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -397,6 +399,308 @@ const makeHtmlHashtagsClickable = (html: string) => {
   });
 };
 
+export interface DeewaCustomPayload {
+  deewa_custom_payload?: boolean;
+  publisher?: {
+    name?: string;
+    avatar?: string;
+    about?: string;
+  };
+  content?: {
+    title?: string;
+    description?: string;
+    text?: string;
+  };
+  images?: string[];
+  links?: Array<{ label: string; url: string }>;
+}
+
+export function tryParseDeewaJson(text: string): DeewaCustomPayload | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  
+  // Try direct parsing of the entire text
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && (parsed.deewa_custom_payload === true || parsed.publisher || parsed.content)) {
+        return parsed as DeewaCustomPayload;
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  // Try extracting JSON from markdown codeblock like ```json ... ``` or just ``` ... ```
+  const jsonBlockRegex = /```(?:json)?\s*([\s\S]+?)\s*```/i;
+  const match = trimmed.match(jsonBlockRegex);
+  if (match && match[1]) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      if (parsed && (parsed.deewa_custom_payload === true || parsed.publisher || parsed.content)) {
+        return parsed as DeewaCustomPayload;
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  // Try parsing any JSON-like substring
+  const startIdx = trimmed.indexOf('{');
+  const endIdx = trimmed.lastIndexOf('}');
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    try {
+      const parsed = JSON.parse(trimmed.slice(startIdx, endIdx + 1));
+      if (parsed && (parsed.deewa_custom_payload === true || parsed.publisher || parsed.content)) {
+        return parsed as DeewaCustomPayload;
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  return null;
+}
+
+// Interactive Premium component for displaying custom JSON content payloads
+function DeewaCustomPayloadView({
+  payload,
+  isDark,
+  isPreview = false,
+  onReadMoreClick
+}: {
+  payload: DeewaCustomPayload;
+  isDark: boolean;
+  isPreview?: boolean;
+  onReadMoreClick?: () => void;
+}) {
+  const { publisher, content, images, links } = payload;
+  
+  // Expose standard or admin fallback images
+  const defaultAvatar = "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=150&q=80";
+
+  const handleImageZoom = (url: string) => {
+    if ((window as any).openPhotoLightboxGlobal) {
+      (window as any).openPhotoLightboxGlobal(url, images || [url]);
+    }
+  };
+
+  if (isPreview) {
+    // Elegant, compact card preview for list view/feed view
+    return (
+      <div 
+        onClick={(e) => {
+          if (onReadMoreClick) {
+            e.stopPropagation();
+            onReadMoreClick();
+          }
+        }}
+        className={`p-4 rounded-2xl border text-right transition-all transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+          isDark 
+            ? 'bg-slate-900/90 border-indigo-500/25 text-white shadow-lg shadow-indigo-950/20' 
+            : 'bg-indigo-50/50 border-indigo-100 text-slate-800 shadow-md shadow-indigo-100/30'
+        }`}
+        style={{ direction: 'rtl' }}
+      >
+        <div className="flex items-center gap-3 mb-2.5">
+          <div className="w-10 h-10 rounded-full border border-indigo-400/30 overflow-hidden shrink-0 bg-slate-950/20 flex items-center justify-center">
+            <img 
+              src={publisher?.avatar || defaultAvatar} 
+              alt="publisher" 
+              className="w-full h-full object-cover" 
+              onError={(e) => {
+                (e.target as any).src = defaultAvatar;
+              }}
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1">
+              <span className="text-xs font-black text-indigo-400 truncate">{publisher?.name || 'ځانګړی خپرندوی'}</span>
+              <span className="w-3.5 h-3.5 rounded-full bg-blue-500 flex items-center justify-center text-white text-[8px] font-bold" title="تصدیق شوی حساب">✓</span>
+            </div>
+            <span className="text-[10px] text-slate-400 block truncate">{publisher?.about || 'رسمي معلومات او لینکونه'}</span>
+          </div>
+          <span className="shrink-0 bg-indigo-600/10 text-indigo-400 text-[9px] font-black px-2 py-0.5 rounded-full border border-indigo-500/25 animate-pulse">
+            ځانګړی پوسټ
+          </span>
+        </div>
+
+        {content?.title && (
+          <h4 className="text-xs sm:text-sm font-black mb-1 text-slate-200 truncate">{content.title}</h4>
+        )}
+        {content?.description && (
+          <p className={`text-[11px] leading-relaxed line-clamp-2 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{content.description}</p>
+        )}
+
+        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-800/10 text-[10px] font-bold text-indigo-400">
+          <span>{images && images.length > 0 ? `${images.length} انځورونه مل دي` : 'اړونده لینکونه'}</span>
+          <span className="flex items-center gap-1">
+            بشپړ تفصیل کتل
+            <ChevronLeft className="w-3 h-3" />
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Full interactive presentation for detailed/expanded post view
+  return (
+    <div 
+      className={`w-full rounded-3xl border p-5 sm:p-6 space-y-5 text-right transition-all ${
+        isDark 
+          ? 'bg-gradient-to-b from-slate-900 to-slate-950 border-slate-800 shadow-2xl' 
+          : 'bg-white border-slate-200 shadow-xl'
+      }`}
+      style={{ direction: 'rtl' }}
+    >
+      {/* Premium Header: Publisher Information */}
+      <div className={`p-4 rounded-2xl flex items-center gap-4 ${isDark ? 'bg-slate-950/60 border border-slate-900' : 'bg-slate-50 border border-slate-100'}`}>
+        <div className="relative shrink-0">
+          <div className="w-14 h-14 rounded-full border-2 border-indigo-500/40 overflow-hidden bg-slate-950/20 flex items-center justify-center shadow-md">
+            <img 
+              src={publisher?.avatar || defaultAvatar} 
+              alt="publisher" 
+              className="w-full h-full object-cover" 
+              onError={(e) => {
+                (e.target as any).src = defaultAvatar;
+              }}
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-white border-2 border-slate-950 text-[10px] font-black shadow-sm" title="رسمي نښه">
+            ✓
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-black text-indigo-400 flex items-center gap-1">
+            <span>{publisher?.name || 'د مېنې ډېوه خپرندوی'}</span>
+          </h3>
+          <p className={`text-[11.5px] leading-relaxed mt-0.5 ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>
+            {publisher?.about || 'پښتو ادبي، مېنې او کلتوري خدمتونه وړاندې کوونکی رسمي حساب.'}
+          </p>
+        </div>
+      </div>
+
+      {/* Title & Description of Post */}
+      {content?.title && (
+        <div className="space-y-1">
+          <h2 className="text-base sm:text-lg font-black text-indigo-400 tracking-tight leading-snug">
+            {content.title}
+          </h2>
+          {content?.description && (
+            <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-600'} leading-relaxed`}>
+              {content.description}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Main Beautiful Text/Poetry Box */}
+      {content?.text && (
+        <div className={`p-5 sm:p-6 rounded-2.5xl border relative overflow-hidden ${
+          isDark 
+            ? 'bg-slate-950/80 border-indigo-500/15 shadow-inner' 
+            : 'bg-indigo-50/15 border-indigo-100 shadow-inner'
+        }`}>
+          {/* Background decorative watermark */}
+          <div className="absolute top-2 right-3 text-indigo-500/5 select-none pointer-events-none">
+            <Quote className="w-16 h-16 rotate-180" />
+          </div>
+          
+          <p className={`text-sm sm:text-base leading-[1.95] sm:leading-[2.1] font-sans whitespace-pre-line text-center select-text font-semibold tracking-wide ${
+            isDark ? 'text-slate-100' : 'text-slate-800'
+          }`}>
+            {content.text}
+          </p>
+
+          <div className="absolute bottom-2 left-3 text-indigo-500/5 select-none pointer-events-none">
+            <Quote className="w-16 h-16" />
+          </div>
+        </div>
+      )}
+
+      {/* Attached Images Grid */}
+      {images && images.length > 0 && (
+        <div className="space-y-2">
+          <span className="text-[10px] font-black uppercase text-indigo-400/80 tracking-widest block mb-1">
+            مل انځورونه ({images.length})
+          </span>
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+            {images.map((url, idx) => (
+              <div 
+                key={idx}
+                onClick={() => handleImageZoom(url)}
+                className={`group relative aspect-[4/3] rounded-2xl overflow-hidden bg-slate-950/40 border cursor-pointer active:scale-98 transition-all ${
+                  isDark ? 'border-slate-800 hover:border-indigo-500/30' : 'border-slate-200 hover:border-indigo-300'
+                }`}
+              >
+                <img 
+                  src={url} 
+                  alt={`gallery-${idx}`} 
+                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center text-white gap-1.5">
+                  <Maximize className="w-4 h-4" />
+                  <span className="text-[10px] font-bold">بشپړ انځور</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Social Action Links / Buttons */}
+      {links && links.length > 0 && (
+        <div className="space-y-2">
+          <span className="text-[10px] font-black uppercase text-indigo-400/80 tracking-widest block mb-1">
+            رسمي اړيکې او لینکونه
+          </span>
+          <div className="flex flex-wrap gap-2.5">
+            {links.map((link, idx) => {
+              const isWhatsApp = link.url?.toLowerCase().includes('wa.me') || link.url?.toLowerCase().includes('whatsapp');
+              const isTelegram = link.url?.toLowerCase().includes('t.me') || link.url?.toLowerCase().includes('telegram');
+              const isFacebook = link.url?.toLowerCase().includes('facebook') || link.url?.toLowerCase().includes('fb.com');
+              
+              const btnStyle = isWhatsApp
+                ? 'bg-emerald-600 text-white hover:bg-emerald-550 shadow-emerald-950/20 border-emerald-500/20'
+                : isTelegram
+                ? 'bg-sky-600 text-white hover:bg-sky-550 shadow-sky-950/20 border-sky-500/20'
+                : isFacebook
+                ? 'bg-blue-600 text-white hover:bg-blue-550 shadow-blue-950/20 border-blue-500/20'
+                : 'bg-indigo-600 text-white hover:bg-indigo-550 shadow-indigo-950/20 border-indigo-500/20';
+
+              return (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    window.open(link.url, '_blank', 'noopener,noreferrer');
+                  }}
+                  className={`flex-1 min-w-[120px] py-3 px-4 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all transform hover:-translate-y-0.5 active:scale-95 shadow-md ${btnStyle}`}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {isWhatsApp ? (
+                    <Send className="w-3.5 h-3.5" />
+                  ) : isTelegram ? (
+                    <Send className="w-3.5 h-3.5" />
+                  ) : isFacebook ? (
+                    <Facebook className="w-3.5 h-3.5" />
+                  ) : (
+                    <Globe className="w-3.5 h-3.5" />
+                  )}
+                  <span>{link.label}</span>
+                  <ExternalLink className="w-3 h-3 opacity-60" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Custom text component to render Telegram formatting beautifully (with line-breaks and stanzas)
 function BeautifulTelegramText({ 
   text, 
@@ -405,7 +709,8 @@ function BeautifulTelegramText({
   limitLines = 6, 
   showExpander = true,
   onReadMoreClick,
-  hideHashtags = false
+  hideHashtags = false,
+  post
 }: { 
   text: string; 
   isDark: boolean; 
@@ -414,9 +719,41 @@ function BeautifulTelegramText({
   showExpander?: boolean;
   onReadMoreClick?: () => void;
   hideHashtags?: boolean;
+  post?: any;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (!text) return null;
+
+  // Intercept and parse custom Deewa JSON payloads if detected
+  const deewaPayload = tryParseDeewaJson(text);
+  if (deewaPayload) {
+    // Dynamically extract attached images from the post itself
+    const postImages: string[] = [];
+    if (post) {
+      if (post.photoUrls && Array.isArray(post.photoUrls)) {
+        post.photoUrls.forEach((url: string) => {
+          if (url && !postImages.includes(url)) postImages.push(url);
+        });
+      }
+      if (post.photoUrl && !postImages.includes(post.photoUrl)) {
+        postImages.push(post.photoUrl);
+      }
+    }
+
+    const finalPayload = {
+      ...deewaPayload,
+      images: postImages.length > 0 ? postImages : deewaPayload.images
+    };
+
+    return (
+      <DeewaCustomPayloadView 
+        payload={finalPayload} 
+        isDark={isDark} 
+        isPreview={showExpander || !!onReadMoreClick} 
+        onReadMoreClick={onReadMoreClick}
+      />
+    );
+  }
 
   // 1. Format the text beautifully to ensure proper spacing on clumped/glued texts, keeping hashtags
   const formattedText = beautifullyFormatPashtoText(text, !hideHashtags);
@@ -1744,11 +2081,107 @@ export function getVideoThumbnail(post: any | null): string {
   return fallbacks[charSum % fallbacks.length];
 }
 
+// Global cache for dynamically captured video thumbnails
+const videoThumbnailCache: Record<string, string> = {};
+
 /* Authentic Video Thumbnail generator that uses actual video streams if no static image exists */
 export function AuthenticVideoThumbnail({ post, className = "w-full h-full object-cover" }: { post: any; className?: string }) {
   const videoUrl = post?.videoUrl || (post?.videoList && post.videoList[0]?.url) || (post?.videoList && post.videoList[0]);
   const thumbUrl = post?.videoThumbUrl || (post?.videoList && post.videoList[0]?.thumbUrl);
   const photoUrl = post?.photoUrl || (post?.photoUrls && post.photoUrls[0]);
+
+  const [capturedThumb, setCapturedThumb] = useState<string | null>(() => {
+    if (videoUrl && typeof videoUrl === 'string') {
+      return videoThumbnailCache[videoUrl] || null;
+    }
+    return null;
+  });
+
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    if (thumbUrl || photoUrl) return;
+    if (!videoUrl || typeof videoUrl !== 'string') return;
+    if (videoThumbnailCache[videoUrl]) {
+      setCapturedThumb(videoThumbnailCache[videoUrl]);
+      return;
+    }
+
+    setIsGenerating(true);
+    let isMounted = true;
+
+    // Create a hidden video element to capture the frame
+    const video = document.createElement('video');
+    video.src = videoUrl;
+    // Request anonymous cross-origin to avoid canvas tainting when the hosting server supports CORS
+    video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+
+    const cleanVideo = () => {
+      video.onloadedmetadata = null;
+      video.onloadeddata = null;
+      video.onseeked = null;
+      video.onerror = null;
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    };
+
+    const captureFrame = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 480;
+        canvas.height = video.videoHeight || 270;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          if (isMounted) {
+            videoThumbnailCache[videoUrl] = dataUrl;
+            setCapturedThumb(dataUrl);
+            setIsGenerating(false);
+          }
+        } else {
+          if (isMounted) setIsGenerating(false);
+        }
+      } catch (err) {
+        console.warn("Canvas failed to capture frame (possibly CORS restricted):", err);
+        if (isMounted) setIsGenerating(false);
+      }
+      cleanVideo();
+    };
+
+    video.onloadedmetadata = () => {
+      video.currentTime = 1.5; // Seek to 1.5 seconds as requested (between 1 and 2 seconds)
+    };
+
+    video.onloadeddata = () => {
+      if (video.currentTime !== 1.5) {
+        video.currentTime = 1.5;
+      }
+    };
+
+    video.onseeked = () => {
+      captureFrame();
+    };
+
+    video.onerror = () => {
+      console.warn("Hidden video failed to load for thumbnail capture:", videoUrl);
+      if (isMounted) {
+        setIsGenerating(false);
+      }
+      cleanVideo();
+    };
+
+    video.load();
+
+    return () => {
+      isMounted = false;
+      cleanVideo();
+    };
+  }, [videoUrl, thumbUrl, photoUrl]);
 
   if (thumbUrl) {
     return (
@@ -1773,6 +2206,28 @@ export function AuthenticVideoThumbnail({ post, className = "w-full h-full objec
     );
   }
 
+  // Render captured frame from cache/state if present
+  if (capturedThumb) {
+    return (
+      <img
+        src={capturedThumb}
+        alt="captured video thumbnail"
+        className={className}
+        referrerPolicy="no-referrer"
+      />
+    );
+  }
+
+  // While generating, show a nice premium skeleton loading spinner
+  if (isGenerating) {
+    return (
+      <div className={`relative flex items-center justify-center bg-slate-900/90 overflow-hidden ${className}`}>
+        <RefreshCw className="w-5 h-5 text-indigo-400 animate-spin opacity-60" />
+      </div>
+    );
+  }
+
+  // Fallback to the live video element rendering only metadata if generation is not possible (CORS/Format issue)
   if (videoUrl) {
     return (
       <video
@@ -3350,10 +3805,18 @@ export default function App() {
     setZoomScale(1);
   };
 
+  useEffect(() => {
+    (window as any).openPhotoLightboxGlobal = openPhotoLightbox;
+    return () => {
+      delete (window as any).openPhotoLightboxGlobal;
+    };
+  }, [openPhotoLightbox]);
+
   // New states for Sidebar, three-dot menu, and search filtering
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAdminDetailOpen, setIsAdminDetailOpen] = useState(false);
   const [isDevDetailOpen, setIsDevDetailOpen] = useState(false);
+  const [selectedDetailAdmin, setSelectedDetailAdmin] = useState<any | null>(null);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -5189,55 +5652,73 @@ export default function App() {
   const adminsList = React.useMemo(() => {
     if (!feedData?.posts) return [];
     
-    // 1. Dev author as the first item
-    const devAuthor = {
-      name: devName,
-      post: devPost,
-      isDev: true,
-      avatar: devPost?.photoUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(devName) + "&background=6366f1&color=fff&size=128&bold=true",
-      role: "سافټویر انجینر",
-      badge: "جوړونکی / DEV"
-    };
-
-    // 2. Find all unique admin authors
-    const adminPosts = feedData.posts.filter(p => p && p.text && p.text.toLowerCase().includes('#admin'));
-    const seenAuthors = new Set<string>();
-    seenAuthors.add(devName.toLowerCase());
-
-    const uniqueAdmins: any[] = [];
-    adminPosts.forEach(p => {
-      const name = p.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه";
+    const seenNames = new Set<string>();
+    const list: any[] = [];
+    
+    feedData.posts.forEach(p => {
+      if (!p || !p.text) return;
+      const payload = tryParseDeewaJson(p.text);
+      if (!payload) return;
+      
+      const name = payload.publisher?.name || p.authorName || "ځانګړی خپرندوی";
       const lowerName = name.toLowerCase();
-      if (!seenAuthors.has(lowerName)) {
-        seenAuthors.add(lowerName);
-        uniqueAdmins.push({
+      if (!seenNames.has(lowerName)) {
+        seenNames.add(lowerName);
+        
+        // 1. Profile circular image is the first photo of the post (post.photoUrls[0] or post.photoUrl)
+        const profileImg = p.photoUrls?.[0] || p.photoUrl || "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=150&q=80";
+        
+        // 2. Cover image is the second photo of the post (post.photoUrls[1])
+        const coverImg = p.photoUrls?.[1] || "https://images.unsplash.com/photo-1557683316-973673baf926?w=800&q=80";
+        
+        const isDev = name.includes("عبیدالله") || name.toLowerCase().includes("dev") || name.toLowerCase().includes("developer") || p.text.toLowerCase().includes('#dev');
+        
+        list.push({
           name: name,
           post: p,
-          isDev: false,
-          avatar: p.photoUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(name) + "&background=f59e0b&color=fff&size=128&bold=true",
-          role: "محتوا خپرونکی",
-          badge: "اډمین / ADMIN"
+          payload: payload,
+          isDev: isDev,
+          avatar: profileImg,
+          cover: coverImg,
+          about: payload.publisher?.about || payload.content?.description || "د پښتو ادبي خزانې رسمي غړی او همکار",
+          links: payload.links || [],
+          role: isDev ? "سافټویر انجینر" : "رسمي مسوول",
+          badge: isDev ? "جوړونکی / DEV" : "مسوول / OFFICIAL"
         });
       }
     });
 
-    // Fallback default admin if not already present in uniqueAdmins
-    if (adminPost) {
-      const fallbackAdminName = adminPost.authorName || feedData?.channelInfo?.title || "پښتو ادبي خزانه";
-      if (!seenAuthors.has(fallbackAdminName.toLowerCase())) {
-        uniqueAdmins.push({
-          name: fallbackAdminName,
-          post: adminPost,
-          isDev: false,
-          avatar: adminPost?.photoUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(fallbackAdminName) + "&background=f59e0b&color=fff&size=128&bold=true",
-          role: "محتوا خپرونکی",
-          badge: "اډمین / ADMIN"
-        });
-      }
-    }
+    // Fallback if no posts contain Deewa JSON payload, keeping previous admins
+    if (list.length === 0) {
+      const devAuthor = {
+        name: devName,
+        post: devPost,
+        isDev: true,
+        avatar: devPost?.photoUrls?.[0] || devPost?.photoUrl || developerAvatarImg,
+        cover: devPost?.photoUrls?.[1] || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80",
+        role: "سافټویر انجینر",
+        badge: "جوړونکی / DEV",
+        about: "سافټویر انجینري او ډیجیټل ویب خدمتونه وړاندې کوونکی",
+        links: []
+      };
 
-    return [devAuthor, ...uniqueAdmins];
-  }, [feedData?.posts, devName, devPost, adminPost, feedData?.channelInfo?.title]);
+      const adminAuthor = {
+        name: adminName,
+        post: adminPost,
+        isDev: false,
+        avatar: adminPost?.photoUrls?.[0] || adminPost?.photoUrl || adminAvatarImg,
+        cover: adminPost?.photoUrls?.[1] || "https://images.unsplash.com/photo-1557683316-973673baf926?w=800&q=80",
+        role: "محتوا خپرونکی",
+        badge: "اډمین / ADMIN",
+        about: "ښاغلی وحیدالله قلمیار د پښتو خوږې ژبې، ادب او مینه وال، د دې پښتو ادبي خزانې د ځانګړې نشراتي څانګې مسؤل",
+        links: []
+      };
+
+      return [devAuthor, adminAuthor];
+    }
+    
+    return list;
+  }, [feedData?.posts, devName, devPost, adminName, adminPost]);
 
   // Slider featured posts (10 random posts from any category to keep it dynamic and fresh)
   const featuredPosts = React.useMemo(() => {
@@ -7302,6 +7783,7 @@ export default function App() {
                         fs={{ body: 'text-[13.5px] sm:text-[14px] text-right font-medium leading-[2.1] sm:leading-[2.3]' }} 
                         limitLines={250} 
                         showExpander={false} 
+                        post={selectedPost}
                       />
                     </div>
 
@@ -7723,6 +8205,7 @@ export default function App() {
                   fs={{ body: 'text-[15.5px] sm:text-[17px]' }} 
                   limitLines={250} 
                   showExpander={false}
+                  post={selectedPost}
                 />
               )}
 
@@ -8120,13 +8603,12 @@ export default function App() {
                 // Let's see if this author matches an admin in adminsList
                 const matchingAdminInList = adminsList.find(a => a.name.toLowerCase() === authorNameLower);
 
-                if (isDev) {
+                if (matchingAdminInList) {
+                  finalProfileUrl = matchingAdminInList.avatar;
+                  finalCoverUrl = matchingAdminInList.cover;
+                } else if (isDev) {
                   finalProfileUrl = devPost?.photoUrls?.[0] || devPost?.photoUrl || developerAvatarImg;
                   finalCoverUrl = devPost?.photoUrls?.[1] || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80";
-                } else if (matchingAdminInList) {
-                  const p = matchingAdminInList.post;
-                  finalProfileUrl = p?.photoUrls?.[0] || p?.photoUrl || matchingAdminInList.avatar;
-                  finalCoverUrl = p?.photoUrls?.[1] || "https://images.unsplash.com/photo-1557683316-973673baf926?w=800&q=80";
                 } else if (isStaticAdmin) {
                   finalProfileUrl = adminPost?.photoUrls?.[0] || adminPost?.photoUrl || adminAvatarImg;
                   finalCoverUrl = adminPost?.photoUrls?.[1] || "https://images.unsplash.com/photo-1557683316-973673baf926?w=800&q=80";
@@ -8212,11 +8694,7 @@ export default function App() {
                               whileHover={{ scale: 1.02 }}
                               whileTap={{ scale: 0.98 }}
                               onClick={() => {
-                                if (matchingAdmin.isDev) {
-                                  setIsDevDetailOpen(true);
-                                } else {
-                                  setIsAdminDetailOpen(true);
-                                }
+                                setSelectedDetailAdmin(matchingAdmin);
                               }}
                               style={{ cursor: 'pointer' }}
                               className={`w-full py-3.5 px-5 rounded-2xl font-black text-xs sm:text-sm transition-all duration-300 flex items-center justify-center gap-2 shadow-lg active:scale-95 select-none ${
@@ -8443,6 +8921,7 @@ export default function App() {
                                       fs={fs}
                                       limitLines={6}
                                       hideHashtags={true}
+                                      post={post}
                                     />
 
                                     {post.photoUrls && post.photoUrls.length > 1 && (
@@ -8582,6 +9061,7 @@ export default function App() {
                                     fs={fs}
                                     limitLines={4}
                                     hideHashtags={true}
+                                    post={post}
                                   />
 
                                   <div className="flex items-center justify-between text-[8.5px] text-slate-400 border-t border-slate-500/10 dark:border-slate-800/60 pt-2" style={{ direction: 'rtl' }}>
@@ -11331,6 +11811,7 @@ export default function App() {
                                   fs={fs}
                                   limitLines={6}
                                   hideHashtags={true}
+                                  post={post}
                                 />
 
                                 {post.photoUrls && post.photoUrls.length > 1 && (
@@ -11530,6 +12011,7 @@ export default function App() {
                                   fs={{ body: 'text-[11.5px] sm:text-xs font-semibold' }}
                                   limitLines={4}
                                   hideHashtags={true}
+                                  post={post}
                                 />
                                 {post.photoUrls && post.photoUrls.length > 1 && (
                                   <div 
@@ -11685,6 +12167,7 @@ export default function App() {
                                 fs={fs}
                                 limitLines={8}
                                 hideHashtags={true}
+                                post={post}
                               />
                               {post.audioList && post.audioList.length > 0 ? (
                                 <div className="space-y-2.5">
@@ -11741,6 +12224,7 @@ export default function App() {
                               fs={fs}
                               limitLines={8}
                               hideHashtags={true}
+                              post={post}
                             />
                             {post.audioList && post.audioList.length > 0 ? (
                               <div className="space-y-2.5">
@@ -13586,6 +14070,200 @@ export default function App() {
                           onClick={() => {
                             setSelectedAuthorName(devName);
                             setIsDevDetailOpen(false);
+                            setSelectedPost(null);
+                            setIsSidebarOpen(false);
+                            setIsAboutPageOpen(false);
+                            setIsContactPageOpen(false);
+                            setIsSettingsPageOpen(false);
+                            setIsCategoryPageOpen(false);
+                            setIsNovelsPageOpen(false);
+                            setIsReelsOpen(false);
+                            setIsPhotoReelsOpen(false);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                          className="px-4 py-2.5 rounded-xl border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/10 text-xs font-black transition-all active:scale-95 flex items-center gap-1.5 flex-row-reverse"
+                        >
+                          <BookOpen className="w-4 h-4" />
+                          <span>ټول پوسټونه</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  </div>
+                );
+              })()}
+            </AnimatePresence>
+
+            {/* Dynamic Custom Publisher Detail Modal (د هر خپرونکي او مسوول بشپړ معلومات او جيسون لینکونه) */}
+            <AnimatePresence>
+              {selectedDetailAdmin && (() => {
+                const admin = selectedDetailAdmin;
+                const rawText = admin.about || admin.post?.text || "د پښتو ادبي خزانې رسمي غړی او همکار.";
+                const profileImg = admin.avatar;
+                const coverImg = admin.cover;
+
+                return (
+                  <div key="custom-admin-detail-modal" className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
+                    {/* Backdrop cover overlay */}
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => setSelectedDetailAdmin(null)}
+                      className="absolute inset-0 bg-slate-950/85 backdrop-blur-md"
+                    />
+                    {/* Modal Box */}
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 30 }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 245 }}
+                      className={`relative w-full max-w-lg rounded-3xl overflow-hidden border shadow-2xl flex flex-col text-right ${
+                        isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      {/* Cover Banner Image (Second photo) */}
+                      <div className="relative h-44 w-full bg-slate-950">
+                        <img
+                          src={coverImg}
+                          alt="Cover Banner"
+                          className="w-full h-full object-cover opacity-90"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent" />
+                        
+                        {/* Role Emblem Badge */}
+                        <div className={`absolute top-4 right-4 flex items-center gap-1.5 ${admin.isDev ? 'bg-indigo-600' : 'bg-amber-500'} text-slate-100 px-2.5 py-1 rounded-full shadow-md border border-white/15 text-[10px] font-black z-20`}>
+                          {admin.isDev ? <Cpu className="w-3 h-3" /> : <Award className="w-3 h-3" />}
+                          <span>{admin.badge}</span>
+                        </div>
+                        
+                        {/* Close Button top-left */}
+                        <button
+                          onClick={() => setSelectedDetailAdmin(null)}
+                          style={{ cursor: 'pointer' }}
+                          className="absolute top-4 left-4 p-2 bg-slate-950/70 hover:bg-slate-900/95 text-white rounded-full transition border border-white/10 z-20 active:scale-90"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+
+                        {/* Circular Avatar Overlapping at bottom-right (First photo) */}
+                        <div className="absolute -bottom-9 right-5 z-20 p-1 bg-slate-900 rounded-full shadow-xl">
+                          <img
+                            src={profileImg}
+                            alt="Avatar"
+                            className={`w-20 h-20 rounded-full object-cover border-2 ${admin.isDev ? 'border-indigo-500' : 'border-amber-500'}`}
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Scrollable Bio Text Content */}
+                      <div className="p-5 pt-12 space-y-4 max-h-[55vh] overflow-y-auto scrollbar-thin text-right font-sans">
+                        <div className="text-right">
+                          <span className={`text-[10px] uppercase tracking-wider font-extrabold ${admin.isDev ? 'text-indigo-400 bg-indigo-450/10 border-indigo-500/20' : 'text-amber-400 bg-amber-450/10 border-amber-500/20'} border px-2 py-0.5 rounded-md`}>
+                            {admin.name}
+                          </span>
+                          <h3 className={`text-base font-black font-sans mt-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                            {admin.role}
+                          </h3>
+                        </div>
+
+                        {/* Active status ribbon */}
+                        <div className={`p-3 rounded-2xl flex items-center justify-between flex-row-reverse border ${
+                          isDark ? 'bg-slate-850/50 border-slate-800' : 'bg-slate-50 border-slate-100'
+                        }`}>
+                          <span className="text-[9px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">
+                            فعال او انلاین رسمي مسوول
+                          </span>
+                          <span className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-550'} font-bold`}>
+                            Official Publisher Profile
+                          </span>
+                        </div>
+
+                        {/* Clean Text Content */}
+                        <div className={`p-1.5 space-y-2.5 text-right leading-relaxed text-xs sm:text-sm font-semibold select-all ${
+                          isDark ? 'text-slate-200' : 'text-slate-700'
+                        }`}>
+                          {rawText.split('\n').map((line: string, idx: number) => (
+                            <p key={idx} className="mb-2 font-medium leading-relaxed font-sans">{line}</p>
+                          ))}
+                        </div>
+
+                        {/* Custom named buttons for links as requested by the user */}
+                        {admin.links && admin.links.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-slate-500/10 text-center space-y-3">
+                            <h4 className="text-xs font-black text-indigo-400">رسمي لینکونه او ارتباطي اړيکې:</h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-right">
+                              {admin.links.map((link: any, idx: number) => {
+                                const lowerUrl = (link.url || '').toLowerCase();
+                                const lowerLabel = (link.label || '').toLowerCase();
+                                
+                                let IconComponent = ExternalLink;
+                                let btnStyle = "bg-indigo-600/10 border-indigo-500/20 text-indigo-400 hover:bg-indigo-600 hover:text-white";
+                                
+                                if (lowerUrl.includes('wa.me') || lowerUrl.includes('whatsapp') || lowerLabel.includes('whatsapp') || lowerLabel.includes('واټساپ')) {
+                                  IconComponent = Phone;
+                                  btnStyle = "bg-emerald-600/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-600 hover:text-white";
+                                } else if (lowerUrl.includes('t.me') || lowerUrl.includes('telegram') || lowerLabel.includes('telegram') || lowerLabel.includes('ټیلیګرام')) {
+                                  IconComponent = Send;
+                                  btnStyle = "bg-sky-600/10 border-sky-500/20 text-sky-400 hover:bg-sky-600 hover:text-white";
+                                } else if (lowerUrl.includes('facebook') || lowerUrl.includes('fb.com') || lowerLabel.includes('facebook') || lowerLabel.includes('فیسبوک')) {
+                                  IconComponent = Facebook;
+                                  btnStyle = "bg-blue-600/10 border-blue-500/20 text-blue-400 hover:bg-blue-600 hover:text-white";
+                                } else if (lowerUrl.includes('github') || lowerLabel.includes('github') || lowerLabel.includes('ګیټ')) {
+                                  IconComponent = Github;
+                                  btnStyle = "bg-slate-600/10 border-slate-500/20 text-slate-400 hover:bg-slate-700 hover:text-white";
+                                } else if (lowerUrl.startsWith('mailto:') || lowerUrl.includes('mail') || lowerLabel.includes('mail') || lowerLabel.includes('بریښنالیک')) {
+                                  IconComponent = Mail;
+                                  btnStyle = "bg-rose-600/10 border-rose-500/20 text-rose-400 hover:bg-rose-600 hover:text-white";
+                                } else if (lowerUrl.includes('youtube') || lowerLabel.includes('youtube') || lowerLabel.includes('یوټیوب')) {
+                                  IconComponent = Youtube;
+                                  btnStyle = "bg-red-600/10 border-red-500/20 text-red-400 hover:bg-red-600 hover:text-white";
+                                } else if (lowerUrl.includes('instagram') || lowerLabel.includes('instagram') || lowerLabel.includes('انستاګرام')) {
+                                  IconComponent = Instagram;
+                                  btnStyle = "bg-pink-600/10 border-pink-500/20 text-pink-400 hover:bg-pink-600 hover:text-white";
+                                } else {
+                                  IconComponent = Globe;
+                                }
+
+                                return (
+                                  <a
+                                    key={idx}
+                                    href={link.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ cursor: 'pointer' }}
+                                    className={`flex items-center justify-between p-3.5 rounded-2xl border text-xs font-black transition-all duration-300 hover:scale-[1.01] active:scale-98 shadow-sm ${btnStyle}`}
+                                  >
+                                    <span className="flex items-center gap-2">
+                                      <IconComponent className="w-4 h-4 shrink-0" />
+                                      <span>{link.label || 'ارتباطي بټن'}</span>
+                                    </span>
+                                    <ExternalLink className="w-3 h-3 opacity-60" />
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Close Buttons footer */}
+                      <div className={`p-4 border-t flex justify-end gap-2.5 flex-row-reverse ${
+                        isDark ? 'border-slate-800 bg-slate-850/30' : 'border-slate-150 bg-slate-50/50'
+                      }`}>
+                        <button
+                          onClick={() => setSelectedDetailAdmin(null)}
+                          style={{ cursor: 'pointer' }}
+                          className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition-all shadow-md active:scale-95 flex items-center gap-1.5 flex-row-reverse"
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>بندول</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedAuthorName(admin.name);
+                            setSelectedDetailAdmin(null);
                             setSelectedPost(null);
                             setIsSidebarOpen(false);
                             setIsAboutPageOpen(false);
